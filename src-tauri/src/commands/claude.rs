@@ -2386,6 +2386,407 @@ pub fn get_worktrees(path: String) -> Result<Vec<WorktreeInfo>, String> {
     }
 }
 
+/// Represents a native agent from ~/.claude/agents/
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct NativeAgent {
+    pub name: String,
+    pub path: String,
+    pub description: String,
+    pub model: Option<String>,
+    pub raw_content: String,
+}
+
+/// Represents a skill from ~/.claude/skills/
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SkillInfo {
+    pub name: String,
+    pub path: String,
+    pub description: String,
+}
+
+/// Lists all native agents from ~/.claude/agents/
+#[tauri::command]
+pub async fn list_native_agents() -> Result<Vec<NativeAgent>, String> {
+    let home = dirs::home_dir()
+        .ok_or_else(|| "Could not find home directory".to_string())?;
+    let agents_dir = home.join(".claude").join("agents");
+
+    if !agents_dir.exists() {
+        return Ok(Vec::new());
+    }
+
+    let mut agents = Vec::new();
+
+    match fs::read_dir(&agents_dir) {
+        Ok(entries) => {
+            for entry in entries.flatten() {
+                let path = entry.path();
+                if path.is_file() && path.extension().and_then(|s| s.to_str()) == Some("md") {
+                    if let Some(name) = path.file_stem().and_then(|s| s.to_str()) {
+                        match read_native_agent(path.to_string_lossy().to_string()).await {
+                            Ok(agent) => agents.push(agent),
+                            Err(e) => {
+                                log::warn!("Failed to read agent {}: {}", name, e);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        Err(e) => {
+            log::warn!("Failed to read agents directory: {}", e);
+        }
+    }
+
+    Ok(agents)
+}
+
+/// Reads a single native agent from the given path
+#[tauri::command]
+pub async fn read_native_agent(path: String) -> Result<NativeAgent, String> {
+    let file_path = std::path::PathBuf::from(&path);
+    let raw_content = fs::read_to_string(&file_path)
+        .map_err(|e| format!("Failed to read agent file: {}", e))?;
+
+    let name = file_path
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .unwrap_or("unknown")
+        .to_string();
+
+    let model = extract_frontmatter_model(&raw_content);
+    let description = extract_description(&raw_content);
+
+    Ok(NativeAgent {
+        name,
+        path,
+        description,
+        model,
+        raw_content,
+    })
+}
+
+/// Extracts the model field from YAML frontmatter
+fn extract_frontmatter_model(content: &str) -> Option<String> {
+    let lines: Vec<&str> = content.lines().collect();
+    if lines.is_empty() || !lines[0].starts_with("---") {
+        return None;
+    }
+
+    for i in 1..lines.len() {
+        if lines[i].starts_with("---") {
+            break;
+        }
+        if lines[i].starts_with("model:") {
+            let model_line = lines[i].trim_start_matches("model:").trim();
+            if !model_line.is_empty() {
+                return Some(model_line.to_string());
+            }
+        }
+    }
+
+    None
+}
+
+/// Extracts the first non-empty, non-frontmatter paragraph as description (up to 200 chars)
+fn extract_description(content: &str) -> String {
+    let lines: Vec<&str> = content.lines().collect();
+    let mut in_frontmatter = false;
+    let mut description = String::new();
+
+    for line in lines {
+        if line.starts_with("---") {
+            in_frontmatter = !in_frontmatter;
+            continue;
+        }
+
+        if in_frontmatter {
+            continue;
+        }
+
+        let trimmed = line.trim();
+        if !trimmed.is_empty() {
+            description = trimmed.to_string();
+            break;
+        }
+    }
+
+    if description.len() > 200 {
+        description.truncate(200);
+        description.push_str("...");
+    }
+
+    description
+}
+
+/// Writes a native agent to ~/.claude/agents/{name}.md
+#[tauri::command]
+pub async fn write_native_agent(name: String, content: String) -> Result<String, String> {
+    let home = dirs::home_dir()
+        .ok_or_else(|| "Could not find home directory".to_string())?;
+    let agents_dir = home.join(".claude").join("agents");
+
+    fs::create_dir_all(&agents_dir)
+        .map_err(|e| format!("Failed to create agents directory: {}", e))?;
+
+    let file_path = agents_dir.join(format!("{}.md", name));
+    fs::write(&file_path, content)
+        .map_err(|e| format!("Failed to write agent file: {}", e))?;
+
+    file_path
+        .to_str()
+        .map(|s| s.to_string())
+        .ok_or_else(|| "Failed to convert path to string".to_string())
+}
+
+/// Deletes a native agent file
+#[tauri::command]
+pub async fn delete_native_agent(path: String) -> Result<(), String> {
+    let file_path = std::path::PathBuf::from(&path);
+    if !file_path.exists() {
+        return Err("Agent file does not exist".to_string());
+    }
+
+    fs::remove_file(&file_path)
+        .map_err(|e| format!("Failed to delete agent file: {}", e))
+}
+
+/// Lists all skills from ~/.claude/skills/
+#[tauri::command]
+pub async fn list_skills() -> Result<Vec<SkillInfo>, String> {
+    let home = dirs::home_dir()
+        .ok_or_else(|| "Could not find home directory".to_string())?;
+    let skills_dir = home.join(".claude").join("skills");
+
+    if !skills_dir.exists() {
+        return Ok(Vec::new());
+    }
+
+    let mut skills = Vec::new();
+
+    match fs::read_dir(&skills_dir) {
+        Ok(entries) => {
+            for entry in entries.flatten() {
+                let path = entry.path();
+                if path.is_dir() {
+                    let skill_md = path.join("SKILL.md");
+                    if skill_md.exists() {
+                        if let Some(name) = path.file_name().and_then(|s| s.to_str()) {
+                            if let Ok(content) = fs::read_to_string(&skill_md) {
+                                let description = content
+                                    .lines()
+                                    .find(|line| !line.trim().is_empty())
+                                    .unwrap_or("")
+                                    .trim()
+                                    .to_string();
+                                let desc = if description.len() > 200 {
+                                    format!("{}...", &description[..200])
+                                } else {
+                                    description
+                                };
+
+                                skills.push(SkillInfo {
+                                    name: name.to_string(),
+                                    path: skill_md.to_string_lossy().to_string(),
+                                    description: desc,
+                                });
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        Err(e) => {
+            log::warn!("Failed to read skills directory: {}", e);
+        }
+    }
+
+    Ok(skills)
+}
+
+/// Gets global settings from ~/.claude/settings.json
+#[tauri::command]
+pub async fn get_global_settings() -> Result<serde_json::Value, String> {
+    let home = dirs::home_dir()
+        .ok_or_else(|| "Could not find home directory".to_string())?;
+    let settings_path = home.join(".claude").join("settings.json");
+
+    if !settings_path.exists() {
+        return Ok(serde_json::json!({}));
+    }
+
+    let content = fs::read_to_string(&settings_path)
+        .map_err(|e| format!("Failed to read settings file: {}", e))?;
+
+    serde_json::from_str(&content)
+        .map_err(|e| format!("Failed to parse settings JSON: {}", e))
+}
+
+/// Reads ~/.claude/hooks/resources/commands.conf
+#[tauri::command]
+pub async fn read_commands_conf() -> Result<String, String> {
+    let home = dirs::home_dir()
+        .ok_or_else(|| "Could not find home directory".to_string())?;
+    let conf_path = home.join(".claude").join("hooks").join("resources").join("commands.conf");
+
+    if !conf_path.exists() {
+        return Ok(String::new());
+    }
+
+    fs::read_to_string(&conf_path)
+        .map_err(|e| format!("Failed to read commands.conf: {}", e))
+}
+
+/// Writes to ~/.claude/hooks/resources/commands.conf and verifies with command-guard.py
+#[tauri::command]
+pub async fn write_and_verify_commands_conf(content: String) -> Result<String, String> {
+    let home = dirs::home_dir()
+        .ok_or_else(|| "Could not find home directory".to_string())?;
+    let conf_path = home.join(".claude").join("hooks").join("resources").join("commands.conf");
+
+    fs::create_dir_all(conf_path.parent().ok_or_else(|| "Invalid path".to_string())?)
+        .map_err(|e| format!("Failed to create directory: {}", e))?;
+
+    fs::write(&conf_path, content)
+        .map_err(|e| format!("Failed to write commands.conf: {}", e))?;
+
+    let guard_script = home.join(".claude").join("hooks").join("command-guard.py");
+    if !guard_script.exists() {
+        return Ok("Verification skipped: command-guard.py not found".to_string());
+    }
+
+    let output = std::process::Command::new("python")
+        .arg(guard_script.to_string_lossy().to_string())
+        .arg("--verify")
+        .output()
+        .or_else(|_| {
+            std::process::Command::new("python3")
+                .arg(home.join(".claude").join("hooks").join("command-guard.py").to_string_lossy().to_string())
+                .arg("--verify")
+                .output()
+        });
+
+    match output {
+        Ok(output) => {
+            let stdout = String::from_utf8_lossy(&output.stdout);
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            Ok(format!("{}{}", stdout, stderr))
+        }
+        Err(_) => Ok("Verification skipped: command-guard.py not found".to_string()),
+    }
+}
+
+/// Enables or disables command guard by modifying ~/.claude/settings.json
+#[tauri::command]
+pub async fn set_cguard_enabled(enabled: bool) -> Result<(), String> {
+    let home = dirs::home_dir()
+        .ok_or_else(|| "Could not find home directory".to_string())?;
+    let settings_path = home.join(".claude").join("settings.json");
+
+    let mut settings: serde_json::Value = if settings_path.exists() {
+        let content = fs::read_to_string(&settings_path)
+            .map_err(|e| format!("Failed to read settings: {}", e))?;
+        serde_json::from_str(&content).unwrap_or_else(|_| serde_json::json!({}))
+    } else {
+        serde_json::json!({})
+    };
+
+    let hook_dispatcher_path = format!(
+        "C:/Users/{username}/.claude/hooks/hook-dispatcher.sh",
+        username = std::env::var("USERNAME").unwrap_or_else(|_| "User".to_string())
+    );
+
+    if enabled {
+        if !settings["hooks"].is_object() {
+            settings["hooks"] = serde_json::json!({});
+        }
+
+        if !settings["hooks"]["PreToolUse"].is_array() {
+            settings["hooks"]["PreToolUse"] = serde_json::json!([]);
+        }
+
+        if let Some(array) = settings["hooks"]["PreToolUse"].as_array_mut() {
+            let has_dispatcher = array.iter().any(|entry| {
+                entry
+                    .get("hooks")
+                    .and_then(|h| h.as_array())
+                    .map(|h| {
+                        h.iter().any(|hook| {
+                            hook.get("command")
+                                .and_then(|c| c.as_str())
+                                .map(|s| s.contains("hook-dispatcher"))
+                                .unwrap_or(false)
+                        })
+                    })
+                    .unwrap_or(false)
+            });
+
+            if !has_dispatcher {
+                array.push(serde_json::json!({
+                    "matcher": "*",
+                    "hooks": [{
+                        "type": "command",
+                        "command": hook_dispatcher_path
+                    }]
+                }));
+            }
+        }
+    } else {
+        if let Some(hooks) = settings.get_mut("hooks") {
+            if let Some(pre_tool_use) = hooks.get_mut("PreToolUse") {
+                if let Some(array) = pre_tool_use.as_array_mut() {
+                    array.retain(|entry| {
+                        if let Some(hooks_arr) = entry.get("hooks").and_then(|h| h.as_array()) {
+                            !hooks_arr.iter().any(|hook| {
+                                hook.get("command")
+                                    .and_then(|c| c.as_str())
+                                    .map(|s| s.contains("hook-dispatcher"))
+                                    .unwrap_or(false)
+                            })
+                        } else {
+                            true
+                        }
+                    });
+                }
+            }
+        }
+    }
+
+    let settings_str = serde_json::to_string_pretty(&settings)
+        .map_err(|e| format!("Failed to serialize settings: {}", e))?;
+
+    fs::write(&settings_path, settings_str)
+        .map_err(|e| format!("Failed to write settings: {}", e))
+}
+
+/// Runs the command-guard.py script with the given arguments
+#[tauri::command]
+pub async fn run_cguard_cli(args: Vec<String>) -> Result<String, String> {
+    let home = dirs::home_dir()
+        .ok_or_else(|| "Could not find home directory".to_string())?;
+    let guard_script = home.join(".claude").join("hooks").join("command-guard.py");
+
+    let output = std::process::Command::new("python")
+        .arg(guard_script.to_string_lossy().to_string())
+        .args(&args)
+        .output()
+        .or_else(|_| {
+            std::process::Command::new("python3")
+                .arg(home.join(".claude").join("hooks").join("command-guard.py").to_string_lossy().to_string())
+                .args(&args)
+                .output()
+        });
+
+    match output {
+        Ok(output) => {
+            let stdout = String::from_utf8_lossy(&output.stdout);
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            Ok(format!("{}{}", stdout, stderr))
+        }
+        Err(_) => Err("Python not found".to_string()),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

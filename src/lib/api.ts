@@ -188,6 +188,20 @@ export interface AgentRunWithMetrics {
   output?: string; // Real-time JSONL content
 }
 
+export interface NativeAgent {
+  name: string;
+  path: string;
+  description: string;
+  model: string | null;
+  raw_content: string;
+}
+
+export interface SkillInfo {
+  name: string;
+  path: string;
+  description: string;
+}
+
 // Usage Dashboard types
 export interface UsageEntry {
   project: string;
@@ -2006,6 +2020,145 @@ export const api = {
       return await apiCall<string>("slash_command_delete", { commandId, projectPath });
     } catch (error) {
       console.error("Failed to delete slash command:", error);
+      throw error;
+    }
+  },
+
+  // Native Agent API methods
+
+  /**
+   * Lists all native agents from ~/.claude/agents/
+   * @returns Promise resolving to array of native agents
+   */
+  async listNativeAgents(): Promise<NativeAgent[]> {
+    try {
+      return await apiCall<NativeAgent[]>("list_native_agents");
+    } catch (error) {
+      console.error("Failed to list native agents:", error);
+      throw error;
+    }
+  },
+
+  /**
+   * Reads a single native agent by path
+   * @param path - The path to the agent file
+   * @returns Promise resolving to the native agent
+   */
+  async readNativeAgent(path: string): Promise<NativeAgent> {
+    try {
+      return await apiCall<NativeAgent>("read_native_agent", { path });
+    } catch (error) {
+      console.error("Failed to read native agent:", error);
+      throw error;
+    }
+  },
+
+  /**
+   * Writes a new native agent to disk
+   * @param name - The agent name (becomes filename without extension)
+   * @param content - The markdown content of the agent
+   * @returns Promise resolving to the path of the created agent
+   */
+  async writeNativeAgent(name: string, content: string): Promise<string> {
+    try {
+      return await apiCall<string>("write_native_agent", { name, content });
+    } catch (error) {
+      console.error("Failed to write native agent:", error);
+      throw error;
+    }
+  },
+
+  /**
+   * Deletes a native agent file
+   * @param path - The path to the agent file to delete
+   * @returns Promise resolving when the agent is deleted
+   */
+  async deleteNativeAgent(path: string): Promise<void> {
+    try {
+      return await apiCall<void>("delete_native_agent", { path });
+    } catch (error) {
+      console.error("Failed to delete native agent:", error);
+      throw error;
+    }
+  },
+
+  /**
+   * Lists all available skills
+   * @returns Promise resolving to array of skill info
+   */
+  async listSkills(): Promise<SkillInfo[]> {
+    try {
+      return await apiCall<SkillInfo[]>("list_skills");
+    } catch (error) {
+      console.error("Failed to list skills:", error);
+      throw error;
+    }
+  },
+
+  /**
+   * Gets global settings
+   * @returns Promise resolving to global settings object
+   */
+  async getGlobalSettings(): Promise<Record<string, any>> {
+    try {
+      return await apiCall<Record<string, any>>("get_global_settings");
+    } catch (error) {
+      console.error("Failed to get global settings:", error);
+      throw error;
+    }
+  },
+
+  /**
+   * Reads the commands.conf file
+   * @returns Promise resolving to the file content
+   */
+  async readCommandsConf(): Promise<string> {
+    try {
+      return await apiCall<string>("read_commands_conf");
+    } catch (error) {
+      console.error("Failed to read commands.conf:", error);
+      throw error;
+    }
+  },
+
+  /**
+   * Writes and verifies the commands.conf file
+   * @param content - The content to write
+   * @returns Promise resolving to the path of the written file
+   */
+  async writeAndVerifyCommandsConf(content: string): Promise<string> {
+    try {
+      return await apiCall<string>("write_and_verify_commands_conf", { content });
+    } catch (error) {
+      console.error("Failed to write and verify commands.conf:", error);
+      throw error;
+    }
+  },
+
+  /**
+   * Sets whether c-guard is enabled
+   * @param enabled - Whether c-guard should be enabled
+   * @returns Promise resolving when the setting is saved
+   */
+  async setCguardEnabled(enabled: boolean): Promise<void> {
+    try {
+      return await apiCall<void>("set_cguard_enabled", { enabled });
+    } catch (error) {
+      console.error("Failed to set c-guard enabled:", error);
+      throw error;
+    }
+  },
+
+  /**
+   * Runs the c-guard CLI
+   * @param args - Command line arguments to pass to c-guard
+   * @returns Promise resolving to the command output
+   */
+  async runCguardCli(args: string[]): Promise<string> {
+    try {
+      return await apiCall<string>("run_cguard_cli", { args });
+    } catch (error) {
+      console.error("Failed to run c-guard CLI:", error);
       throw error;
     }
   },
