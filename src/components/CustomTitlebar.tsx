@@ -3,7 +3,7 @@ import { motion } from 'framer-motion';
 import { Settings, Minus, Square, X, Bot, BarChart3, FileText, Network, MoreVertical, Maximize2, PanelLeft, FolderOpen } from 'lucide-react';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { getVersion } from '@tauri-apps/api/app';
-import { TooltipProvider, TooltipSimple } from '@/components/ui/tooltip-modern';
+import { TooltipSimple } from '@/components/ui/tooltip-modern';
 
 const isWindows = navigator.userAgent.toLowerCase().includes('windows');
 
@@ -105,7 +105,6 @@ export const CustomTitlebar: React.FC<CustomTitlebarProps> = ({
   };
 
   return (
-    <TooltipProvider>
     <div
       className="relative z-[200] h-11 bg-background/95 backdrop-blur-sm flex items-center justify-between select-none border-b border-border/50 tauri-drag"
       data-tauri-drag-region
@@ -349,6 +348,5 @@ export const CustomTitlebar: React.FC<CustomTitlebarProps> = ({
         )}
       </div>
     </div>
-    </TooltipProvider>
   );
 };
