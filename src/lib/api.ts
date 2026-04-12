@@ -484,6 +484,22 @@ export interface WorktreeInfo {
   is_main: boolean;
 }
 
+export interface ClaudeEntry {
+  name: string;
+  path: string;
+  is_dir: boolean;
+  size: number;
+  modified: string;
+}
+
+export interface SessionLogEntry {
+  session_id: string;
+  project_path: string;
+  file_path: string;
+  modified: string;
+  size: number;
+}
+
 /**
  * API client for interacting with the Rust backend
  */
@@ -2159,6 +2175,33 @@ export const api = {
       return await apiCall<string>("run_cguard_cli", { args });
     } catch (error) {
       console.error("Failed to run c-guard CLI:", error);
+      throw error;
+    }
+  },
+
+  async listClaudeDirectory(subpath: string): Promise<ClaudeEntry[]> {
+    try {
+      return await apiCall<ClaudeEntry[]>("list_claude_directory", { subpath });
+    } catch (error) {
+      console.error("Failed to list Claude directory:", error);
+      throw error;
+    }
+  },
+
+  async readClaudeFile(subpath: string): Promise<string> {
+    try {
+      return await apiCall<string>("read_claude_file", { subpath });
+    } catch (error) {
+      console.error("Failed to read Claude file:", error);
+      throw error;
+    }
+  },
+
+  async listSessionLogs(): Promise<SessionLogEntry[]> {
+    try {
+      return await apiCall<SessionLogEntry[]>("list_session_logs");
+    } catch (error) {
+      console.error("Failed to list session logs:", error);
       throw error;
     }
   },

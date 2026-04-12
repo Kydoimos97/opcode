@@ -1,4 +1,5 @@
 use anyhow::{Context, Result};
+use chrono::DateTime;
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::io::{BufRead, BufReader};
@@ -126,6 +127,26 @@ pub struct FileEntry {
     pub size: u64,
     /// File extension (if applicable)
     pub extension: Option<String>,
+}
+
+/// Represents an entry in the .claude directory
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ClaudeEntry {
+    pub name: String,
+    pub path: String,
+    pub is_dir: bool,
+    pub size: u64,
+    pub modified: String,
+}
+
+/// Represents a session log entry
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SessionLogEntry {
+    pub session_id: String,
+    pub project_path: String,
+    pub file_path: String,
+    pub modified: String,
+    pub size: u64,
 }
 
 /// Finds the full path to the claude binary
@@ -2938,4 +2959,175 @@ mod tests {
         let path = result.unwrap();
         assert!(path == "/path1" || path == "/path2");
     }
+}
+
+#[tauri::command]
+pub async fn list_claude_directory(subpath: String) -> Result<Vec<ClaudeEntry>, String> {
+    tokio::task::spawn_blocking(move || {
+        let home = dirs::home_dir().ok_or("Could not find home directory")?;
+        let mut claude_path = home.join(".claude");
+
+        if !subpath.is_empty() {
+            claude_path = claude_path.join(&subpath);
+        }
+
+        if !claude_path.exists() {
+            return Err(format!("Directory does not exist: {}", subpath));
+        }
+
+        let entries = fs::read_dir(&claude_path)
+            .map_err(|e| format!("Failed to read directory: {}", e))?;
+
+        let mut dirs = Vec::new();
+        let mut files = Vec::new();
+
+        for entry in entries {
+            let entry = entry.map_err(|e| format!("Failed to read entry: {}", e))?;
+            let path = entry.path();
+            let metadata = entry.metadata()
+                .map_err(|e| format!("Failed to get metadata: {}", e))?;
+
+            let name = entry.file_name().into_string()
+                .unwrap_or_default();
+
+            let entry_path = if subpath.is_empty() {
+                name.clone()
+            } else {
+                format!("{}/{}", subpath, name)
+            };
+
+            let modified = metadata.modified()
+                .ok()
+                .and_then(|time| time.duration_since(UNIX_EPOCH).ok())
+                .map(|d| {
+                    let datetime = std::time::UNIX_EPOCH + d;
+                    let datetime: chrono::DateTime<chrono::Utc> = datetime.into();
+                    datetime.to_rfc3339()
+                })
+                .unwrap_or_default();
+
+            let claude_entry = ClaudeEntry {
+                name,
+                path: entry_path,
+                is_dir: path.is_dir(),
+                size: if path.is_dir() { 0 } else { metadata.len() },
+                modified,
+            };
+
+            if path.is_dir() {
+                dirs.push(claude_entry);
+            } else {
+                files.push(claude_entry);
+            }
+        }
+
+        dirs.sort_by(|a, b| a.name.cmp(&b.name));
+        files.sort_by(|a, b| a.name.cmp(&b.name));
+
+        dirs.extend(files);
+        Ok(dirs)
+    })
+    .await
+    .map_err(|e| format!("Task failed: {}", e))?
+}
+
+#[tauri::command]
+pub async fn read_claude_file(subpath: String) -> Result<String, String> {
+    tokio::task::spawn_blocking(move || {
+        let home = dirs::home_dir().ok_or("Could not find home directory")?;
+        let file_path = home.join(".claude").join(&subpath);
+
+        let metadata = fs::metadata(&file_path)
+            .map_err(|e| format!("Failed to get file metadata: {}", e))?;
+
+        if metadata.len() > 1_000_000 {
+            return Err("File is too large (max 1MB)".to_string());
+        }
+
+        fs::read_to_string(&file_path)
+            .map_err(|e| format!("Failed to read file: {}", e))
+    })
+    .await
+    .map_err(|e| format!("Task failed: {}", e))?
+}
+
+#[tauri::command]
+pub async fn list_session_logs() -> Result<Vec<SessionLogEntry>, String> {
+    tokio::task::spawn_blocking(|| {
+        let home = dirs::home_dir().ok_or("Could not find home directory")?;
+        let projects_dir = home.join(".claude").join("projects");
+
+        if !projects_dir.exists() {
+            return Ok(Vec::new());
+        }
+
+        let mut entries = Vec::new();
+
+        let projects = fs::read_dir(&projects_dir)
+            .map_err(|e| format!("Failed to read projects directory: {}", e))?;
+
+        for project_entry in projects {
+            let project_entry = project_entry.map_err(|e| format!("Failed to read entry: {}", e))?;
+            let project_path = project_entry.path();
+
+            if !project_path.is_dir() {
+                continue;
+            }
+
+            let encoded_name = project_entry.file_name().into_string()
+                .unwrap_or_default();
+            let decoded_path = encoded_name.replace("-", "/");
+
+            let session_files = match fs::read_dir(&project_path) {
+                Ok(files) => files,
+                Err(_) => continue,
+            };
+
+            for session_entry in session_files {
+                if let Ok(session_entry) = session_entry {
+                    let session_path = session_entry.path();
+
+                    if !session_path.is_file() {
+                        continue;
+                    }
+
+                    if let Some(Some("jsonl")) = session_path.extension().and_then(|e| e.to_str()).map(|s| Some(s)) {
+                        let session_id = session_path.file_stem()
+                            .and_then(|s| s.to_str())
+                            .unwrap_or("")
+                            .to_string();
+
+                        if let Ok(metadata) = session_path.metadata() {
+                            let modified = metadata.modified()
+                                .ok()
+                                .and_then(|time| time.duration_since(UNIX_EPOCH).ok())
+                                .map(|d| {
+                                    let datetime = std::time::UNIX_EPOCH + d;
+                                    let datetime: chrono::DateTime<chrono::Utc> = datetime.into();
+                                    datetime.to_rfc3339()
+                                })
+                                .unwrap_or_default();
+
+                            let file_path = format!("projects/{}/{}.jsonl", encoded_name, session_id);
+
+                            entries.push(SessionLogEntry {
+                                session_id,
+                                project_path: decoded_path.clone(),
+                                file_path,
+                                modified,
+                                size: metadata.len(),
+                            });
+                        }
+                    }
+                }
+            }
+        }
+
+        entries.sort_by(|a, b| b.modified.cmp(&a.modified));
+        entries.truncate(200);
+
+        Ok(entries)
+    })
+    .await
+    .map_err(|e| format!("Task failed: {}", e))?
 }

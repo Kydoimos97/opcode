@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { ChevronRight, ChevronDown } from "lucide-react";
+import { ChevronRight, ChevronDown, ShieldAlert } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { cn } from "@/lib/utils";
 import { StreamMessage } from "./StreamMessage";
@@ -11,6 +11,20 @@ interface WorkBlockProps {
   isComplete: boolean;
   onLinkDetected?: (url: string) => void;
   className?: string;
+}
+
+function isDenyResult(msg: ClaudeStreamMessage): boolean {
+  const content = msg.message?.content;
+  if (!Array.isArray(content)) return false;
+  return content.some((block: any) => {
+    if (block.type === 'tool_result') {
+      const text = typeof block.content === 'string'
+        ? block.content
+        : block.content?.map?.((c: any) => c.text).join('') ?? '';
+      return /\[DENY\]|BLOCKED/i.test(text);
+    }
+    return false;
+  });
 }
 
 export const WorkBlock: React.FC<WorkBlockProps> = ({
@@ -70,14 +84,24 @@ export const WorkBlock: React.FC<WorkBlockProps> = ({
             style={{ overflow: "hidden" }}
           >
             <div className="mt-1 border-l-2 border-border/50 pl-3 space-y-1">
-              {items.map((item, idx) => (
-                <StreamMessage
-                  key={idx}
-                  message={item}
-                  streamMessages={streamMessages}
-                  onLinkDetected={onLinkDetected}
-                />
-              ))}
+              {items.map((item, idx) =>
+                isDenyResult(item) ? (
+                  <div
+                    key={idx}
+                    className="flex items-center gap-2 px-3 py-2 text-sm text-amber-500 border border-amber-500/30 rounded-md bg-amber-500/5"
+                  >
+                    <ShieldAlert size={14} className="flex-shrink-0" />
+                    <span>Blocked by policy</span>
+                  </div>
+                ) : (
+                  <StreamMessage
+                    key={idx}
+                    message={item}
+                    streamMessages={streamMessages}
+                    onLinkDetected={onLinkDetected}
+                  />
+                )
+              )}
             </div>
           </motion.div>
         )}

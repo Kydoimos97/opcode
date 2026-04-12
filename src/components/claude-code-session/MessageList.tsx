@@ -9,6 +9,13 @@ import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { useGroupedMessages } from '@/hooks/useGroupedMessages';
 import type { ClaudeStreamMessage } from '../AgentExecution';
+import {
+  ContextMenu,
+  ContextMenuTrigger,
+  ContextMenuContent,
+  ContextMenuItem,
+  ContextMenuSeparator,
+} from '@/components/ui/context-menu';
 
 interface MessageListProps {
   messages: ClaudeStreamMessage[];
@@ -23,6 +30,15 @@ type RenderItem =
   | { kind: "work"; items: ClaudeStreamMessage[]; isComplete: boolean; turnId: string }
   | { kind: "response"; message: ClaudeStreamMessage; turnId: string }
   | { kind: "standalone"; message: ClaudeStreamMessage; index: number };
+
+function extractTextContent(message: ClaudeStreamMessage): string {
+  const content = message.message?.content;
+  if (!Array.isArray(content)) return '';
+  return content
+    .filter((c: any) => c.type === 'text')
+    .map((c: any) => typeof c.text === 'string' ? c.text : c.text?.text ?? '')
+    .join('\n\n');
+}
 
 export const MessageList: React.FC<MessageListProps> = React.memo(({
   messages,
@@ -137,31 +153,52 @@ export const MessageList: React.FC<MessageListProps> = React.memo(({
             const item = renderItems[virtualItem.index];
             const key = `${item.kind}-${item.kind === "standalone" ? item.index : (item.kind === "user" || item.kind === "response" || item.kind === "work" ? item.turnId : "")}`;
 
+            const handleCopyText = (message: ClaudeStreamMessage) => {
+              const text = extractTextContent(message);
+              if (text) {
+                navigator.clipboard.writeText(text);
+              }
+            };
+
+            const handleCopyAsMarkdown = (message: ClaudeStreamMessage, kind: string) => {
+              const text = extractTextContent(message);
+              let markdown = text;
+              if (kind === "user") {
+                markdown = `**User:**\n${text}`;
+              } else if (kind === "response") {
+                markdown = `**Claude:**\n${text}`;
+              } else {
+                markdown = `\`\`\`\n${text}\n\`\`\``;
+              }
+              navigator.clipboard.writeText(markdown);
+            };
+
             return (
-              <motion.div
-                key={key}
-                initial={{ opacity: 0, y: 10 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, scale: 0.95 }}
-                transition={{ duration: 0.2 }}
-                style={{
-                  position: 'absolute',
-                  top: 0,
-                  left: 0,
-                  width: '100%',
-                  transform: `translateY(${virtualItem.start}px)`,
-                }}
-              >
-                <div className="px-4 py-2">
-                  {item.kind === "user" && (
-                    <div className="border-l-2 border-primary/30 pl-2">
-                      <StreamMessage
-                        message={item.message}
-                        streamMessages={messages}
-                        onLinkDetected={onLinkDetected}
-                      />
-                    </div>
-                  )}
+              <ContextMenu key={key}>
+                <ContextMenuTrigger asChild>
+                  <motion.div
+                    initial={{ opacity: 0, y: 10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, scale: 0.95 }}
+                    transition={{ duration: 0.2 }}
+                    style={{
+                      position: 'absolute',
+                      top: 0,
+                      left: 0,
+                      width: '100%',
+                      transform: `translateY(${virtualItem.start}px)`,
+                    }}
+                  >
+                    <div className="px-4 py-2">
+                      {item.kind === "user" && (
+                        <div className="border-l-2 border-primary/30 pl-2">
+                          <StreamMessage
+                            message={item.message}
+                            streamMessages={messages}
+                            onLinkDetected={onLinkDetected}
+                          />
+                        </div>
+                      )}
                   {item.kind === "work" && (
                     <WorkBlock
                       items={item.items}
@@ -195,7 +232,35 @@ export const MessageList: React.FC<MessageListProps> = React.memo(({
                     />
                   )}
                 </div>
-              </motion.div>
+                  </motion.div>
+                </ContextMenuTrigger>
+                <ContextMenuContent>
+                  {(item.kind === "user" || item.kind === "response" || item.kind === "standalone") && (
+                    <>
+                      <ContextMenuItem onClick={() => handleCopyText(item.message)}>
+                        Copy text
+                      </ContextMenuItem>
+                      <ContextMenuSeparator />
+                      <ContextMenuItem onClick={() => handleCopyAsMarkdown(item.message, item.kind)}>
+                        Copy as Markdown
+                      </ContextMenuItem>
+                    </>
+                  )}
+                  {item.kind === "work" && (
+                    <ContextMenuItem onClick={() => {
+                      const allText = item.items
+                        .map(msg => extractTextContent(msg))
+                        .filter(text => text.length > 0)
+                        .join('\n\n');
+                      if (allText) {
+                        navigator.clipboard.writeText(allText);
+                      }
+                    }}>
+                      Copy text
+                    </ContextMenuItem>
+                  )}
+                </ContextMenuContent>
+              </ContextMenu>
             );
           })}
         </AnimatePresence>

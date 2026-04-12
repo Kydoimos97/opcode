@@ -19,6 +19,8 @@ const UsageDashboard = lazy(() => import('@/components/UsageDashboard').then(m =
 const MCPManager = lazy(() => import('@/components/MCPManager').then(m => ({ default: m.MCPManager })));
 const Settings = lazy(() => import('@/components/Settings').then(m => ({ default: m.Settings })));
 const MarkdownEditor = lazy(() => import('@/components/MarkdownEditor').then(m => ({ default: m.MarkdownEditor })));
+const ClaudeExplorer = lazy(() => import('@/components/ClaudeExplorer').then(m => ({ default: m.ClaudeExplorer })));
+const SessionLogs = lazy(() => import('@/components/SessionLogs').then(m => ({ default: m.SessionLogs })));
 // const ClaudeFileEditor = lazy(() => import('@/components/ClaudeFileEditor').then(m => ({ default: m.ClaudeFileEditor })));
 
 // Import non-lazy components for projects view
@@ -357,13 +359,26 @@ const TabPanel: React.FC<TabPanelProps> = ({ tab, isActive }) => {
         );
       
       case 'import-agent':
-        // TODO: Implement import agent component
         return (
           <div className="h-full">
             <div className="p-4">Import agent functionality coming soon...</div>
           </div>
         );
-      
+
+      case 'claude-explorer':
+        return (
+          <div className="h-full">
+            <ClaudeExplorer />
+          </div>
+        );
+
+      case 'session-logs':
+        return (
+          <div className="h-full">
+            <SessionLogs />
+          </div>
+        );
+
       default:
         return (
           <div className="h-full">

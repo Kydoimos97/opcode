@@ -1,6 +1,7 @@
-import React from "react";
+import React, { useEffect, useState } from "react";
 import { ShieldCheck, ShieldOff, GitBranch } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { api } from "@/lib/api";
 import type { SessionState } from "./ClaudeCodeSession";
 
 interface SessionStatusBarProps {
@@ -11,7 +12,6 @@ interface SessionStatusBarProps {
   gitBranch: string | null;
   diffAdditions: number;
   diffDeletions: number;
-  cguardActive: boolean;
   sessionState: SessionState;
   className?: string;
 }
@@ -39,6 +39,16 @@ function getModelShort(model: string | null): string {
   return model.split("-").slice(-1)[0] ?? model;
 }
 
+function isCguardActive(settings: any): boolean {
+  const hooks = settings?.hooks?.PreToolUse;
+  if (!Array.isArray(hooks)) return false;
+  return hooks.some((h: any) =>
+    typeof h === 'string'
+      ? h.includes('hook-dispatcher')
+      : h?.command?.includes('hook-dispatcher') || h?.hooks?.some?.((inner: any) => inner?.command?.includes('hook-dispatcher'))
+  );
+}
+
 // Approximate context % — sonnet/opus both 200k limit
 const CONTEXT_LIMIT = 200_000;
 
@@ -50,10 +60,23 @@ export const SessionStatusBar: React.FC<SessionStatusBarProps> = ({
   gitBranch,
   diffAdditions,
   diffDeletions,
-  cguardActive,
   sessionState,
   className,
 }) => {
+  const [cguardActive, setCguardActive] = useState(false);
+
+  useEffect(() => {
+    const loadCguardStatus = async () => {
+      try {
+        const settings = await api.getGlobalSettings();
+        setCguardActive(isCguardActive(settings));
+      } catch (e) {
+        console.error('Failed to load c-guard status:', e);
+      }
+    };
+    loadCguardStatus();
+  }, []);
+
   const ctxPct = Math.min(100, Math.round((totalTokens / CONTEXT_LIMIT) * 100));
   const modelShort = getModelShort(model);
   const duration = formatDuration(sessionDurationMs);

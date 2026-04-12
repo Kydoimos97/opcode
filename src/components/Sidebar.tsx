@@ -1,8 +1,8 @@
 import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { ChevronDown, ChevronRight, PanelLeftClose } from 'lucide-react';
+import { ChevronDown, ChevronRight, PanelLeftClose, GitBranch } from 'lucide-react';
 import { useTabContext, type Tab } from '@/contexts/TabContext';
-import { api, type GitInfo } from '@/lib/api';
+import { api, type GitInfo, type WorktreeInfo } from '@/lib/api';
 import { cn } from '@/lib/utils';
 import { TooltipSimple } from '@/components/ui/tooltip-modern';
 
@@ -21,7 +21,9 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
   const { tabs, activeTabId, setActiveTab } = useTabContext();
   const [expandedRepos, setExpandedRepos] = useState<Set<string>>(new Set());
   const [gitInfoVersion, setGitInfoVersion] = useState(0);
+  const [worktreeVersion, setWorktreeVersion] = useState(0);
   const gitInfoCache = useRef<Map<string, GitInfo>>(new Map());
+  const worktreeCache = useRef<Map<string, WorktreeInfo[]>>(new Map());
 
   const chatTabs = useMemo(
     () => tabs.filter((tab) => tab.type === 'chat'),
@@ -48,13 +50,25 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
       }
 
       const group = groups.get(repoName)!;
-      group.ungroupedTabs.push(tab);
+      const worktrees = worktreeCache.current.get(path);
+
+      if (worktrees && worktrees.length > 0) {
+        const matchedWorktree = worktrees.find(w => w.path === path);
+        const branchKey = matchedWorktree?.branch || cached?.branch || 'Unknown';
+
+        if (!group.worktrees.has(branchKey)) {
+          group.worktrees.set(branchKey, []);
+        }
+        group.worktrees.get(branchKey)!.push(tab);
+      } else {
+        group.ungroupedTabs.push(tab);
+      }
     });
 
     return Array.from(groups.values());
-  // gitInfoVersion triggers re-group when cache is populated
+  // gitInfoVersion and worktreeVersion trigger re-group when caches are populated
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [chatTabs, gitInfoVersion]);
+  }, [chatTabs, gitInfoVersion, worktreeVersion]);
 
   // Auto-expand new repos when they appear
   useEffect(() => {
@@ -79,10 +93,25 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
     }
   };
 
+  const loadWorktrees = async (path: string) => {
+    if (worktreeCache.current.has(path)) {
+      return;
+    }
+
+    try {
+      const worktrees = await api.getWorktrees(path);
+      worktreeCache.current.set(path, worktrees);
+      setWorktreeVersion((v) => v + 1);
+    } catch (e) {
+      console.error(`Failed to get worktrees for ${path}:`, e);
+    }
+  };
+
   useEffect(() => {
     chatTabs.forEach((tab) => {
       if (tab.initialProjectPath) {
         loadGitInfo(tab.initialProjectPath);
+        loadWorktrees(tab.initialProjectPath);
       }
     });
   }, [chatTabs]);
@@ -166,27 +195,59 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
                     exit={{ opacity: 0, height: 0 }}
                     transition={{ duration: 0.2 }}
                   >
-                    {group.ungroupedTabs.map((tab) => (
-                      <button
-                        key={tab.id}
-                        onClick={() => setActiveTab(tab.id)}
-                        className={cn(
-                          'w-full px-4 py-2 text-left text-xs flex items-center gap-2 truncate transition-colors',
-                          'pl-8 hover:bg-accent/50',
-                          activeTabId === tab.id
-                            ? 'bg-accent text-accent-foreground'
-                            : 'text-foreground/70'
-                        )}
-                      >
-                        <div
+                    {group.worktrees.size > 0 ? (
+                      Array.from(group.worktrees.entries()).map(([branch, tabs]) => (
+                        <div key={branch}>
+                          <div className="px-4 py-1 pl-8 flex items-center gap-1 text-xs text-muted-foreground">
+                            <GitBranch size={12} className="flex-shrink-0" />
+                            <span className="truncate">{branch}</span>
+                          </div>
+                          {tabs.map((tab) => (
+                            <button
+                              key={tab.id}
+                              onClick={() => setActiveTab(tab.id)}
+                              className={cn(
+                                'w-full px-4 py-2 text-left text-xs flex items-center gap-2 truncate transition-colors',
+                                'pl-12 hover:bg-accent/50',
+                                activeTabId === tab.id
+                                  ? 'bg-accent text-accent-foreground'
+                                  : 'text-foreground/70'
+                              )}
+                            >
+                              <div
+                                className={cn(
+                                  'w-2 h-2 rounded-full flex-shrink-0',
+                                  getStatusDotColor(tab.status)
+                                )}
+                              />
+                              <span className="truncate">{tab.title}</span>
+                            </button>
+                          ))}
+                        </div>
+                      ))
+                    ) : (
+                      group.ungroupedTabs.map((tab) => (
+                        <button
+                          key={tab.id}
+                          onClick={() => setActiveTab(tab.id)}
                           className={cn(
-                            'w-2 h-2 rounded-full flex-shrink-0',
-                            getStatusDotColor(tab.status)
+                            'w-full px-4 py-2 text-left text-xs flex items-center gap-2 truncate transition-colors',
+                            'pl-8 hover:bg-accent/50',
+                            activeTabId === tab.id
+                              ? 'bg-accent text-accent-foreground'
+                              : 'text-foreground/70'
                           )}
-                        />
-                        <span className="truncate">{tab.title}</span>
-                      </button>
-                    ))}
+                        >
+                          <div
+                            className={cn(
+                              'w-2 h-2 rounded-full flex-shrink-0',
+                              getStatusDotColor(tab.status)
+                            )}
+                          />
+                          <span className="truncate">{tab.title}</span>
+                        </button>
+                      ))
+                    )}
                   </motion.div>
                 )}
               </AnimatePresence>

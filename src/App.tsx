@@ -50,7 +50,7 @@ type View =
 function AppContent() {
   const [view, setView] = useState<View>("tabs");
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  const { createClaudeMdTab, createSettingsTab, createUsageTab, createMCPTab, createAgentsTab } = useTabState();
+  const { createClaudeMdTab, createSettingsTab, createUsageTab, createMCPTab, createAgentsTab, createExplorerTab, createLogsTab } = useTabState();
   const [projects, setProjects] = useState<Project[]>([]);
   const [selectedProject, setSelectedProject] = useState<Project | null>(null);
   const [sessions, setSessions] = useState<Session[]>([]);
@@ -391,6 +391,8 @@ function AppContent() {
         onMCPClick={() => createMCPTab()}
         onSettingsClick={() => createSettingsTab()}
         onInfoClick={() => setShowNFO(true)}
+        onExplorerClick={() => createExplorerTab()}
+        onLogsClick={() => createLogsTab()}
       />
       
       {/* Topbar - Commented out since navigation moved to titlebar */}

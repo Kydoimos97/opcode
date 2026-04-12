@@ -32,6 +32,7 @@ use commands::claude::{
     save_system_prompt, search_files, set_cguard_enabled, track_checkpoint_message,
     track_session_messages, update_checkpoint_settings, update_hooks_config, validate_hook_command,
     write_and_verify_commands_conf, write_native_agent, ClaudeProcessState,
+    list_claude_directory, read_claude_file, list_session_logs,
 };
 use commands::mcp::{
     mcp_add, mcp_add_from_claude_desktop, mcp_add_json, mcp_get, mcp_get_server_status, mcp_list,
@@ -306,6 +307,10 @@ fn main() {
             write_and_verify_commands_conf,
             set_cguard_enabled,
             run_cguard_cli,
+            // .claude Explorer and Logs
+            list_claude_directory,
+            read_claude_file,
+            list_session_logs,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

@@ -63,6 +63,13 @@ import { open } from "@tauri-apps/plugin-shell";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Input } from "@/components/ui/input";
 import { motion, AnimatePresence } from "framer-motion";
+import {
+  ContextMenu,
+  ContextMenuTrigger,
+  ContextMenuContent,
+  ContextMenuItem,
+  ContextMenuSeparator,
+} from "@/components/ui/context-menu";
 
 /**
  * Widget for TodoWrite tool - displays a beautiful TODO list
@@ -627,15 +634,15 @@ export const GlobWidget: React.FC<{ pattern: string; result?: any }> = ({ patter
 /**
  * Widget for Bash tool
  */
-export const BashWidget: React.FC<{ 
-  command: string; 
+export const BashWidget: React.FC<{
+  command: string;
   description?: string;
   result?: any;
 }> = ({ command, description, result }) => {
   // Extract result content if available
   let resultContent = '';
   let isError = false;
-  
+
   if (result) {
     isError = result.is_error || false;
     if (typeof result.content === 'string') {
@@ -652,9 +659,23 @@ export const BashWidget: React.FC<{
       }
     }
   }
-  
+
+  const handleCopyCommand = () => {
+    navigator.clipboard.writeText(command);
+  };
+
+  const handleCopyOutput = () => {
+    navigator.clipboard.writeText(resultContent ?? '');
+  };
+
+  const handleCopyAll = () => {
+    navigator.clipboard.writeText(`Command: ${command}\n\nOutput:\n${resultContent ?? ''}`);
+  };
+
   return (
-    <div className="rounded-lg border bg-background overflow-hidden">
+    <ContextMenu>
+      <ContextMenuTrigger asChild>
+        <div className="rounded-lg border bg-background overflow-hidden">
       <div className="px-4 py-2 bg-muted/50 flex items-center gap-2 border-b">
         <Terminal className="h-3.5 w-3.5 text-green-500" />
         <span className="text-xs font-mono text-muted-foreground">Terminal</span>
@@ -676,20 +697,38 @@ export const BashWidget: React.FC<{
         <code className="text-xs font-mono text-green-400 block">
           $ {command}
         </code>
-        
+
         {/* Show result if available */}
         {result && (
           <div className={cn(
             "mt-3 p-3 rounded-md border text-xs font-mono whitespace-pre-wrap overflow-x-auto",
-            isError 
-              ? "border-red-500/20 bg-red-500/5 text-red-400" 
+            isError
+              ? "border-red-500/20 bg-red-500/5 text-red-400"
               : "border-green-500/20 bg-green-500/5 text-green-300"
           )}>
             {resultContent || (isError ? "Command failed" : "Command completed")}
           </div>
         )}
       </div>
-    </div>
+        </div>
+      </ContextMenuTrigger>
+      <ContextMenuContent>
+        <ContextMenuItem onClick={handleCopyCommand}>
+          Copy command
+        </ContextMenuItem>
+        {result && (
+          <>
+            <ContextMenuSeparator />
+            <ContextMenuItem onClick={handleCopyOutput}>
+              Copy output
+            </ContextMenuItem>
+            <ContextMenuItem onClick={handleCopyAll}>
+              Copy all
+            </ContextMenuItem>
+          </>
+        )}
+      </ContextMenuContent>
+    </ContextMenu>
   );
 };
 
@@ -1543,18 +1582,31 @@ export const CommandOutputWidget: React.FC<{
     return elements;
   };
 
+  const handleCopyOutput = () => {
+    navigator.clipboard.writeText(output ?? '');
+  };
+
   return (
-    <div className="rounded-lg border bg-background/50 overflow-hidden">
-      <div className="px-4 py-2 bg-muted/50 flex items-center gap-2">
-        <ChevronRight className="h-3 w-3 text-green-500" />
-        <span className="text-xs font-mono text-green-400">Output</span>
-      </div>
-      <div className="p-3">
-        <pre className="text-sm font-mono text-zinc-300 whitespace-pre-wrap">
-          {output ? parseAnsiToReact(output) : <span className="text-zinc-500 italic">No output</span>}
-        </pre>
-      </div>
-    </div>
+    <ContextMenu>
+      <ContextMenuTrigger asChild>
+        <div className="rounded-lg border bg-background/50 overflow-hidden">
+          <div className="px-4 py-2 bg-muted/50 flex items-center gap-2">
+            <ChevronRight className="h-3 w-3 text-green-500" />
+            <span className="text-xs font-mono text-green-400">Output</span>
+          </div>
+          <div className="p-3">
+            <pre className="text-sm font-mono text-zinc-300 whitespace-pre-wrap">
+              {output ? parseAnsiToReact(output) : <span className="text-zinc-500 italic">No output</span>}
+            </pre>
+          </div>
+        </div>
+      </ContextMenuTrigger>
+      <ContextMenuContent>
+        <ContextMenuItem onClick={handleCopyOutput}>
+          Copy output
+        </ContextMenuItem>
+      </ContextMenuContent>
+    </ContextMenu>
   );
 };
 

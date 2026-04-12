@@ -4,6 +4,7 @@ import { X, Volume2, VolumeX, Github } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { openUrl } from "@tauri-apps/plugin-opener";
+import { getVersion } from "@tauri-apps/api/app";
 import asteriskLogo from "@/assets/nfo/asterisk-logo.png";
 import keygennMusic from "@/assets/nfo/opcode-nfo.ogg";
 
@@ -26,18 +27,21 @@ export const NFOCredits: React.FC<NFOCreditsProps> = ({ onClose }) => {
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const [isMuted, setIsMuted] = useState(false);
   const [scrollPosition, setScrollPosition] = useState(0);
+  const [appVersion, setAppVersion] = useState<string>('0.2.1');
   
-  // Initialize and autoplay audio muted then unmute
+  useEffect(() => {
+    getVersion()
+      .then(v => setAppVersion(v))
+      .catch(() => {});
+  }, []);
+
   useEffect(() => {
     const audio = new Audio(keygennMusic);
     audio.loop = true;
     audio.volume = 0.7;
-    // Start muted to satisfy autoplay policy
     audio.muted = true;
     audioRef.current = audio;
-    // Attempt to play
     audio.play().then(() => {
-      // Unmute after autoplay
       audio.muted = false;
     }).catch(err => {
       console.error("Audio autoplay failed:", err);
@@ -82,9 +86,8 @@ export const NFOCredits: React.FC<NFOCreditsProps> = ({ onClose }) => {
     }
   }, [scrollPosition]);
   
-  // Credits content
   const creditsContent = [
-    { type: "header", text: "opcode v0.2.1" },
+    { type: "header", text: `opcode v${appVersion}` },
     { type: "subheader", text: "[ A STRATEGIC PROJECT BY ASTERISK ]" },
     { type: "spacer" },
     { type: "section", title: "━━━ CREDITS ━━━" },

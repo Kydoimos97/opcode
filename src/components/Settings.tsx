@@ -119,14 +119,40 @@ export const Settings: React.FC<SettingsProps> = ({
   const [cguardUsageOutput, setCguardUsageOutput] = useState("");
   const [cguardUsageLoading, setCguardUsageLoading] = useState(false);
 
+  const [sidebarDefaultOpen, setSidebarDefaultOpen] = useState(false);
+  const [statusBarVisible, setStatusBarVisible] = useState(true);
+  const [workBlockAutoExpand, setWorkBlockAutoExpand] = useState(false);
+  const [showStreamingIndicator, setShowStreamingIndicator] = useState(true);
+
+  useEffect(() => {
+    setSidebarDefaultOpen(localStorage.getItem('ui_pref:sidebar_default_open') === 'true');
+    setStatusBarVisible(localStorage.getItem('ui_pref:status_bar_visible') !== 'false');
+    setWorkBlockAutoExpand(localStorage.getItem('ui_pref:work_block_auto_expand') === 'true');
+    setShowStreamingIndicator(localStorage.getItem('ui_pref:show_streaming_indicator') !== 'false');
+  }, []);
+
+  useEffect(() => {
+    localStorage.setItem('ui_pref:sidebar_default_open', sidebarDefaultOpen.toString());
+  }, [sidebarDefaultOpen]);
+
+  useEffect(() => {
+    localStorage.setItem('ui_pref:status_bar_visible', statusBarVisible.toString());
+  }, [statusBarVisible]);
+
+  useEffect(() => {
+    localStorage.setItem('ui_pref:work_block_auto_expand', workBlockAutoExpand.toString());
+  }, [workBlockAutoExpand]);
+
+  useEffect(() => {
+    localStorage.setItem('ui_pref:show_streaming_indicator', showStreamingIndicator.toString());
+  }, [showStreamingIndicator]);
+
   // Load settings on mount
   useEffect(() => {
     loadSettings();
     loadClaudeBinaryPath();
     loadAnalyticsSettings();
-    // Load tab persistence setting
     setTabPersistenceEnabled(TabPersistenceService.isEnabled());
-    // Load startup intro setting (default to true if not set)
     (async () => {
       const pref = await api.getSetting('startup_intro_enabled');
       setStartupIntroEnabled(pref === null ? true : pref === 'true');
@@ -568,8 +594,9 @@ export const Settings: React.FC<SettingsProps> = ({
       ) : (
         <div className="flex-1 overflow-y-auto p-6">
           <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-            <TabsList className="grid grid-cols-11 w-full mb-6 h-auto p-1">
+            <TabsList className="grid grid-cols-12 w-full mb-6 h-auto p-1">
               <TabsTrigger value="general" className="py-2.5 px-3">General</TabsTrigger>
+              <TabsTrigger value="interface" className="py-2.5 px-3">Interface</TabsTrigger>
               <TabsTrigger value="permissions" className="py-2.5 px-3">Permissions</TabsTrigger>
               <TabsTrigger value="environment" className="py-2.5 px-3">Environment</TabsTrigger>
               <TabsTrigger value="advanced" className="py-2.5 px-3">Advanced</TabsTrigger>
@@ -949,7 +976,65 @@ export const Settings: React.FC<SettingsProps> = ({
                 </div>
               </Card>
             </TabsContent>
-            
+
+            {/* Interface Settings */}
+            <TabsContent value="interface" className="space-y-6 mt-6">
+              <Card className="p-6 space-y-6">
+                <div>
+                  <h3 className="text-heading-4 mb-4">Interface Settings</h3>
+                  <p className="text-body-small text-muted-foreground mb-6">
+                    Customize the appearance and behavior of the user interface
+                  </p>
+
+                  <div className="space-y-4">
+                    <div className="flex items-center justify-between py-2">
+                      <Label htmlFor="sidebar-default-open" className="text-label">
+                        Sidebar visible by default
+                      </Label>
+                      <Switch
+                        id="sidebar-default-open"
+                        checked={sidebarDefaultOpen}
+                        onCheckedChange={setSidebarDefaultOpen}
+                      />
+                    </div>
+
+                    <div className="flex items-center justify-between py-2">
+                      <Label htmlFor="status-bar-visible" className="text-label">
+                        Show session status bar
+                      </Label>
+                      <Switch
+                        id="status-bar-visible"
+                        checked={statusBarVisible}
+                        onCheckedChange={setStatusBarVisible}
+                      />
+                    </div>
+
+                    <div className="flex items-center justify-between py-2">
+                      <Label htmlFor="work-block-auto-expand" className="text-label">
+                        Auto-expand work blocks
+                      </Label>
+                      <Switch
+                        id="work-block-auto-expand"
+                        checked={workBlockAutoExpand}
+                        onCheckedChange={setWorkBlockAutoExpand}
+                      />
+                    </div>
+
+                    <div className="flex items-center justify-between py-2">
+                      <Label htmlFor="show-streaming-indicator" className="text-label">
+                        Show streaming indicator
+                      </Label>
+                      <Switch
+                        id="show-streaming-indicator"
+                        checked={showStreamingIndicator}
+                        onCheckedChange={setShowStreamingIndicator}
+                      />
+                    </div>
+                  </div>
+                </div>
+              </Card>
+            </TabsContent>
+
             {/* Permissions Settings */}
             <TabsContent value="permissions" className="space-y-6">
               <Card className="p-6">

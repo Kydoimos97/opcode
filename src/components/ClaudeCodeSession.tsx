@@ -158,7 +158,6 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
 
   // Status bar state
   const [diffStat, setDiffStat] = useState({ additions: 0, deletions: 0 });
-  const [cguardActive, setCguardActive] = useState(false);
   const [sessionDurationMs, setSessionDurationMs] = useState(0);
 
   const parentRef = useRef<HTMLDivElement>(null);
@@ -1265,11 +1264,6 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
     return () => clearInterval(interval);
   }, [projectPath]);
 
-  // Check c-guard status on mount
-  useEffect(() => {
-    // TODO: Check if api.getGlobalSettings is available; if not, just skip c-guard check
-    setCguardActive(false);
-  }, []);
 
   // Cleanup event listeners and track mount state
   useEffect(() => {
@@ -1660,7 +1654,6 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
             gitBranch={gitInfo?.branch ?? null}
             diffAdditions={diffStat.additions}
             diffDeletions={diffStat.deletions}
-            cguardActive={cguardActive}
             sessionState={sessionState}
             className="fixed bottom-24 left-0 right-0 z-40"
           />

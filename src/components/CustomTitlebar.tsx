@@ -1,7 +1,8 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { motion } from 'framer-motion';
-import { Settings, Minus, Square, X, Bot, BarChart3, FileText, Network, Info, MoreVertical, Maximize2, PanelLeft } from 'lucide-react';
+import { Settings, Minus, Square, X, Bot, BarChart3, FileText, Network, Info, MoreVertical, Maximize2, PanelLeft, FolderOpen } from 'lucide-react';
 import { getCurrentWindow } from '@tauri-apps/api/window';
+import { getVersion } from '@tauri-apps/api/app';
 import { TooltipProvider, TooltipSimple } from '@/components/ui/tooltip-modern';
 
 const isWindows = navigator.userAgent.toLowerCase().includes('windows');
@@ -14,6 +15,8 @@ interface CustomTitlebarProps {
   onMCPClick?: () => void;
   onInfoClick?: () => void;
   onSidebarToggle?: () => void;
+  onExplorerClick?: () => void;
+  onLogsClick?: () => void;
 }
 
 export const CustomTitlebar: React.FC<CustomTitlebarProps> = ({
@@ -23,11 +26,14 @@ export const CustomTitlebar: React.FC<CustomTitlebarProps> = ({
   onClaudeClick,
   onMCPClick,
   onInfoClick,
-  onSidebarToggle
+  onSidebarToggle,
+  onExplorerClick,
+  onLogsClick
 }) => {
   const [isHovered, setIsHovered] = useState(false);
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
   const [isMaximized, setIsMaximized] = useState(false);
+  const [appVersion, setAppVersion] = useState<string>('');
   const dropdownRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -39,6 +45,12 @@ export const CustomTitlebar: React.FC<CustomTitlebarProps> = ({
 
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  useEffect(() => {
+    getVersion()
+      .then(v => setAppVersion(v))
+      .catch(() => {});
   }, []);
 
   useEffect(() => {
@@ -105,7 +117,7 @@ export const CustomTitlebar: React.FC<CustomTitlebarProps> = ({
       {/* Left side */}
       <div className="flex items-center pl-5">
         {isWindows ? (
-          <span className="text-xs text-muted-foreground">opcode</span>
+          <span className="text-xs text-muted-foreground">opcode {appVersion && `v${appVersion}`}</span>
         ) : (
           <div className="flex items-center space-x-2">
             {/* macOS Traffic Light buttons */}
@@ -263,6 +275,32 @@ export const CustomTitlebar: React.FC<CustomTitlebarProps> = ({
                     >
                       <Network size={14} />
                       <span>MCP Servers</span>
+                    </button>
+                  )}
+
+                  {onExplorerClick && (
+                    <button
+                      onClick={() => {
+                        onExplorerClick();
+                        setIsDropdownOpen(false);
+                      }}
+                      className="w-full px-4 py-2 text-left text-sm hover:bg-accent hover:text-accent-foreground transition-colors flex items-center gap-3"
+                    >
+                      <FolderOpen size={14} />
+                      <span>.claude Explorer</span>
+                    </button>
+                  )}
+
+                  {onLogsClick && (
+                    <button
+                      onClick={() => {
+                        onLogsClick();
+                        setIsDropdownOpen(false);
+                      }}
+                      className="w-full px-4 py-2 text-left text-sm hover:bg-accent hover:text-accent-foreground transition-colors flex items-center gap-3"
+                    >
+                      <FileText size={14} />
+                      <span>Session Logs</span>
                     </button>
                   )}
 
