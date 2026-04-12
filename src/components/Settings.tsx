@@ -9,13 +9,24 @@ import {
   Check,
   RefreshCw,
   Code,
+  Settings2,
+  Layout,
+  SlidersHorizontal,
+  Zap,
+  Database,
+  Network,
+  Package,
+  Eye,
+  Shield,
+  Terminal,
+  Command,
+  ShieldCheck,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Card } from "@/components/ui/card";
-import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import {
   api,
   type ClaudeSettings,
@@ -23,7 +34,6 @@ import {
   type SkillInfo,
 } from "@/lib/api";
 import { cn } from "@/lib/utils";
-import { Toast, ToastContainer } from "@/components/ui/toast";
 import { ClaudeVersionSelector } from "./ClaudeVersionSelector";
 import { StorageTab } from "./StorageTab";
 import { HooksEditor } from "./HooksEditor";
@@ -54,6 +64,22 @@ interface EnvironmentVariable {
   value: string;
 }
 
+const NAV_ITEMS = [
+  { id: 'general', label: 'General', icon: Settings2 },
+  { id: 'interface', label: 'Interface', icon: Layout },
+  { id: 'permissions', label: 'Permissions', icon: Shield },
+  { id: 'environment', label: 'Environment', icon: Terminal },
+  { id: 'advanced', label: 'Advanced', icon: SlidersHorizontal },
+  { id: 'hooks', label: 'Hooks', icon: Zap },
+  { id: 'commands', label: 'Commands', icon: Command },
+  { id: 'storage', label: 'Storage', icon: Database },
+  { id: 'proxy', label: 'Proxy', icon: Network },
+  { id: 'skills', label: 'Skills', icon: Package },
+  { id: 'hooks-display', label: 'Hooks Display', icon: Eye },
+  { id: 'cguard', label: 'c-guard', icon: ShieldCheck },
+] as const;
+type SectionId = typeof NAV_ITEMS[number]['id'];
+
 /**
  * Comprehensive Settings UI for managing Claude Code settings
  * Provides a no-code interface for editing the settings.json file
@@ -65,7 +91,7 @@ export const Settings: React.FC<SettingsProps> = ({
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState("general");
+  const [activeSection, setActiveSection] = useState<SectionId>("general");
   const [currentBinaryPath, setCurrentBinaryPath] = useState<string | null>(null);
   const [selectedInstallation, setSelectedInstallation] = useState<ClaudeInstallation | null>(null);
   const [binaryPathChanged, setBinaryPathChanged] = useState(false);
@@ -401,7 +427,7 @@ export const Settings: React.FC<SettingsProps> = ({
         }, {} as Record<string, string>),
       };
 
-      await api.saveClaudeSettings(updatedSettings);
+      await api.saveClaudeSettings(updatedSettings as any);
       setSettings(updatedSettings);
 
       // Save Claude binary path if changed
@@ -520,83 +546,77 @@ export const Settings: React.FC<SettingsProps> = ({
   };
 
   return (
-    <div className={cn("h-full overflow-y-auto", className)}>
-      <div className="max-w-6xl mx-auto flex flex-col h-full">
-        {/* Header */}
-        <div className="p-6">
-          <div className="flex items-center justify-between">
-            <div>
-              <h1 className="text-heading-1">Settings</h1>
-              <p className="mt-1 text-body-small text-muted-foreground">
-                Configure Claude Code preferences
-              </p>
-            </div>
-            <motion.div
-              whileTap={{ scale: 0.97 }}
-              transition={{ duration: 0.15 }}
-            >
-              <Button
-                onClick={saveSettings}
-                disabled={saving || loading}
-                size="default"
-              >
-                {saving ? (
-                  <>
-                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                    Saving...
-                  </>
-                ) : (
-                  <>
-                    <Save className="mr-2 h-4 w-4" />
-                    Save Settings
-                  </>
+    <div className={cn("h-full overflow-hidden", className)}>
+      <div className="h-full flex flex-row">
+        {/* Left Panel - Navigation Sidebar */}
+        <div className="w-48 flex-shrink-0 border-r border-border/50 flex flex-col overflow-hidden bg-muted/20">
+          <div className="p-4 border-b border-border/50 flex-shrink-0">
+            <h2 className="text-base font-semibold">Settings</h2>
+            <p className="text-xs text-muted-foreground mt-0.5">Configure Claude Code</p>
+          </div>
+          <nav className="flex-1 overflow-y-auto py-2">
+            {NAV_ITEMS.map(item => (
+              <button
+                key={item.id}
+                onClick={() => setActiveSection(item.id)}
+                className={cn(
+                  "w-full px-4 py-2 text-left text-sm flex items-center gap-2 transition-colors",
+                  activeSection === item.id
+                    ? "bg-accent text-accent-foreground font-medium"
+                    : "text-muted-foreground hover:bg-accent/50 hover:text-foreground"
                 )}
-              </Button>
-            </motion.div>
+              >
+                <item.icon size={14} className="flex-shrink-0" />
+                {item.label}
+              </button>
+            ))}
+          </nav>
+          <div className="p-3 border-t border-border/50 flex-shrink-0">
+            <Button onClick={saveSettings} disabled={saving} className="w-full" size="sm">
+              {saving ? <Loader2 className="h-3 w-3 animate-spin mr-1" /> : <Save className="h-3 w-3 mr-1" />}
+              Save
+            </Button>
           </div>
         </div>
-      
-      {/* Error message */}
-      <AnimatePresence>
-        {error && (
-          <motion.div
-            initial={{ opacity: 0, y: 8 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -8 }}
-            transition={{ duration: 0.15 }}
-            className="mx-4 mt-4 p-3 rounded-lg bg-destructive/10 border border-destructive/50 flex items-center gap-2 text-body-small text-destructive"
-          >
-            <AlertCircle className="h-4 w-4" />
-            {error}
-          </motion.div>
-        )}
-      </AnimatePresence>
-      
-      {/* Content */}
-      {loading ? (
-        <div className="flex-1 flex items-center justify-center">
-          <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
-        </div>
-      ) : (
-        <div className="flex-1 overflow-y-auto p-6">
-          <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-            <TabsList className="grid grid-cols-12 w-full mb-6 h-auto p-1">
-              <TabsTrigger value="general" className="py-2.5 px-3">General</TabsTrigger>
-              <TabsTrigger value="interface" className="py-2.5 px-3">Interface</TabsTrigger>
-              <TabsTrigger value="permissions" className="py-2.5 px-3">Permissions</TabsTrigger>
-              <TabsTrigger value="environment" className="py-2.5 px-3">Environment</TabsTrigger>
-              <TabsTrigger value="advanced" className="py-2.5 px-3">Advanced</TabsTrigger>
-              <TabsTrigger value="hooks" className="py-2.5 px-3">Hooks</TabsTrigger>
-              <TabsTrigger value="commands" className="py-2.5 px-3">Commands</TabsTrigger>
-              <TabsTrigger value="storage" className="py-2.5 px-3">Storage</TabsTrigger>
-              <TabsTrigger value="proxy" className="py-2.5 px-3">Proxy</TabsTrigger>
-              <TabsTrigger value="skills" className="py-2.5 px-3">Skills</TabsTrigger>
-              <TabsTrigger value="global-hooks" className="py-2.5 px-3">Hooks Display</TabsTrigger>
-              <TabsTrigger value="cguard" className="py-2.5 px-3">c-guard</TabsTrigger>
-            </TabsList>
+
+        {/* Right Panel - Content Area */}
+        <div className="flex-1 overflow-y-auto p-6 flex flex-col">
+          {/* Error message */}
+          <AnimatePresence>
+            {error && (
+              <motion.div
+                initial={{ opacity: 0, y: 8 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -8 }}
+                transition={{ duration: 0.15 }}
+                className="mb-4 p-3 rounded-lg bg-destructive/10 border border-destructive/50 flex items-center gap-2 text-body-small text-destructive"
+              >
+                <AlertCircle className="h-4 w-4" />
+                {error}
+              </motion.div>
+            )}
+          </AnimatePresence>
+
+          {/* Content */}
+          {loading ? (
+            <div className="flex-1 flex items-center justify-center">
+              <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+            </div>
+          ) : (
+            <div className="flex-1 overflow-y-auto">
+              {/* Toast inline notification */}
+              {toast && (
+                <div className={cn("mb-4 p-3 rounded-md text-sm border",
+                  toast.type === 'error'
+                    ? "bg-destructive/10 text-destructive border-destructive/30"
+                    : "bg-green-500/10 text-green-600 border-green-500/30"
+                )}>
+                  {toast.message}
+                </div>
+              )}
             
-            {/* General Settings */}
-            <TabsContent value="general" className="space-y-6 mt-6">
+              {activeSection === 'general' && (
+              <div className="space-y-6">
               <Card className="p-6 space-y-6">
                 <div>
                   <h3 className="text-heading-4 mb-4">General Settings</h3>
@@ -915,10 +935,11 @@ export const Settings: React.FC<SettingsProps> = ({
                   </div>
                 </div>
               </Card>
-            </TabsContent>
+              </div>
+              )}
 
-            {/* Interface Settings */}
-            <TabsContent value="interface" className="space-y-6 mt-6">
+              {activeSection === 'interface' && (
+              <div className="space-y-6">
               <Card className="p-6 space-y-6">
                 <div>
                   <h3 className="text-heading-4 mb-4">Interface Settings</h3>
@@ -973,10 +994,11 @@ export const Settings: React.FC<SettingsProps> = ({
                   </div>
                 </div>
               </Card>
-            </TabsContent>
+              </div>
+              )}
 
-            {/* Permissions Settings */}
-            <TabsContent value="permissions" className="space-y-6">
+              {activeSection === 'permissions' && (
+              <div className="space-y-6">
               <Card className="p-6">
                 <div className="space-y-6">
                   <div>
@@ -1096,10 +1118,11 @@ export const Settings: React.FC<SettingsProps> = ({
                   </div>
                 </div>
               </Card>
-            </TabsContent>
-            
-            {/* Environment Variables */}
-            <TabsContent value="environment" className="space-y-6">
+              </div>
+              )}
+
+              {activeSection === 'environment' && (
+              <div className="space-y-6">
               <Card className="p-6">
                 <div className="space-y-6">
                   <div className="flex items-center justify-between">
@@ -1171,9 +1194,11 @@ export const Settings: React.FC<SettingsProps> = ({
                   </div>
                 </div>
               </Card>
-            </TabsContent>
-            {/* Advanced Settings */}
-            <TabsContent value="advanced" className="space-y-6">
+              </div>
+              )}
+
+              {activeSection === 'advanced' && (
+              <div className="space-y-6">
               <Card className="p-6">
                 <div className="space-y-6">
                   <div>
@@ -1209,10 +1234,11 @@ export const Settings: React.FC<SettingsProps> = ({
                   </div>
                 </div>
               </Card>
-            </TabsContent>
-            
-            {/* Hooks Settings */}
-            <TabsContent value="hooks" className="space-y-6">
+              </div>
+              )}
+
+              {activeSection === 'hooks' && (
+              <div className="space-y-6">
               <Card className="p-6">
                 <div className="space-y-4">
                   <div>
@@ -1224,7 +1250,7 @@ export const Settings: React.FC<SettingsProps> = ({
                   </div>
                   
                   <HooksEditor
-                    key={activeTab}
+                    key={activeSection}
                     scope="user"
                     className="border-0"
                     hideActions={true}
@@ -1235,22 +1261,25 @@ export const Settings: React.FC<SettingsProps> = ({
                   />
                 </div>
               </Card>
-            </TabsContent>
-            
-            {/* Commands Tab */}
-            <TabsContent value="commands">
+              </div>
+              )}
+
+              {activeSection === 'commands' && (
+              <div>
               <Card className="p-6">
                 <SlashCommandsManager className="p-0" />
               </Card>
-            </TabsContent>
-            
-            {/* Storage Tab */}
-            <TabsContent value="storage">
+              </div>
+              )}
+
+              {activeSection === 'storage' && (
+              <div>
               <StorageTab />
-            </TabsContent>
-            
-            {/* Proxy Settings */}
-            <TabsContent value="proxy">
+              </div>
+              )}
+
+              {activeSection === 'proxy' && (
+              <div>
               <Card className="p-6">
                 <ProxySettings
                   setToast={setToast}
@@ -1260,10 +1289,11 @@ export const Settings: React.FC<SettingsProps> = ({
                   }}
                 />
               </Card>
-            </TabsContent>
+              </div>
+              )}
 
-            {/* Skills Section */}
-            <TabsContent value="skills" className="space-y-6 mt-6">
+              {activeSection === 'skills' && (
+              <div className="space-y-6 mt-6">
               <Card className="p-6 space-y-4">
                 <div className="flex items-center justify-between">
                   <div>
@@ -1305,10 +1335,11 @@ export const Settings: React.FC<SettingsProps> = ({
                   </div>
                 )}
               </Card>
-            </TabsContent>
+              </div>
+              )}
 
-            {/* Hooks Display Section */}
-            <TabsContent value="global-hooks" className="space-y-6 mt-6">
+              {activeSection === 'hooks-display' && (
+              <div className="space-y-6 mt-6">
               <Card className="p-6 space-y-4">
                 <div className="flex items-center justify-between">
                   <div>
@@ -1344,10 +1375,11 @@ export const Settings: React.FC<SettingsProps> = ({
                   </pre>
                 )}
               </Card>
-            </TabsContent>
+              </div>
+              )}
 
-            {/* c-guard Section */}
-            <TabsContent value="cguard" className="space-y-6 mt-6">
+              {activeSection === 'cguard' && (
+              <div className="space-y-6 mt-6">
               {/* Enable Toggle */}
               <Card className="p-6 space-y-4">
                 <div className="flex items-center justify-between">
@@ -1528,25 +1560,12 @@ export const Settings: React.FC<SettingsProps> = ({
                   )}
                 </Card>
               </div>
-            </TabsContent>
-
-          </Tabs>
+              </div>
+              )}
+            </div>
+          )}
         </div>
-      )}
       </div>
-      
-      {/* Toast Notification */}
-      <ToastContainer>
-        {toast && (
-          <Toast
-            message={toast.message}
-            type={toast.type}
-            onDismiss={() => setToast(null)}
-          />
-        )}
-      </ToastContainer>
-      
-      
     </div>
   );
 }; 

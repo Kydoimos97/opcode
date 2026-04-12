@@ -2,6 +2,7 @@ import React, { useEffect, useState } from "react";
 import { ShieldCheck, ShieldOff, GitBranch } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { api } from "@/lib/api";
+import { TooltipSimple } from "@/components/ui/tooltip-modern";
 import type { SessionState } from "./ClaudeCodeSession";
 
 interface SessionStatusBarProps {
@@ -103,10 +104,10 @@ export const SessionStatusBar: React.FC<SessionStatusBarProps> = ({
     >
       {/* Tokens / context */}
       <span className={stateColor[sessionState]}>
-        {tokensStr}/{ctxPct}%
+        {tokensStr} tokens · ~{ctxPct}% ctx
       </span>
 
-      <span className="text-border/70">|</span>
+      <span className="text-border/70">·</span>
 
       {/* Model */}
       <span>
@@ -116,7 +117,7 @@ export const SessionStatusBar: React.FC<SessionStatusBarProps> = ({
       {/* Git info */}
       {gitRepoName && (
         <>
-          <span className="text-border/70">@</span>
+          <span className="text-border/70">·</span>
           <span className="flex items-center gap-1">
             <GitBranch className="h-3 w-3" />
             {gitRepoName}
@@ -125,32 +126,36 @@ export const SessionStatusBar: React.FC<SessionStatusBarProps> = ({
         </>
       )}
 
-      <span className="text-border/70">|</span>
-
       {/* Diff stat */}
       {(diffAdditions > 0 || diffDeletions > 0) && (
         <>
+          <span className="text-border/70">·</span>
           <span>
             <span className="text-green-400">+{diffAdditions}</span>
             <span className="text-muted-foreground">/</span>
             <span className="text-red-400">-{diffDeletions}</span>
           </span>
-          <span className="text-border/70">|</span>
         </>
       )}
 
+      <span className="text-border/70">·</span>
+
       {/* Duration */}
-      <span>Dur:{duration}</span>
+      <span>{duration}</span>
 
       {/* Spacer */}
       <span className="flex-1" />
 
       {/* c-guard indicator */}
-      {cguardActive ? (
-        <ShieldCheck className="h-3.5 w-3.5 text-green-400" />
-      ) : (
-        <ShieldOff className="h-3.5 w-3.5 opacity-30" />
-      )}
+      <TooltipSimple content={cguardActive ? "c-guard active" : "c-guard inactive"} side="top">
+        <span className="flex items-center">
+          {cguardActive ? (
+            <ShieldCheck className="h-3.5 w-3.5 text-green-400" />
+          ) : (
+            <ShieldOff className="h-3.5 w-3.5 opacity-30" />
+          )}
+        </span>
+      </TooltipSimple>
     </div>
   );
 };
