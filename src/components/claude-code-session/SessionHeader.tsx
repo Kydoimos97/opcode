@@ -14,6 +14,7 @@ import { Button } from '@/components/ui/button';
 import { Popover } from '@/components/ui/popover';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { Badge } from '@/components/ui/badge';
+import { TooltipSimple } from '@/components/ui/tooltip-modern';
 import { cn } from '@/lib/utils';
 
 interface SessionHeaderProps {
@@ -24,6 +25,7 @@ interface SessionHeaderProps {
   hasMessages: boolean;
   showTimeline: boolean;
   copyPopoverOpen: boolean;
+  gitInfo?: { repo_name: string; branch: string; is_git_repo: boolean } | null;
   onBack: () => void;
   onSelectPath: () => void;
   onCopyAsJsonl: () => void;
@@ -31,6 +33,7 @@ interface SessionHeaderProps {
   onToggleTimeline: () => void;
   onProjectSettings?: () => void;
   onSlashCommandsSettings?: () => void;
+  onOpenFolder?: () => void;
   setCopyPopoverOpen: (open: boolean) => void;
 }
 
@@ -42,6 +45,7 @@ export const SessionHeader: React.FC<SessionHeaderProps> = React.memo(({
   hasMessages,
   showTimeline,
   copyPopoverOpen,
+  gitInfo,
   onBack,
   onSelectPath,
   onCopyAsJsonl,
@@ -49,8 +53,20 @@ export const SessionHeader: React.FC<SessionHeaderProps> = React.memo(({
   onToggleTimeline,
   onProjectSettings,
   onSlashCommandsSettings,
+  onOpenFolder,
   setCopyPopoverOpen
 }) => {
+  const getSessionTitle = () => {
+    if (gitInfo?.is_git_repo) {
+      return `${gitInfo.repo_name}(${gitInfo.branch})`;
+    }
+    if (gitInfo) {
+      const lastSegment = projectPath.split(/[/\\]/).filter(Boolean).pop();
+      return lastSegment || "Claude Code Session";
+    }
+    return "Claude Code Session";
+  };
+
   return (
     <motion.div 
       initial={{ opacity: 0, y: -20 }}
@@ -70,10 +86,22 @@ export const SessionHeader: React.FC<SessionHeaderProps> = React.memo(({
           
           <div className="flex items-center gap-2">
             <Terminal className="h-5 w-5 text-primary" />
-            <span className="font-semibold">Claude Code Session</span>
+            <span className="font-semibold">{getSessionTitle()}</span>
           </div>
 
-          
+          {projectPath && onOpenFolder && (
+            <TooltipSimple content="Open folder" side="bottom">
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={onOpenFolder}
+                className="h-8 w-8"
+              >
+                <FolderOpen className="h-4 w-4" />
+              </Button>
+            </TooltipSimple>
+          )}
+
           {!projectPath && (
             <Button
               variant="outline"

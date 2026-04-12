@@ -13,16 +13,19 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Popover } from "@/components/ui/popover";
-import { api, type Session } from "@/lib/api";
+import { api, type Session, type GitInfo } from "@/lib/api";
 import { cn } from "@/lib/utils";
+import { SessionHeader } from "./claude-code-session/SessionHeader";
 
 // Conditional imports for Tauri APIs
 let tauriListen: any;
+let tauriOpen: any;
 type UnlistenFn = () => void;
 
 try {
   if (typeof window !== 'undefined' && window.__TAURI__) {
     tauriListen = require("@tauri-apps/api/event").listen;
+    tauriOpen = require("@tauri-apps/plugin-shell").open;
   }
 } catch (e) {
   console.log('[ClaudeCodeSession] Tauri APIs not available, using web mode');
@@ -53,6 +56,7 @@ import { ErrorBoundary } from "./ErrorBoundary";
 import { TimelineNavigator } from "./TimelineNavigator";
 import { CheckpointSettings } from "./CheckpointSettings";
 import { SlashCommandsManager } from "./SlashCommandsManager";
+import { ApprovalBanner } from "./ApprovalBanner";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { TooltipProvider, TooltipSimple } from "@/components/ui/tooltip-modern";
 import { SplitPane } from "@/components/ui/split-pane";
@@ -60,7 +64,17 @@ import { WebviewPreview } from "./WebviewPreview";
 import type { ClaudeStreamMessage } from "./AgentExecution";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { useTrackEvent, useComponentMetrics, useWorkflowTracking } from "@/hooks";
+import { useTabState } from "@/hooks/useTabState";
 import { SessionPersistenceService } from "@/services/sessionPersistence";
+
+export type SessionState =
+  | "idle"
+  | "running"
+  | "waiting_input"
+  | "waiting_approval"
+  | "waiting_elicitation"
+  | "done"
+  | "error";
 
 interface ClaudeCodeSessionProps {
   /**
@@ -123,7 +137,8 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
   const [showSlashCommandsSettings, setShowSlashCommandsSettings] = useState(false);
   const [forkCheckpointId, setForkCheckpointId] = useState<string | null>(null);
   const [forkSessionName, setForkSessionName] = useState("");
-  
+  const [gitInfo, setGitInfo] = useState<GitInfo | null>(null);
+
   // Queued prompts state
   const [queuedPrompts, setQueuedPrompts] = useState<Array<{ id: string; prompt: string; model: "sonnet" | "opus" }>>([]);
   
@@ -136,6 +151,9 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
   
   // Add collapsed state for queued prompts
   const [queuedPromptsCollapsed, setQueuedPromptsCollapsed] = useState(false);
+
+  // Session state tracking
+  const [sessionState, setSessionState] = useState<SessionState>("idle");
 
   const parentRef = useRef<HTMLDivElement>(null);
   const unlistenRefs = useRef<UnlistenFn[]>([]);
@@ -170,7 +188,10 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
   useComponentMetrics('ClaudeCodeSession');
   // const aiTracking = useAIInteractionTracking('sonnet'); // Default model
   const workflowTracking = useWorkflowTracking('claude_session');
-  
+
+  // Tab state management
+  const { activeTab, updateTabTitle } = useTabState();
+
   // Call onProjectPathChange when component mounts with initial path
   useEffect(() => {
     if (onProjectPathChange && projectPath) {
@@ -182,6 +203,36 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
   useEffect(() => {
     queuedPromptsRef.current = queuedPrompts;
   }, [queuedPrompts]);
+
+  // Fetch git info whenever project path changes
+  useEffect(() => {
+    if (projectPath) {
+      api.getGitInfo(projectPath)
+        .then(info => {
+          if (isMountedRef.current) {
+            setGitInfo(info);
+          }
+        })
+        .catch(err => {
+          console.error('[ClaudeCodeSession] Failed to fetch git info:', err);
+          if (isMountedRef.current) {
+            setGitInfo(null);
+          }
+        });
+    } else {
+      setGitInfo(null);
+    }
+  }, [projectPath]);
+
+  // Update tab title based on git info
+  useEffect(() => {
+    if (activeTab && activeTab.id && gitInfo) {
+      const tabTitle = gitInfo.is_git_repo
+        ? `${gitInfo.repo_name}(${gitInfo.branch})`
+        : projectPath;
+      updateTabTitle(activeTab.id, tabTitle);
+    }
+  }, [gitInfo, activeTab, updateTabTitle, projectPath]);
 
   // Get effective session info (from prop or extracted) - use useMemo to ensure it updates
   const effectiveSession = useMemo(() => {
@@ -508,6 +559,7 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
 
     try {
       setIsLoading(true);
+      setSessionState("running");
       setError(null);
       hasActiveSessionRef.current = true;
       
@@ -703,7 +755,25 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
           setIsLoading(false);
           hasActiveSessionRef.current = false;
           isListeningRef.current = false; // Reset listening state
-          
+
+          // Determine session state based on the last message
+          setMessages((prevMessages) => {
+            if (!success) {
+              setSessionState("error");
+            } else {
+              // Look for the last message to determine state
+              const lastMessage = prevMessages[prevMessages.length - 1];
+              if (lastMessage && lastMessage.type === "result") {
+                const isError = (lastMessage as any).is_error || false;
+                setSessionState(isError ? "error" : "done");
+              } else {
+                // No result message, Claude is waiting for input
+                setSessionState("waiting_input");
+              }
+            }
+            return prevMessages;
+          });
+
           // Track enhanced session stopped metrics when session completes
           if (effectiveSession && claudeSessionId) {
             const sessionStartTimeValue = messages.length > 0 ? messages[0].timestamp || Date.now() : Date.now();
@@ -1316,6 +1386,23 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
   return (
     <TooltipProvider>
       <div className={cn("flex flex-col h-full bg-background", className)}>
+        <SessionHeader
+          projectPath={projectPath}
+          claudeSessionId={claudeSessionId}
+          totalTokens={totalTokens}
+          isStreaming={isLoading}
+          hasMessages={messages.length > 0}
+          showTimeline={showTimeline}
+          copyPopoverOpen={copyPopoverOpen}
+          gitInfo={gitInfo}
+          onBack={() => {}}
+          onSelectPath={() => {}}
+          onCopyAsJsonl={() => {}}
+          onCopyAsMarkdown={() => {}}
+          onToggleTimeline={() => setShowTimeline(!showTimeline)}
+          onOpenFolder={projectPath && tauriOpen ? () => tauriOpen(projectPath) : undefined}
+          setCopyPopoverOpen={setCopyPopoverOpen}
+        />
         <div className="w-full h-full flex flex-col">
 
         {/* Main Content Area */}
@@ -1516,9 +1603,19 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
             </motion.div>
           )}
 
+          {(sessionState === "waiting_approval" || sessionState === "waiting_elicitation") && (
+            <ApprovalBanner
+              type={sessionState === "waiting_approval" ? "approval" : "elicitation"}
+              message={sessionState === "waiting_approval" ? "Approval needed" : "Input needed"}
+              onDismiss={() => setSessionState("waiting_input")}
+              className="fixed bottom-0 left-0 right-0 z-50"
+            />
+          )}
+
           <div className={cn(
             "fixed bottom-0 left-0 right-0 transition-all duration-300 z-50",
-            showTimeline && "sm:right-96"
+            showTimeline && "sm:right-96",
+            (sessionState === "waiting_approval" || sessionState === "waiting_elicitation") && "mt-[100px]"
           )}>
             <FloatingPromptInput
               ref={floatingPromptRef}
