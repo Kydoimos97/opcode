@@ -1,9 +1,13 @@
-import React, { useRef, useEffect } from 'react';
+import React, { useRef, useEffect, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { StreamMessage } from '../StreamMessage';
+import { WorkBlock } from '../WorkBlock';
 import { Terminal } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
+import { useGroupedMessages } from '@/hooks/useGroupedMessages';
 import type { ClaudeStreamMessage } from '../AgentExecution';
 
 interface MessageListProps {
@@ -13,6 +17,12 @@ interface MessageListProps {
   onLinkDetected?: (url: string) => void;
   className?: string;
 }
+
+type RenderItem =
+  | { kind: "user"; message: ClaudeStreamMessage; turnId: string }
+  | { kind: "work"; items: ClaudeStreamMessage[]; isComplete: boolean; turnId: string }
+  | { kind: "response"; message: ClaudeStreamMessage; turnId: string }
+  | { kind: "standalone"; message: ClaudeStreamMessage; index: number };
 
 export const MessageList: React.FC<MessageListProps> = React.memo(({
   messages,
@@ -25,9 +35,28 @@ export const MessageList: React.FC<MessageListProps> = React.memo(({
   const shouldAutoScrollRef = useRef(true);
   const userHasScrolledRef = useRef(false);
 
+  const { turns, standaloneMessages } = useGroupedMessages(messages);
+
+  const renderItems = useMemo(() => {
+    const items: RenderItem[] = [];
+    for (const turn of turns) {
+      items.push({ kind: "user", message: turn.userMessage, turnId: turn.id });
+      if (turn.workItems.length > 0) {
+        items.push({ kind: "work", items: turn.workItems, isComplete: turn.isComplete, turnId: turn.id });
+      }
+      if (turn.assistantResponse) {
+        items.push({ kind: "response", message: turn.assistantResponse, turnId: turn.id });
+      }
+    }
+    for (let i = 0; i < standaloneMessages.length; i++) {
+      items.push({ kind: "standalone", message: standaloneMessages[i], index: i });
+    }
+    return items;
+  }, [turns, standaloneMessages]);
+
   // Virtual scrolling setup
   const virtualizer = useVirtualizer({
-    count: messages.length,
+    count: renderItems.length,
     getScrollElement: () => scrollContainerRef.current,
     estimateSize: () => 100, // Estimated height of each message
     overscan: 5,
@@ -66,7 +95,7 @@ export const MessageList: React.FC<MessageListProps> = React.memo(({
     }
   }, [isStreaming]);
 
-  if (messages.length === 0) {
+  if (renderItems.length === 0) {
     return (
       <div className={cn("flex-1 flex items-center justify-center", className)}>
         <motion.div
@@ -80,7 +109,7 @@ export const MessageList: React.FC<MessageListProps> = React.memo(({
           <div>
             <h3 className="text-lg font-semibold mb-2">Ready to start coding</h3>
             <p className="text-sm text-muted-foreground">
-              {projectPath 
+              {projectPath
                 ? "Enter a prompt below to begin your Claude Code session"
                 : "Select a project folder to begin"}
             </p>
@@ -105,9 +134,9 @@ export const MessageList: React.FC<MessageListProps> = React.memo(({
       >
         <AnimatePresence mode="popLayout">
           {virtualizer.getVirtualItems().map((virtualItem) => {
-            const message = messages[virtualItem.index];
-            const key = `msg-${virtualItem.index}-${message.type}`;
-            
+            const item = renderItems[virtualItem.index];
+            const key = `${item.kind}-${item.kind === "standalone" ? item.index : (item.kind === "user" || item.kind === "response" || item.kind === "work" ? item.turnId : "")}`;
+
             return (
               <motion.div
                 key={key}
@@ -124,11 +153,47 @@ export const MessageList: React.FC<MessageListProps> = React.memo(({
                 }}
               >
                 <div className="px-4 py-2">
-                  <StreamMessage 
-                    message={message}
-                    streamMessages={messages}
-                    onLinkDetected={onLinkDetected}
-                  />
+                  {item.kind === "user" && (
+                    <div className="border-l-2 border-primary/30 pl-2">
+                      <StreamMessage
+                        message={item.message}
+                        streamMessages={messages}
+                        onLinkDetected={onLinkDetected}
+                      />
+                    </div>
+                  )}
+                  {item.kind === "work" && (
+                    <WorkBlock
+                      items={item.items}
+                      streamMessages={messages}
+                      isComplete={item.isComplete}
+                      onLinkDetected={onLinkDetected}
+                    />
+                  )}
+                  {item.kind === "response" && (() => {
+                    const textContent = (() => {
+                      const msg = item.message;
+                      const content = msg.message?.content;
+                      if (!Array.isArray(content)) return "";
+                      return content
+                        .filter((c: any) => c.type === "text")
+                        .map((c: any) => (typeof c.text === "string" ? c.text : c.text?.text ?? ""))
+                        .join("\n\n");
+                    })();
+
+                    return textContent ? (
+                      <div className="px-1 py-2 prose prose-sm dark:prose-invert max-w-none">
+                        <ReactMarkdown remarkPlugins={[remarkGfm]}>{textContent}</ReactMarkdown>
+                      </div>
+                    ) : null;
+                  })()}
+                  {item.kind === "standalone" && (
+                    <StreamMessage
+                      message={item.message}
+                      streamMessages={messages}
+                      onLinkDetected={onLinkDetected}
+                    />
+                  )}
                 </div>
               </motion.div>
             );
