@@ -16,6 +16,7 @@ import { Popover } from "@/components/ui/popover";
 import { api, type Session, type GitInfo } from "@/lib/api";
 import { cn } from "@/lib/utils";
 import { SessionHeader } from "./claude-code-session/SessionHeader";
+import { SessionStatusBar } from "./SessionStatusBar";
 
 // Conditional imports for Tauri APIs
 let tauriListen: any;
@@ -154,6 +155,11 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
 
   // Session state tracking
   const [sessionState, setSessionState] = useState<SessionState>("idle");
+
+  // Status bar state
+  const [diffStat, setDiffStat] = useState({ additions: 0, deletions: 0 });
+  const [cguardActive, setCguardActive] = useState(false);
+  const [sessionDurationMs, setSessionDurationMs] = useState(0);
 
   const parentRef = useRef<HTMLDivElement>(null);
   const unlistenRefs = useRef<UnlistenFn[]>([]);
@@ -1235,6 +1241,36 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
     }
   };
 
+  // Duration timer — update every 10 seconds while session is active
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setSessionDurationMs(Date.now() - sessionStartTime.current);
+    }, 10_000);
+    return () => clearInterval(interval);
+  }, []);
+
+  // Diff stat polling — fetch every 30s when projectPath is set
+  useEffect(() => {
+    if (!projectPath) return;
+    const fetchDiff = async () => {
+      try {
+        const stat = await api.getGitDiffStat(projectPath);
+        setDiffStat(stat);
+      } catch {
+        // ignore errors
+      }
+    };
+    fetchDiff();
+    const interval = setInterval(fetchDiff, 30_000);
+    return () => clearInterval(interval);
+  }, [projectPath]);
+
+  // Check c-guard status on mount
+  useEffect(() => {
+    // TODO: Check if api.getGlobalSettings is available; if not, just skip c-guard check
+    setCguardActive(false);
+  }, []);
+
   // Cleanup event listeners and track mount state
   useEffect(() => {
     isMountedRef.current = true;
@@ -1611,6 +1647,23 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
               className="fixed bottom-0 left-0 right-0 z-50"
             />
           )}
+
+          <SessionStatusBar
+            model={
+              sessionMetrics.current.modelChanges.length > 0
+                ? sessionMetrics.current.modelChanges[sessionMetrics.current.modelChanges.length - 1].to
+                : null
+            }
+            sessionDurationMs={sessionDurationMs}
+            totalTokens={totalTokens}
+            gitRepoName={gitInfo?.repo_name ?? null}
+            gitBranch={gitInfo?.branch ?? null}
+            diffAdditions={diffStat.additions}
+            diffDeletions={diffStat.deletions}
+            cguardActive={cguardActive}
+            sessionState={sessionState}
+            className="fixed bottom-24 left-0 right-0 z-40"
+          />
 
           <div className={cn(
             "fixed bottom-0 left-0 right-0 transition-all duration-300 z-50",
