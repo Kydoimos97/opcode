@@ -11,6 +11,7 @@ import { ProjectList } from "@/components/ProjectList";
 import { FilePicker } from "@/components/FilePicker";
 import { SessionList } from "@/components/SessionList";
 import { CustomTitlebar } from "@/components/CustomTitlebar";
+import { Sidebar } from "@/components/Sidebar";
 import { MarkdownEditor } from "@/components/MarkdownEditor";
 import { ClaudeFileEditor } from "@/components/ClaudeFileEditor";
 import { Settings } from "@/components/Settings";
@@ -48,6 +49,7 @@ type View =
  */
 function AppContent() {
   const [view, setView] = useState<View>("tabs");
+  const [sidebarOpen, setSidebarOpen] = useState(false);
   const { createClaudeMdTab, createSettingsTab, createUsageTab, createMCPTab, createAgentsTab } = useTabState();
   const [projects, setProjects] = useState<Project[]>([]);
   const [selectedProject, setSelectedProject] = useState<Project | null>(null);
@@ -340,8 +342,11 @@ function AppContent() {
         return (
           <div className="h-full flex flex-col">
             <TabManager className="flex-shrink-0" />
-            <div className="flex-1 overflow-hidden">
-              <TabContent />
+            <div className="flex-1 overflow-hidden flex flex-row">
+              <Sidebar isOpen={sidebarOpen} onClose={() => setSidebarOpen(false)} />
+              <div className="flex-1 overflow-hidden">
+                <TabContent />
+              </div>
             </div>
           </div>
         );
@@ -379,6 +384,7 @@ function AppContent() {
     <div className="h-screen flex flex-col">
       {/* Custom Titlebar */}
       <CustomTitlebar
+        onSidebarToggle={() => setSidebarOpen(v => !v)}
         onAgentsClick={() => createAgentsTab()}
         onUsageClick={() => createUsageTab()}
         onClaudeClick={() => createClaudeMdTab()}

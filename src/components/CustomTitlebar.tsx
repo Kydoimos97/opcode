@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { motion } from 'framer-motion';
-import { Settings, Minus, Square, X, Bot, BarChart3, FileText, Network, Info, MoreVertical, Maximize2 } from 'lucide-react';
+import { Settings, Minus, Square, X, Bot, BarChart3, FileText, Network, Info, MoreVertical, Maximize2, PanelLeft } from 'lucide-react';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { TooltipProvider, TooltipSimple } from '@/components/ui/tooltip-modern';
 
@@ -13,6 +13,7 @@ interface CustomTitlebarProps {
   onClaudeClick?: () => void;
   onMCPClick?: () => void;
   onInfoClick?: () => void;
+  onSidebarToggle?: () => void;
 }
 
 export const CustomTitlebar: React.FC<CustomTitlebarProps> = ({
@@ -21,7 +22,8 @@ export const CustomTitlebar: React.FC<CustomTitlebarProps> = ({
   onUsageClick,
   onClaudeClick,
   onMCPClick,
-  onInfoClick
+  onInfoClick,
+  onSidebarToggle
 }) => {
   const [isHovered, setIsHovered] = useState(false);
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
@@ -164,6 +166,19 @@ export const CustomTitlebar: React.FC<CustomTitlebarProps> = ({
       <div className="flex items-center gap-3 tauri-no-drag">
         {/* Primary actions group */}
         <div className="flex items-center gap-1 pr-5">
+          {onSidebarToggle && (
+            <TooltipSimple content="Toggle sidebar" side="bottom">
+              <motion.button
+                onClick={onSidebarToggle}
+                whileTap={{ scale: 0.97 }}
+                transition={{ duration: 0.15 }}
+                className="p-2 rounded-md hover:bg-accent hover:text-accent-foreground transition-colors tauri-no-drag"
+              >
+                <PanelLeft size={16} />
+              </motion.button>
+            </TooltipSimple>
+          )}
+
           {onAgentsClick && (
             <TooltipSimple content="Agents" side="bottom">
               <motion.button
