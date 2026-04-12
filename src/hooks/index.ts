@@ -25,3 +25,4 @@ export {
 } from './usePerformanceMonitor';
 export { TAB_SCREEN_NAMES } from './useAnalytics';
 export { useGroupedMessages, groupMessagesIntoTurns, type Turn } from './useGroupedMessages';
+export { useProjectDisplayName } from './useProjectDisplayName';

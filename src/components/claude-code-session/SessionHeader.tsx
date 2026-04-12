@@ -1,14 +1,15 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { motion } from 'framer-motion';
-import { 
-  ArrowLeft, 
-  Terminal, 
-  FolderOpen, 
-  Copy, 
+import {
+  ArrowLeft,
+  Terminal,
+  FolderOpen,
+  Copy,
   GitBranch,
   Settings,
   Hash,
-  Command
+  Command,
+  Pencil
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Popover } from '@/components/ui/popover';
@@ -16,6 +17,7 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigge
 import { Badge } from '@/components/ui/badge';
 import { TooltipSimple } from '@/components/ui/tooltip-modern';
 import { cn } from '@/lib/utils';
+import { useProjectDisplayName } from '@/hooks/useProjectDisplayName';
 
 interface SessionHeaderProps {
   projectPath: string;
@@ -56,7 +58,11 @@ export const SessionHeader: React.FC<SessionHeaderProps> = React.memo(({
   onOpenFolder,
   setCopyPopoverOpen
 }) => {
-  const getSessionTitle = () => {
+  const { displayName, setDisplayName } = useProjectDisplayName(projectPath);
+  const [isEditing, setIsEditing] = useState(false);
+  const [editValue, setEditValue] = useState('');
+
+  const autoTitle = (() => {
     if (gitInfo?.is_git_repo) {
       return `${gitInfo.repo_name}(${gitInfo.branch})`;
     }
@@ -65,7 +71,9 @@ export const SessionHeader: React.FC<SessionHeaderProps> = React.memo(({
       return lastSegment || "Claude Code Session";
     }
     return "Claude Code Session";
-  };
+  })();
+
+  const displayedTitle = displayName ?? autoTitle;
 
   return (
     <motion.div 
@@ -84,9 +92,45 @@ export const SessionHeader: React.FC<SessionHeaderProps> = React.memo(({
             <ArrowLeft className="h-4 w-4" />
           </Button>
           
-          <div className="flex items-center gap-2">
+          <div className="group flex items-center gap-2">
             <Terminal className="h-5 w-5 text-primary" />
-            <span className="font-semibold">{getSessionTitle()}</span>
+            {isEditing ? (
+              <input
+                autoFocus
+                value={editValue}
+                onChange={(e) => setEditValue(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    setDisplayName(editValue.trim() || null);
+                    setIsEditing(false);
+                  }
+                  if (e.key === 'Escape') {
+                    setIsEditing(false);
+                  }
+                }}
+                onBlur={() => {
+                  setDisplayName(editValue.trim() || null);
+                  setIsEditing(false);
+                }}
+                className="font-semibold bg-transparent border-b border-primary outline-none w-48"
+              />
+            ) : (
+              <span className="font-semibold">{displayedTitle}</span>
+            )}
+
+            {!isEditing && projectPath && (
+              <TooltipSimple content="Rename project" side="bottom">
+                <button
+                  onClick={() => {
+                    setEditValue(displayName ?? autoTitle);
+                    setIsEditing(true);
+                  }}
+                  className="p-1 rounded hover:bg-accent hover:text-accent-foreground transition-colors opacity-0 group-hover:opacity-100"
+                >
+                  <Pencil size={12} />
+                </button>
+              </TooltipSimple>
+            )}
           </div>
 
           {projectPath && onOpenFolder && (
