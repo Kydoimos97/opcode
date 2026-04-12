@@ -407,14 +407,15 @@ export const Settings: React.FC<SettingsProps> = ({
    * Saves the current settings
    */
   const saveSettings = async () => {
-    try {
-      setSaving(true);
-      setError(null);
-      setToast(null);
+    setSaving(true);
+    setError(null);
+    setToast(null);
+    const errors: string[] = [];
 
-      // Build the settings object
+    // 1. Save main claude settings
+    try {
       const updatedSettings: ClaudeSettings = {
-        ...settings,
+        ...(settings ?? {}),
         permissions: {
           allow: allowRules.map(rule => rule.value).filter(v => v && String(v).trim()),
           deny: denyRules.map(rule => rule.value).filter(v => v && String(v).trim()),
@@ -426,37 +427,60 @@ export const Settings: React.FC<SettingsProps> = ({
           return acc;
         }, {} as Record<string, string>),
       };
-
       await api.saveClaudeSettings(updatedSettings as any);
       setSettings(updatedSettings);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      console.error("Failed to save Claude settings:", msg);
+      errors.push(`Settings: ${msg}`);
+    }
 
-      // Save Claude binary path if changed
-      if (binaryPathChanged && selectedInstallation) {
+    // 2. Save binary path only when user explicitly changed it to a different value
+    if (binaryPathChanged && selectedInstallation?.path && selectedInstallation.path !== currentBinaryPath) {
+      try {
         await api.setClaudeBinaryPath(selectedInstallation.path);
         setCurrentBinaryPath(selectedInstallation.path);
         setBinaryPathChanged(false);
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        console.error("Failed to save binary path:", msg);
+        errors.push(`Binary path: ${msg}`);
       }
+    }
 
-      // Save user hooks if changed
-      if (userHooksChanged && getUserHooks.current) {
+    // 3. Save hooks if changed
+    if (userHooksChanged && getUserHooks.current) {
+      try {
         const hooks = getUserHooks.current();
         await api.updateHooksConfig('user', hooks);
         setUserHooksChanged(false);
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        console.error("Failed to save hooks:", msg);
+        errors.push(`Hooks: ${msg}`);
       }
+    }
 
-      // Save proxy settings if changed
-      if (proxySettingsChanged && saveProxySettings.current) {
+    // 4. Save proxy settings if changed
+    if (proxySettingsChanged && saveProxySettings.current) {
+      try {
         await saveProxySettings.current();
         setProxySettingsChanged(false);
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        console.error("Failed to save proxy settings:", msg);
+        errors.push(`Proxy: ${msg}`);
       }
+    }
 
+    setSaving(false);
+
+    if (errors.length > 0) {
+      const detail = errors.join(' | ');
+      setError(detail);
+      setToast({ message: detail, type: "error" });
+    } else {
       setToast({ message: "Settings saved successfully!", type: "success" });
-    } catch (err) {
-      console.error("Failed to save settings:", err);
-      setError("Failed to save settings.");
-      setToast({ message: "Failed to save settings", type: "error" });
-    } finally {
-      setSaving(false);
     }
   };
 
