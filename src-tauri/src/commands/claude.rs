@@ -2188,6 +2188,204 @@ pub async fn validate_hook_command(command: String) -> Result<serde_json::Value,
     }
 }
 
+#[derive(Debug, Serialize, Deserialize)]
+pub struct GitInfo {
+    pub repo_name: String,
+    pub branch: String,
+    pub is_git_repo: bool,
+}
+
+#[tauri::command]
+pub fn get_git_info(path: String) -> Result<GitInfo, String> {
+    use std::process::Command;
+
+    let output = Command::new("git")
+        .args(&["-C", &path, "rev-parse", "--show-toplevel"])
+        .output();
+
+    match output {
+        Ok(result) => {
+            if !result.status.success() {
+                let folder_name = std::path::Path::new(&path)
+                    .file_name()
+                    .and_then(|n| n.to_str())
+                    .unwrap_or("unknown")
+                    .to_string();
+                return Ok(GitInfo {
+                    repo_name: folder_name,
+                    branch: String::new(),
+                    is_git_repo: false,
+                });
+            }
+
+            let repo_root = String::from_utf8_lossy(&result.stdout).trim().to_string();
+            let repo_name = std::path::Path::new(&repo_root)
+                .file_name()
+                .and_then(|n| n.to_str())
+                .unwrap_or("unknown")
+                .to_string();
+
+            let branch_output = Command::new("git")
+                .args(&["-C", &path, "rev-parse", "--abbrev-ref", "HEAD"])
+                .output();
+
+            let branch = match branch_output {
+                Ok(branch_result) if branch_result.status.success() => {
+                    String::from_utf8_lossy(&branch_result.stdout)
+                        .trim()
+                        .to_string()
+                }
+                _ => String::new(),
+            };
+
+            Ok(GitInfo {
+                repo_name,
+                branch,
+                is_git_repo: true,
+            })
+        }
+        Err(_) => {
+            let folder_name = std::path::Path::new(&path)
+                .file_name()
+                .and_then(|n| n.to_str())
+                .unwrap_or("unknown")
+                .to_string();
+            Ok(GitInfo {
+                repo_name: folder_name,
+                branch: String::new(),
+                is_git_repo: false,
+            })
+        }
+    }
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct GitDiffStat {
+    pub additions: i32,
+    pub deletions: i32,
+}
+
+#[tauri::command]
+pub fn get_git_diff_stat(path: String) -> Result<GitDiffStat, String> {
+    use std::process::Command;
+
+    let output = Command::new("git")
+        .args(&["-C", &path, "diff", "--numstat"])
+        .output();
+
+    match output {
+        Ok(result) => {
+            if !result.status.success() {
+                return Ok(GitDiffStat {
+                    additions: 0,
+                    deletions: 0,
+                });
+            }
+
+            let stdout = String::from_utf8_lossy(&result.stdout);
+            let mut total_additions = 0i32;
+            let mut total_deletions = 0i32;
+
+            for line in stdout.lines() {
+                let parts: Vec<&str> = line.split_whitespace().collect();
+                if parts.len() >= 3 {
+                    let additions_str = parts[0];
+                    let deletions_str = parts[1];
+
+                    if additions_str != "-" {
+                        if let Ok(add) = additions_str.parse::<i32>() {
+                            total_additions += add;
+                        }
+                    }
+
+                    if deletions_str != "-" {
+                        if let Ok(del) = deletions_str.parse::<i32>() {
+                            total_deletions += del;
+                        }
+                    }
+                }
+            }
+
+            Ok(GitDiffStat {
+                additions: total_additions,
+                deletions: total_deletions,
+            })
+        }
+        Err(_) => Ok(GitDiffStat {
+            additions: 0,
+            deletions: 0,
+        }),
+    }
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct WorktreeInfo {
+    pub path: String,
+    pub branch: String,
+    pub is_main: bool,
+}
+
+#[tauri::command]
+pub fn get_worktrees(path: String) -> Result<Vec<WorktreeInfo>, String> {
+    use std::process::Command;
+
+    let output = Command::new("git")
+        .args(&["-C", &path, "worktree", "list", "--porcelain"])
+        .output();
+
+    match output {
+        Ok(result) => {
+            if !result.status.success() {
+                return Ok(Vec::new());
+            }
+
+            let stdout = String::from_utf8_lossy(&result.stdout);
+            let mut worktrees = Vec::new();
+            let mut is_main = true;
+            let mut current_worktree: Option<(String, String)> = None;
+
+            for line in stdout.lines() {
+                if line.starts_with("worktree ") {
+                    if let Some((wt_path, branch)) = current_worktree.take() {
+                        worktrees.push(WorktreeInfo {
+                            path: wt_path,
+                            branch,
+                            is_main,
+                        });
+                        is_main = false;
+                    }
+
+                    let wt_path = line.strip_prefix("worktree ").unwrap_or("").to_string();
+                    current_worktree = Some((wt_path, String::new()));
+                } else if line.starts_with("branch ") {
+                    if let Some((_, ref mut branch_ref)) = current_worktree.as_mut() {
+                        let full_ref = line.strip_prefix("branch ").unwrap_or("");
+                        *branch_ref = full_ref
+                            .strip_prefix("refs/heads/")
+                            .unwrap_or(full_ref)
+                            .to_string();
+                    }
+                } else if line.starts_with("detached") {
+                    if let Some((_, ref mut branch_ref)) = current_worktree.as_mut() {
+                        *branch_ref = "(detached)".to_string();
+                    }
+                }
+            }
+
+            if let Some((wt_path, branch)) = current_worktree {
+                worktrees.push(WorktreeInfo {
+                    path: wt_path,
+                    branch,
+                    is_main,
+                });
+            }
+
+            Ok(worktrees)
+        }
+        Err(_) => Ok(Vec::new()),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -445,6 +445,32 @@ export interface ImportServerResult {
 }
 
 /**
+ * Git repository information
+ */
+export interface GitInfo {
+  repo_name: string;
+  branch: string;
+  is_git_repo: boolean;
+}
+
+/**
+ * Git diff statistics
+ */
+export interface GitDiffStat {
+  additions: number;
+  deletions: number;
+}
+
+/**
+ * Information about a git worktree
+ */
+export interface WorktreeInfo {
+  path: string;
+  branch: string;
+  is_main: boolean;
+}
+
+/**
  * API client for interacting with the Rust backend
  */
 export const api = {
@@ -1857,6 +1883,48 @@ export const api = {
       return HooksManager.mergeConfigs(userHooks, projectHooks, localHooks);
     } catch (error) {
       console.error("Failed to get merged hooks config:", error);
+      throw error;
+    }
+  },
+
+  /**
+   * Gets git information for a given path
+   * @param path - The directory path to get git info for
+   * @returns Promise resolving to git information
+   */
+  async getGitInfo(path: string): Promise<GitInfo> {
+    try {
+      return await apiCall<GitInfo>("get_git_info", { path });
+    } catch (error) {
+      console.error("Failed to get git info:", error);
+      throw error;
+    }
+  },
+
+  /**
+   * Gets git diff statistics for a given path
+   * @param path - The directory path to get diff stat for
+   * @returns Promise resolving to diff statistics
+   */
+  async getGitDiffStat(path: string): Promise<GitDiffStat> {
+    try {
+      return await apiCall<GitDiffStat>("get_git_diff_stat", { path });
+    } catch (error) {
+      console.error("Failed to get git diff stat:", error);
+      throw error;
+    }
+  },
+
+  /**
+   * Gets list of git worktrees for a given path
+   * @param path - The directory path to get worktrees for
+   * @returns Promise resolving to array of worktree information
+   */
+  async getWorktrees(path: string): Promise<WorktreeInfo[]> {
+    try {
+      return await apiCall<WorktreeInfo[]>("get_worktrees", { path });
+    } catch (error) {
+      console.error("Failed to get worktrees:", error);
       throw error;
     }
   },

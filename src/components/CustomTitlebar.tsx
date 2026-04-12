@@ -1,8 +1,10 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { motion } from 'framer-motion';
-import { Settings, Minus, Square, X, Bot, BarChart3, FileText, Network, Info, MoreVertical } from 'lucide-react';
+import { Settings, Minus, Square, X, Bot, BarChart3, FileText, Network, Info, MoreVertical, Maximize2 } from 'lucide-react';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { TooltipProvider, TooltipSimple } from '@/components/ui/tooltip-modern';
+
+const isWindows = navigator.userAgent.toLowerCase().includes('windows');
 
 interface CustomTitlebarProps {
   onSettingsClick?: () => void;
@@ -23,6 +25,7 @@ export const CustomTitlebar: React.FC<CustomTitlebarProps> = ({
 }) => {
   const [isHovered, setIsHovered] = useState(false);
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
+  const [isMaximized, setIsMaximized] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -34,6 +37,21 @@ export const CustomTitlebar: React.FC<CustomTitlebarProps> = ({
 
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  useEffect(() => {
+    if (isWindows) {
+      const checkMaximized = async () => {
+        try {
+          const window = getCurrentWindow();
+          const maximized = await window.isMaximized();
+          setIsMaximized(maximized);
+        } catch (error) {
+          console.error('Failed to check maximize state:', error);
+        }
+      };
+      checkMaximized();
+    }
   }, []);
 
   const handleMinimize = async () => {
@@ -49,12 +67,14 @@ export const CustomTitlebar: React.FC<CustomTitlebarProps> = ({
   const handleMaximize = async () => {
     try {
       const window = getCurrentWindow();
-      const isMaximized = await window.isMaximized();
-      if (isMaximized) {
+      const maximized = await window.isMaximized();
+      if (maximized) {
         await window.unmaximize();
+        setIsMaximized(false);
         console.log('Window unmaximized successfully');
       } else {
         await window.maximize();
+        setIsMaximized(true);
         console.log('Window maximized successfully');
       }
     } catch (error) {
@@ -74,57 +94,62 @@ export const CustomTitlebar: React.FC<CustomTitlebarProps> = ({
 
   return (
     <TooltipProvider>
-    <div 
+    <div
       className="relative z-[200] h-11 bg-background/95 backdrop-blur-sm flex items-center justify-between select-none border-b border-border/50 tauri-drag"
       data-tauri-drag-region
       onMouseEnter={() => setIsHovered(true)}
       onMouseLeave={() => setIsHovered(false)}
     >
-      {/* Left side - macOS Traffic Light buttons */}
-      <div className="flex items-center space-x-2 pl-5">
-        <div className="flex items-center space-x-2">
-          {/* Close button */}
-          <button
-            onClick={(e) => {
-              e.stopPropagation();
-              handleClose();
-            }}
-            className="group relative w-3 h-3 rounded-full bg-red-500 hover:bg-red-600 transition-all duration-200 flex items-center justify-center tauri-no-drag"
-            title="Close"
-          >
-            {isHovered && (
-              <X size={8} className="text-red-900 opacity-60 group-hover:opacity-100" />
-            )}
-          </button>
+      {/* Left side */}
+      <div className="flex items-center pl-5">
+        {isWindows ? (
+          <span className="text-xs text-muted-foreground">opcode</span>
+        ) : (
+          <div className="flex items-center space-x-2">
+            {/* macOS Traffic Light buttons */}
+            {/* Close button */}
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                handleClose();
+              }}
+              className="group relative w-3 h-3 rounded-full bg-red-500 hover:bg-red-600 transition-all duration-200 flex items-center justify-center tauri-no-drag"
+              title="Close"
+            >
+              {isHovered && (
+                <X size={8} className="text-red-900 opacity-60 group-hover:opacity-100" />
+              )}
+            </button>
 
-          {/* Minimize button */}
-          <button
-            onClick={(e) => {
-              e.stopPropagation();
-              handleMinimize();
-            }}
-            className="group relative w-3 h-3 rounded-full bg-yellow-500 hover:bg-yellow-600 transition-all duration-200 flex items-center justify-center tauri-no-drag"
-            title="Minimize"
-          >
-            {isHovered && (
-              <Minus size={8} className="text-yellow-900 opacity-60 group-hover:opacity-100" />
-            )}
-          </button>
+            {/* Minimize button */}
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                handleMinimize();
+              }}
+              className="group relative w-3 h-3 rounded-full bg-yellow-500 hover:bg-yellow-600 transition-all duration-200 flex items-center justify-center tauri-no-drag"
+              title="Minimize"
+            >
+              {isHovered && (
+                <Minus size={8} className="text-yellow-900 opacity-60 group-hover:opacity-100" />
+              )}
+            </button>
 
-          {/* Maximize button */}
-          <button
-            onClick={(e) => {
-              e.stopPropagation();
-              handleMaximize();
-            }}
-            className="group relative w-3 h-3 rounded-full bg-green-500 hover:bg-green-600 transition-all duration-200 flex items-center justify-center tauri-no-drag"
-            title="Maximize"
-          >
-            {isHovered && (
-              <Square size={6} className="text-green-900 opacity-60 group-hover:opacity-100" />
-            )}
-          </button>
-        </div>
+            {/* Maximize button */}
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                handleMaximize();
+              }}
+              className="group relative w-3 h-3 rounded-full bg-green-500 hover:bg-green-600 transition-all duration-200 flex items-center justify-center tauri-no-drag"
+              title="Maximize"
+            >
+              {isHovered && (
+                <Square size={6} className="text-green-900 opacity-60 group-hover:opacity-100" />
+              )}
+            </button>
+          </div>
+        )}
       </div>
 
       {/* Center - Title (hidden) */}
@@ -136,9 +161,9 @@ export const CustomTitlebar: React.FC<CustomTitlebarProps> = ({
       </div> */}
 
       {/* Right side - Navigation icons with improved spacing */}
-      <div className="flex items-center pr-5 gap-3 tauri-no-drag">
+      <div className="flex items-center gap-3 tauri-no-drag">
         {/* Primary actions group */}
-        <div className="flex items-center gap-1">
+        <div className="flex items-center gap-1 pr-5">
           {onAgentsClick && (
             <TooltipSimple content="Agents" side="bottom">
               <motion.button
@@ -151,7 +176,7 @@ export const CustomTitlebar: React.FC<CustomTitlebarProps> = ({
               </motion.button>
             </TooltipSimple>
           )}
-          
+
           {onUsageClick && (
             <TooltipSimple content="Usage Dashboard" side="bottom">
               <motion.button
@@ -170,7 +195,7 @@ export const CustomTitlebar: React.FC<CustomTitlebarProps> = ({
         <div className="w-px h-5 bg-border/50" />
 
         {/* Secondary actions group */}
-        <div className="flex items-center gap-1">
+        <div className="flex items-center gap-1 pr-5">
           {onSettingsClick && (
             <TooltipSimple content="Settings" side="bottom">
               <motion.button
@@ -212,7 +237,7 @@ export const CustomTitlebar: React.FC<CustomTitlebarProps> = ({
                       <span>CLAUDE.md</span>
                     </button>
                   )}
-                  
+
                   {onMCPClick && (
                     <button
                       onClick={() => {
@@ -225,7 +250,7 @@ export const CustomTitlebar: React.FC<CustomTitlebarProps> = ({
                       <span>MCP Servers</span>
                     </button>
                   )}
-                  
+
                   {onInfoClick && (
                     <button
                       onClick={() => {
@@ -243,6 +268,47 @@ export const CustomTitlebar: React.FC<CustomTitlebarProps> = ({
             )}
           </div>
         </div>
+
+        {/* Windows window controls - flush right, no gaps */}
+        {isWindows && (
+          <div className="flex items-center">
+            {/* Minimize button */}
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                handleMinimize();
+              }}
+              className="w-11 h-11 flex items-center justify-center hover:bg-accent transition-colors tauri-no-drag"
+              title="Minimize"
+            >
+              <Minus size={16} />
+            </button>
+
+            {/* Maximize/Restore button */}
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                handleMaximize();
+              }}
+              className="w-11 h-11 flex items-center justify-center hover:bg-accent transition-colors tauri-no-drag"
+              title={isMaximized ? "Restore" : "Maximize"}
+            >
+              {isMaximized ? <Square size={16} /> : <Maximize2 size={16} />}
+            </button>
+
+            {/* Close button */}
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                handleClose();
+              }}
+              className="w-11 h-11 flex items-center justify-center hover:bg-red-500 hover:text-white transition-colors tauri-no-drag"
+              title="Close"
+            >
+              <X size={16} />
+            </button>
+          </div>
+        )}
       </div>
     </div>
     </TooltipProvider>
