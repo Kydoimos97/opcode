@@ -22,7 +22,6 @@ import { MCPManager } from "@/components/MCPManager";
 import { ClaudeBinaryDialog } from "@/components/ClaudeBinaryDialog";
 import { Toast, ToastContainer } from "@/components/ui/toast";
 import { ProjectSettings } from '@/components/ProjectSettings';
-import { TabManager } from "@/components/TabManager";
 import { TabContent } from "@/components/TabContent";
 import { useTabState } from "@/hooks/useTabState";
 import { StartupIntro } from "@/components/StartupIntro";
@@ -48,8 +47,8 @@ type View =
  */
 function AppContent() {
   const [view, setView] = useState<View>("tabs");
-  const [sidebarOpen, setSidebarOpen] = useState(false);
-  const { createClaudeMdTab, createSettingsTab, createUsageTab, createMCPTab, createAgentsTab, createExplorerTab, createLogsTab } = useTabState();
+  const [sidebarOpen, setSidebarOpen] = useState(true);
+  const { } = useTabState();
   const [projects, setProjects] = useState<Project[]>([]);
   const [selectedProject, setSelectedProject] = useState<Project | null>(null);
   const [sessions, setSessions] = useState<Session[]>([]);
@@ -318,13 +317,10 @@ function AppContent() {
       
       case "tabs":
         return (
-          <div className="h-full flex flex-col">
-            <TabManager className="flex-shrink-0" />
-            <div className="flex-1 overflow-hidden flex flex-row">
-              <Sidebar isOpen={sidebarOpen} onClose={() => setSidebarOpen(false)} />
-              <div className="flex-1 overflow-hidden">
-                <TabContent />
-              </div>
+          <div className="h-full flex flex-row overflow-hidden">
+            <Sidebar isOpen={sidebarOpen} onToggle={() => setSidebarOpen(v => !v)} />
+            <div className="flex-1 overflow-hidden">
+              <TabContent />
             </div>
           </div>
         );
@@ -361,16 +357,7 @@ function AppContent() {
   return (
     <div className="h-screen flex flex-col">
       {/* Custom Titlebar */}
-      <CustomTitlebar
-        onSidebarToggle={() => setSidebarOpen(v => !v)}
-        onAgentsClick={() => createAgentsTab()}
-        onUsageClick={() => createUsageTab()}
-        onClaudeClick={() => createClaudeMdTab()}
-        onMCPClick={() => createMCPTab()}
-        onSettingsClick={() => createSettingsTab()}
-        onExplorerClick={() => createExplorerTab()}
-        onLogsClick={() => createLogsTab()}
-      />
+      <CustomTitlebar />
       
       {/* Topbar - Commented out since navigation moved to titlebar */}
       {/* <Topbar

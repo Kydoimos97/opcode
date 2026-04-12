@@ -1,14 +1,31 @@
 import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { ChevronDown, ChevronRight, PanelLeftClose, GitBranch } from 'lucide-react';
+import {
+  ChevronDown,
+  ChevronRight,
+  PanelLeft,
+  PanelLeftClose,
+  Plus,
+  GitBranch,
+  FolderOpen,
+  Bot,
+  BarChart3,
+  Server,
+  FileText,
+  FolderSearch,
+  ScrollText,
+  Settings,
+  X,
+} from 'lucide-react';
 import { useTabContext, type Tab } from '@/contexts/TabContext';
+import { useTabState } from '@/hooks/useTabState';
 import { api, type GitInfo, type WorktreeInfo } from '@/lib/api';
 import { cn } from '@/lib/utils';
 import { TooltipSimple } from '@/components/ui/tooltip-modern';
 
 interface SidebarProps {
   isOpen: boolean;
-  onClose: () => void;
+  onToggle: () => void;
 }
 
 interface GroupedTabs {
@@ -17,20 +34,44 @@ interface GroupedTabs {
   ungroupedTabs: Tab[];
 }
 
-export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
+const UTILITY_ITEMS = [
+  { icon: FolderOpen, label: 'Projects', type: 'projects' as const },
+  { icon: Bot, label: 'Agents', type: 'agents' as const },
+  { icon: BarChart3, label: 'Usage', type: 'usage' as const },
+  { icon: Server, label: 'MCP Servers', type: 'mcp' as const },
+  { icon: FileText, label: 'CLAUDE.md', type: 'claude-md' as const },
+  { icon: FolderSearch, label: '.claude Explorer', type: 'claude-explorer' as const },
+  { icon: ScrollText, label: 'Session Logs', type: 'session-logs' as const },
+  { icon: Settings, label: 'Settings', type: 'settings' as const },
+];
+
+export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onToggle }) => {
   const { tabs, activeTabId, setActiveTab } = useTabContext();
+  const {
+    createChatTab,
+    createProjectsTab,
+    createAgentsTab,
+    createUsageTab,
+    createMCPTab,
+    createClaudeMdTab,
+    createExplorerTab,
+    createLogsTab,
+    createSettingsTab,
+    closeTab,
+  } = useTabState();
+
   const [expandedRepos, setExpandedRepos] = useState<Set<string>>(new Set());
   const [gitInfoVersion, setGitInfoVersion] = useState(0);
   const [worktreeVersion, setWorktreeVersion] = useState(0);
   const gitInfoCache = useRef<Map<string, GitInfo>>(new Map());
   const worktreeCache = useRef<Map<string, WorktreeInfo[]>>(new Map());
+  const [hoveredSessionId, setHoveredSessionId] = useState<string | null>(null);
 
   const chatTabs = useMemo(
     () => tabs.filter((tab) => tab.type === 'chat'),
     [tabs]
   );
 
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   const groupedTabs = useMemo(() => {
     const groups = new Map<string, GroupedTabs>();
 
@@ -66,11 +107,9 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
     });
 
     return Array.from(groups.values());
-  // gitInfoVersion and worktreeVersion trigger re-group when caches are populated
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [chatTabs, gitInfoVersion, worktreeVersion]);
 
-  // Auto-expand new repos when they appear
   useEffect(() => {
     setExpandedRepos((prev) => {
       const next = new Set(prev);
@@ -141,119 +180,271 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
     }
   };
 
+  const handleUtilityClick = (type: Tab['type']) => {
+    const creators: Record<Tab['type'], () => string | null> = {
+      'projects': createProjectsTab,
+      'agents': createAgentsTab,
+      'usage': createUsageTab,
+      'mcp': createMCPTab,
+      'claude-md': createClaudeMdTab,
+      'claude-explorer': createExplorerTab,
+      'session-logs': createLogsTab,
+      'settings': createSettingsTab,
+      'chat': () => null,
+      'agent': () => null,
+      'agent-execution': () => null,
+      'claude-file': () => null,
+      'create-agent': () => null,
+      'import-agent': () => null,
+    };
+
+    creators[type]?.();
+  };
+
+  const isUtilityActive = (type: Tab['type']): boolean => {
+    return activeTabId ? tabs.find(t => t.id === activeTabId)?.type === type : false;
+  };
+
   return (
     <motion.div
       className={cn(
         'flex flex-col border-r border-border/50 bg-background overflow-hidden',
-        'w-60'
+        'flex-shrink-0'
       )}
-      animate={{ width: isOpen ? 240 : 0 }}
+      animate={{ width: isOpen ? 240 : 48 }}
       transition={{ duration: 0.3, ease: 'easeInOut' }}
       style={{ flexShrink: 0 }}
     >
-      <div className="flex items-center justify-between px-4 py-3 border-b border-border/50 flex-shrink-0">
-        <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-          Projects
-        </span>
-        <TooltipSimple content="Close sidebar" side="right">
-          <button
-            onClick={onClose}
-            className="p-1 rounded hover:bg-accent hover:text-accent-foreground transition-colors"
-          >
-            <PanelLeftClose size={14} />
-          </button>
-        </TooltipSimple>
+      {/* Header */}
+      <div className="h-11 flex items-center justify-between px-3 border-b border-border/50 flex-shrink-0">
+        {isOpen ? (
+          <>
+            <span className="text-sm font-semibold text-foreground">opcode</span>
+            <TooltipSimple content="Collapse sidebar" side="right">
+              <button
+                onClick={onToggle}
+                className="p-1 rounded hover:bg-accent hover:text-accent-foreground transition-colors tauri-no-drag"
+              >
+                <PanelLeftClose size={14} />
+              </button>
+            </TooltipSimple>
+          </>
+        ) : (
+          <TooltipSimple content="Expand sidebar" side="right">
+            <button
+              onClick={onToggle}
+              className="w-full flex items-center justify-center p-2 rounded hover:bg-accent hover:text-accent-foreground transition-colors tauri-no-drag"
+            >
+              <PanelLeft size={14} />
+            </button>
+          </TooltipSimple>
+        )}
       </div>
 
-      <div className="flex-1 overflow-y-auto">
-        {groupedTabs.length === 0 ? (
-          <div className="p-4 text-xs text-muted-foreground text-center">
-            No open chat sessions
+      {/* New Session Button */}
+      <div className="px-2 py-2 flex-shrink-0">
+        {isOpen ? (
+          <button
+            onClick={() => createChatTab()}
+            className="w-full px-3 py-2 rounded-md bg-primary text-primary-foreground hover:bg-primary/90 transition-colors flex items-center justify-center gap-2 text-sm font-medium tauri-no-drag"
+          >
+            <Plus size={16} />
+            <span>New Session</span>
+          </button>
+        ) : (
+          <TooltipSimple content="New Session" side="right">
+            <button
+              onClick={() => createChatTab()}
+              className="w-full flex items-center justify-center p-2 rounded-md bg-primary text-primary-foreground hover:bg-primary/90 transition-colors tauri-no-drag"
+            >
+              <Plus size={16} />
+            </button>
+          </TooltipSimple>
+        )}
+      </div>
+
+      {/* Sessions List */}
+      <div className="flex-1 overflow-y-auto min-h-0">
+        {isOpen && chatTabs.length > 0 && (
+          <div className="px-4 py-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+            Sessions
           </div>
+        )}
+
+        {chatTabs.length === 0 ? (
+          isOpen && (
+            <div className="p-4 text-xs text-muted-foreground text-center">
+              No chat sessions
+            </div>
+          )
         ) : (
           groupedTabs.map((group) => (
             <div key={group.repoName} className="border-b border-border/30 last:border-b-0">
-              <button
-                onClick={() => toggleRepoExpanded(group.repoName)}
-                className="w-full px-4 py-2 text-left hover:bg-accent/50 transition-colors flex items-center gap-2 group"
-              >
-                {expandedRepos.has(group.repoName) ? (
-                  <ChevronDown size={14} className="flex-shrink-0" />
-                ) : (
-                  <ChevronRight size={14} className="flex-shrink-0" />
-                )}
-                <span className="text-xs font-semibold truncate text-foreground group-hover:text-accent-foreground">
-                  {group.repoName}
-                </span>
-              </button>
-
-              <AnimatePresence>
-                {expandedRepos.has(group.repoName) && (
-                  <motion.div
-                    initial={{ opacity: 0, height: 0 }}
-                    animate={{ opacity: 1, height: 'auto' }}
-                    exit={{ opacity: 0, height: 0 }}
-                    transition={{ duration: 0.2 }}
+              {isOpen ? (
+                <>
+                  <button
+                    onClick={() => toggleRepoExpanded(group.repoName)}
+                    className="w-full px-4 py-2 text-left hover:bg-accent/50 transition-colors flex items-center gap-2 group"
                   >
-                    {group.worktrees.size > 0 ? (
-                      Array.from(group.worktrees.entries()).map(([branch, tabs]) => (
-                        <div key={branch}>
-                          <div className="px-4 py-1 pl-8 flex items-center gap-1 text-xs text-muted-foreground">
-                            <GitBranch size={12} className="flex-shrink-0" />
-                            <span className="truncate">{branch}</span>
-                          </div>
-                          {tabs.map((tab) => (
-                            <button
-                              key={tab.id}
-                              onClick={() => setActiveTab(tab.id)}
-                              className={cn(
-                                'w-full px-4 py-2 text-left text-xs flex items-center gap-2 truncate transition-colors',
-                                'pl-12 hover:bg-accent/50',
-                                activeTabId === tab.id
-                                  ? 'bg-accent text-accent-foreground'
-                                  : 'text-foreground/70'
-                              )}
-                            >
-                              <div
-                                className={cn(
-                                  'w-2 h-2 rounded-full flex-shrink-0',
-                                  getStatusDotColor(tab.status)
-                                )}
-                              />
-                              <span className="truncate">{tab.title}</span>
-                            </button>
-                          ))}
-                        </div>
-                      ))
+                    {expandedRepos.has(group.repoName) ? (
+                      <ChevronDown size={14} className="flex-shrink-0" />
                     ) : (
-                      group.ungroupedTabs.map((tab) => (
-                        <button
-                          key={tab.id}
-                          onClick={() => setActiveTab(tab.id)}
-                          className={cn(
-                            'w-full px-4 py-2 text-left text-xs flex items-center gap-2 truncate transition-colors',
-                            'pl-8 hover:bg-accent/50',
-                            activeTabId === tab.id
-                              ? 'bg-accent text-accent-foreground'
-                              : 'text-foreground/70'
-                          )}
-                        >
-                          <div
-                            className={cn(
-                              'w-2 h-2 rounded-full flex-shrink-0',
-                              getStatusDotColor(tab.status)
-                            )}
-                          />
-                          <span className="truncate">{tab.title}</span>
-                        </button>
-                      ))
+                      <ChevronRight size={14} className="flex-shrink-0" />
                     )}
-                  </motion.div>
-                )}
-              </AnimatePresence>
+                    <span className="text-xs font-semibold truncate text-foreground group-hover:text-accent-foreground">
+                      {group.repoName}
+                    </span>
+                  </button>
+
+                  <AnimatePresence>
+                    {expandedRepos.has(group.repoName) && (
+                      <motion.div
+                        initial={{ opacity: 0, height: 0 }}
+                        animate={{ opacity: 1, height: 'auto' }}
+                        exit={{ opacity: 0, height: 0 }}
+                        transition={{ duration: 0.2 }}
+                      >
+                        {group.worktrees.size > 0 ? (
+                          Array.from(group.worktrees.entries()).map(([branch, tabs_]) => (
+                            <div key={branch}>
+                              <div className="px-4 py-1 pl-8 flex items-center gap-1 text-xs text-muted-foreground">
+                                <GitBranch size={12} className="flex-shrink-0" />
+                                <span className="truncate">{branch}</span>
+                              </div>
+                              {tabs_.map((tab) => (
+                                <div
+                                  key={tab.id}
+                                  className="group"
+                                  onMouseEnter={() => setHoveredSessionId(tab.id)}
+                                  onMouseLeave={() => setHoveredSessionId(null)}
+                                >
+                                  <button
+                                    onClick={() => setActiveTab(tab.id)}
+                                    className={cn(
+                                      'w-full px-4 py-2 text-left text-xs flex items-center gap-2 truncate transition-colors',
+                                      'pl-12 hover:bg-accent/50',
+                                      activeTabId === tab.id
+                                        ? 'bg-accent text-accent-foreground'
+                                        : 'text-foreground/70'
+                                    )}
+                                  >
+                                    <div
+                                      className={cn(
+                                        'w-2 h-2 rounded-full flex-shrink-0',
+                                        getStatusDotColor(tab.status)
+                                      )}
+                                    />
+                                    <span className="truncate flex-1">{tab.title}</span>
+                                    {hoveredSessionId === tab.id && (
+                                      <button
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          closeTab(tab.id);
+                                        }}
+                                        className="p-1 rounded hover:bg-accent/50 flex-shrink-0"
+                                      >
+                                        <X size={12} />
+                                      </button>
+                                    )}
+                                  </button>
+                                </div>
+                              ))}
+                            </div>
+                          ))
+                        ) : (
+                          group.ungroupedTabs.map((tab) => (
+                            <div
+                              key={tab.id}
+                              className="group"
+                              onMouseEnter={() => setHoveredSessionId(tab.id)}
+                              onMouseLeave={() => setHoveredSessionId(null)}
+                            >
+                              <button
+                                onClick={() => setActiveTab(tab.id)}
+                                className={cn(
+                                  'w-full px-4 py-2 text-left text-xs flex items-center gap-2 truncate transition-colors',
+                                  'pl-8 hover:bg-accent/50',
+                                  activeTabId === tab.id
+                                    ? 'bg-accent text-accent-foreground'
+                                    : 'text-foreground/70'
+                                )}
+                              >
+                                <div
+                                  className={cn(
+                                    'w-2 h-2 rounded-full flex-shrink-0',
+                                    getStatusDotColor(tab.status)
+                                  )}
+                                />
+                                <span className="truncate flex-1">{tab.title}</span>
+                                {hoveredSessionId === tab.id && (
+                                  <button
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      closeTab(tab.id);
+                                    }}
+                                    className="p-1 rounded hover:bg-accent/50 flex-shrink-0"
+                                  >
+                                    <X size={12} />
+                                  </button>
+                                )}
+                              </button>
+                            </div>
+                          ))
+                        )}
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
+                </>
+              ) : (
+                // Collapsed mode - just show a dot separator
+                <div className="flex items-center justify-center py-1">
+                  <div className="w-1 h-1 rounded-full bg-border/50" />
+                </div>
+              )}
             </div>
           ))
         )}
+      </div>
+
+      {/* Divider */}
+      <div className="border-t border-border/30 flex-shrink-0" />
+
+      {/* Utility Navigation Items */}
+      <div className="flex flex-col flex-shrink-0">
+        {UTILITY_ITEMS.map(({ icon: Icon, label, type }) => (
+          <div key={type}>
+            {isOpen ? (
+              <button
+                onClick={() => handleUtilityClick(type)}
+                className={cn(
+                  'w-full px-4 py-2 text-left text-xs flex items-center gap-2 transition-colors tauri-no-drag',
+                  'hover:bg-accent/50',
+                  isUtilityActive(type)
+                    ? 'bg-accent text-accent-foreground'
+                    : 'text-foreground/70'
+                )}
+              >
+                <Icon size={14} className="flex-shrink-0" />
+                <span className="truncate">{label}</span>
+              </button>
+            ) : (
+              <TooltipSimple content={label} side="right">
+                <button
+                  onClick={() => handleUtilityClick(type)}
+                  className={cn(
+                    'w-full flex items-center justify-center p-2 transition-colors tauri-no-drag',
+                    'hover:bg-accent/50',
+                    isUtilityActive(type)
+                      ? 'bg-accent text-accent-foreground'
+                      : 'text-foreground/70'
+                  )}
+                >
+                  <Icon size={14} />
+                </button>
+              </TooltipSimple>
+            )}
+          </div>
+        ))}
       </div>
     </motion.div>
   );
