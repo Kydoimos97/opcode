@@ -1,13 +1,15 @@
 import React, { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { 
-  Plus, 
-  Trash2, 
-  Save, 
+import {
+  Plus,
+  Trash2,
+  Save,
   AlertCircle,
   Loader2,
   Shield,
   Check,
+  RefreshCw,
+  Code,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -15,10 +17,11 @@ import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Card } from "@/components/ui/card";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
-import { 
-  api, 
+import {
+  api,
   type ClaudeSettings,
-  type ClaudeInstallation
+  type ClaudeInstallation,
+  type SkillInfo,
 } from "@/lib/api";
 import { cn } from "@/lib/utils";
 import { Toast, ToastContainer } from "@/components/ui/toast";
@@ -96,7 +99,26 @@ export const Settings: React.FC<SettingsProps> = ({
   const [tabPersistenceEnabled, setTabPersistenceEnabled] = useState(true);
   // Startup intro preference
   const [startupIntroEnabled, setStartupIntroEnabled] = useState(true);
-  
+
+  // Skills section state
+  const [skills, setSkills] = useState<SkillInfo[]>([]);
+  const [skillsLoading, setSkillsLoading] = useState(false);
+
+  // Hooks display state
+  const [globalSettings, setGlobalSettings] = useState<Record<string, any>>({});
+  const [hooksLoading, setHooksLoading] = useState(false);
+
+  // c-guard state
+  const [cguardEnabled, setCguardEnabled] = useState(false);
+  const [commandsConfContent, setCommandsConfContent] = useState("");
+  const [commandsConfLoading, setCommandsConfLoading] = useState(false);
+  const [commandsConfVerifyOutput, setCommandsConfVerifyOutput] = useState("");
+  const [cguardAuditInput, setCguardAuditInput] = useState("");
+  const [cguardAuditOutput, setCguardAuditOutput] = useState("");
+  const [cguardAuditLoading, setCguardAuditLoading] = useState(false);
+  const [cguardUsageOutput, setCguardUsageOutput] = useState("");
+  const [cguardUsageLoading, setCguardUsageLoading] = useState(false);
+
   // Load settings on mount
   useEffect(() => {
     loadSettings();
@@ -130,6 +152,159 @@ export const Settings: React.FC<SettingsProps> = ({
       setCurrentBinaryPath(path);
     } catch (err) {
       console.error("Failed to load Claude binary path:", err);
+    }
+  };
+
+  /**
+   * Loads installed skills
+   */
+  const loadSkills = async () => {
+    try {
+      setSkillsLoading(true);
+      const skillList = await api.listSkills();
+      setSkills(skillList);
+    } catch (err) {
+      console.error("Failed to load skills:", err);
+      setSkills([]);
+    } finally {
+      setSkillsLoading(false);
+    }
+  };
+
+  /**
+   * Loads global settings to display hooks
+   */
+  const loadGlobalSettings = async () => {
+    try {
+      setHooksLoading(true);
+      const settings = await api.getGlobalSettings();
+      setGlobalSettings(settings);
+
+      // Check if c-guard is enabled
+      const hooks = settings.hooks || {};
+      const preToolUseHooks = hooks.PreToolUse || [];
+      const isCguardEnabled = Array.isArray(preToolUseHooks) &&
+        preToolUseHooks.some((hook: any) =>
+          typeof hook === 'object' && hook.hook_dispatcher &&
+          hook.hook_dispatcher.includes('hook-dispatcher')
+        );
+      setCguardEnabled(isCguardEnabled);
+    } catch (err) {
+      console.error("Failed to load global settings:", err);
+      setGlobalSettings({});
+    } finally {
+      setHooksLoading(false);
+    }
+  };
+
+  /**
+   * Loads commands.conf content
+   */
+  const loadCommandsConf = async () => {
+    try {
+      setCommandsConfLoading(true);
+      const content = await api.readCommandsConf();
+      setCommandsConfContent(content);
+      setCommandsConfVerifyOutput("");
+    } catch (err) {
+      console.error("Failed to load commands.conf:", err);
+      setCommandsConfContent("");
+    } finally {
+      setCommandsConfLoading(false);
+    }
+  };
+
+  /**
+   * Saves and verifies commands.conf
+   */
+  const saveCommandsConf = async () => {
+    try {
+      setCommandsConfLoading(true);
+      const output = await api.writeAndVerifyCommandsConf(commandsConfContent);
+      setCommandsConfVerifyOutput(output);
+      setToast({
+        message: "commands.conf saved successfully",
+        type: "success",
+      });
+    } catch (err) {
+      console.error("Failed to save commands.conf:", err);
+      setCommandsConfVerifyOutput(`Error: ${String(err)}`);
+      setToast({
+        message: "Failed to save commands.conf",
+        type: "error",
+      });
+    } finally {
+      setCommandsConfLoading(false);
+    }
+  };
+
+  /**
+   * Toggles c-guard enabled state
+   */
+  const handleCguardToggle = async (newValue: boolean) => {
+    try {
+      await api.setCguardEnabled(newValue);
+      setCguardEnabled(newValue);
+      setToast({
+        message: newValue ? "c-guard enabled" : "c-guard disabled",
+        type: "success",
+      });
+      // Refresh global settings to reflect the change
+      await loadGlobalSettings();
+    } catch (err) {
+      console.error("Failed to toggle c-guard:", err);
+      setToast({
+        message: "Failed to toggle c-guard",
+        type: "error",
+      });
+    }
+  };
+
+  /**
+   * Runs c-guard audit command
+   */
+  const runCguardAudit = async () => {
+    if (!cguardAuditInput.trim()) {
+      setToast({
+        message: "Please enter a command to audit",
+        type: "error",
+      });
+      return;
+    }
+
+    try {
+      setCguardAuditLoading(true);
+      const output = await api.runCguardCli(["--audit", cguardAuditInput]);
+      setCguardAuditOutput(output);
+    } catch (err) {
+      console.error("Failed to run c-guard audit:", err);
+      setCguardAuditOutput(`Error: ${String(err)}`);
+      setToast({
+        message: "Failed to run c-guard audit",
+        type: "error",
+      });
+    } finally {
+      setCguardAuditLoading(false);
+    }
+  };
+
+  /**
+   * Runs c-guard usage stats command
+   */
+  const runCguardUsageStats = async () => {
+    try {
+      setCguardUsageLoading(true);
+      const output = await api.runCguardCli(["--usage"]);
+      setCguardUsageOutput(output);
+    } catch (err) {
+      console.error("Failed to run c-guard usage stats:", err);
+      setCguardUsageOutput(`Error: ${String(err)}`);
+      setToast({
+        message: "Failed to run c-guard usage stats",
+        type: "error",
+      });
+    } finally {
+      setCguardUsageLoading(false);
     }
   };
 
@@ -393,7 +568,7 @@ export const Settings: React.FC<SettingsProps> = ({
       ) : (
         <div className="flex-1 overflow-y-auto p-6">
           <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-            <TabsList className="grid grid-cols-8 w-full mb-6 h-auto p-1">
+            <TabsList className="grid grid-cols-11 w-full mb-6 h-auto p-1">
               <TabsTrigger value="general" className="py-2.5 px-3">General</TabsTrigger>
               <TabsTrigger value="permissions" className="py-2.5 px-3">Permissions</TabsTrigger>
               <TabsTrigger value="environment" className="py-2.5 px-3">Environment</TabsTrigger>
@@ -402,6 +577,9 @@ export const Settings: React.FC<SettingsProps> = ({
               <TabsTrigger value="commands" className="py-2.5 px-3">Commands</TabsTrigger>
               <TabsTrigger value="storage" className="py-2.5 px-3">Storage</TabsTrigger>
               <TabsTrigger value="proxy" className="py-2.5 px-3">Proxy</TabsTrigger>
+              <TabsTrigger value="skills" className="py-2.5 px-3">Skills</TabsTrigger>
+              <TabsTrigger value="global-hooks" className="py-2.5 px-3">Hooks Display</TabsTrigger>
+              <TabsTrigger value="cguard" className="py-2.5 px-3">c-guard</TabsTrigger>
             </TabsList>
             
             {/* General Settings */}
@@ -1049,7 +1227,7 @@ export const Settings: React.FC<SettingsProps> = ({
             {/* Proxy Settings */}
             <TabsContent value="proxy">
               <Card className="p-6">
-                <ProxySettings 
+                <ProxySettings
                   setToast={setToast}
                   onChange={(hasChanges, _getSettings, save) => {
                     setProxySettingsChanged(hasChanges);
@@ -1058,7 +1236,275 @@ export const Settings: React.FC<SettingsProps> = ({
                 />
               </Card>
             </TabsContent>
-            
+
+            {/* Skills Section */}
+            <TabsContent value="skills" className="space-y-6 mt-6">
+              <Card className="p-6 space-y-4">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <h3 className="text-heading-4">Installed Skills</h3>
+                    <p className="text-body-small text-muted-foreground mt-1">
+                      Skills installed in ~/.claude/skills/
+                    </p>
+                  </div>
+                  <motion.div whileTap={{ scale: 0.97 }} transition={{ duration: 0.15 }}>
+                    <Button
+                      onClick={loadSkills}
+                      disabled={skillsLoading}
+                      variant="outline"
+                      size="sm"
+                    >
+                      <RefreshCw className={cn("h-4 w-4 mr-2", skillsLoading && "animate-spin")} />
+                      Refresh
+                    </Button>
+                  </motion.div>
+                </div>
+
+                {skillsLoading ? (
+                  <div className="flex items-center justify-center py-8">
+                    <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+                  </div>
+                ) : skills.length === 0 ? (
+                  <div className="py-8 text-center text-muted-foreground">
+                    No skills found in ~/.claude/skills/ — install skills to see them here
+                  </div>
+                ) : (
+                  <div className="space-y-3">
+                    {skills.map((skill) => (
+                      <div key={skill.name} className="p-3 border rounded-lg bg-muted/30">
+                        <h4 className="font-semibold text-sm">{skill.name}</h4>
+                        <p className="text-xs text-muted-foreground mt-1">{skill.description}</p>
+                        <p className="text-xs text-muted-foreground mt-2 font-mono">{skill.path}</p>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </Card>
+            </TabsContent>
+
+            {/* Hooks Display Section */}
+            <TabsContent value="global-hooks" className="space-y-6 mt-6">
+              <Card className="p-6 space-y-4">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <h3 className="text-heading-4">Hooks Configuration</h3>
+                    <p className="text-body-small text-muted-foreground mt-1">
+                      Current hooks from ~/.claude/settings.json
+                    </p>
+                  </div>
+                  <motion.div whileTap={{ scale: 0.97 }} transition={{ duration: 0.15 }}>
+                    <Button
+                      onClick={loadGlobalSettings}
+                      disabled={hooksLoading}
+                      variant="outline"
+                      size="sm"
+                    >
+                      <RefreshCw className={cn("h-4 w-4 mr-2", hooksLoading && "animate-spin")} />
+                      Refresh
+                    </Button>
+                  </motion.div>
+                </div>
+
+                {hooksLoading ? (
+                  <div className="flex items-center justify-center py-8">
+                    <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+                  </div>
+                ) : !globalSettings.hooks || Object.keys(globalSettings.hooks).length === 0 ? (
+                  <div className="py-8 text-center text-muted-foreground">
+                    No hooks configured in ~/.claude/settings.json
+                  </div>
+                ) : (
+                  <pre className="font-mono text-xs overflow-auto max-h-64 p-3 border rounded-lg bg-muted">
+                    {JSON.stringify(globalSettings.hooks, null, 2)}
+                  </pre>
+                )}
+              </Card>
+            </TabsContent>
+
+            {/* c-guard Section */}
+            <TabsContent value="cguard" className="space-y-6 mt-6">
+              {/* Enable Toggle */}
+              <Card className="p-6 space-y-4">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <h3 className="text-heading-4">c-guard Status</h3>
+                    <p className="text-body-small text-muted-foreground mt-1">
+                      Enable or disable c-guard command auditing
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <Switch
+                      checked={cguardEnabled}
+                      onCheckedChange={handleCguardToggle}
+                      disabled={hooksLoading}
+                    />
+                  </div>
+                </div>
+              </Card>
+
+              {/* commands.conf Editor */}
+              <Card className="p-6 space-y-4">
+                <div>
+                  <h3 className="text-heading-4 mb-2">commands.conf Editor</h3>
+                  <p className="text-body-small text-muted-foreground mb-4">
+                    Configure allowed and denied commands at ~/.claude/hooks/resources/commands.conf
+                  </p>
+                </div>
+
+                {commandsConfLoading && !commandsConfContent ? (
+                  <div className="flex items-center justify-center py-8">
+                    <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+                  </div>
+                ) : (
+                  <>
+                    <textarea
+                      value={commandsConfContent}
+                      onChange={(e) => setCommandsConfContent(e.target.value)}
+                      className="font-mono text-xs h-64 w-full border rounded p-2 bg-background"
+                      placeholder="Enter commands configuration..."
+                    />
+                    <div className="flex gap-2">
+                      <motion.div whileTap={{ scale: 0.97 }} transition={{ duration: 0.15 }} className="flex-1">
+                        <Button
+                          onClick={saveCommandsConf}
+                          disabled={commandsConfLoading}
+                          className="w-full"
+                        >
+                          {commandsConfLoading ? (
+                            <>
+                              <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                              Saving...
+                            </>
+                          ) : (
+                            <>
+                              <Save className="h-4 w-4 mr-2" />
+                              Save & Verify
+                            </>
+                          )}
+                        </Button>
+                      </motion.div>
+                      <motion.div whileTap={{ scale: 0.97 }} transition={{ duration: 0.15 }}>
+                        <Button
+                          onClick={loadCommandsConf}
+                          disabled={commandsConfLoading}
+                          variant="outline"
+                        >
+                          <RefreshCw className={cn("h-4 w-4", commandsConfLoading && "animate-spin")} />
+                        </Button>
+                      </motion.div>
+                    </div>
+
+                    {commandsConfVerifyOutput && (
+                      <pre
+                        className={cn(
+                          "font-mono text-xs p-3 border rounded-lg overflow-auto max-h-32",
+                          commandsConfVerifyOutput.toLowerCase().includes("error")
+                            ? "bg-destructive/10 border-destructive/50 text-destructive"
+                            : commandsConfVerifyOutput.trim() === ""
+                            ? "bg-green-500/10 border-green-500/50 text-green-600 dark:text-green-400"
+                            : "bg-amber-500/10 border-amber-500/50 text-amber-700 dark:text-amber-400"
+                        )}
+                      >
+                        {commandsConfVerifyOutput.trim() === ""
+                          ? "Config is valid - no errors found"
+                          : commandsConfVerifyOutput}
+                      </pre>
+                    )}
+                  </>
+                )}
+              </Card>
+
+              {/* CLI Tools Section */}
+              <div className="space-y-6">
+                {/* Audit */}
+                <Card className="p-6 space-y-4">
+                  <div>
+                    <h3 className="text-heading-4 mb-2">Audit Command</h3>
+                    <p className="text-body-small text-muted-foreground mb-4">
+                      Audit a command to see if it would be allowed by c-guard
+                    </p>
+                  </div>
+
+                  <div className="space-y-3">
+                    <div>
+                      <Label htmlFor="audit-command" className="text-sm mb-2">
+                        Command to audit
+                      </Label>
+                      <Input
+                        id="audit-command"
+                        value={cguardAuditInput}
+                        onChange={(e) => setCguardAuditInput(e.target.value)}
+                        placeholder="e.g., npm install"
+                        className="font-mono text-xs"
+                      />
+                    </div>
+
+                    <motion.div whileTap={{ scale: 0.97 }} transition={{ duration: 0.15 }}>
+                      <Button
+                        onClick={runCguardAudit}
+                        disabled={cguardAuditLoading || !cguardAuditInput.trim()}
+                        className="w-full"
+                      >
+                        {cguardAuditLoading ? (
+                          <>
+                            <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                            Running...
+                          </>
+                        ) : (
+                          <>
+                            <Code className="h-4 w-4 mr-2" />
+                            Run Audit
+                          </>
+                        )}
+                      </Button>
+                    </motion.div>
+
+                    {cguardAuditOutput && (
+                      <pre className="font-mono text-xs p-3 border rounded-lg bg-muted overflow-auto max-h-48">
+                        {cguardAuditOutput}
+                      </pre>
+                    )}
+                  </div>
+                </Card>
+
+                {/* Usage Stats */}
+                <Card className="p-6 space-y-4">
+                  <div>
+                    <h3 className="text-heading-4 mb-2">Usage Statistics</h3>
+                    <p className="text-body-small text-muted-foreground mb-4">
+                      View c-guard usage statistics and command execution history
+                    </p>
+                  </div>
+
+                  <motion.div whileTap={{ scale: 0.97 }} transition={{ duration: 0.15 }}>
+                    <Button
+                      onClick={runCguardUsageStats}
+                      disabled={cguardUsageLoading}
+                      className="w-full"
+                    >
+                      {cguardUsageLoading ? (
+                        <>
+                          <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                          Loading...
+                        </>
+                      ) : (
+                        <>
+                          <Code className="h-4 w-4 mr-2" />
+                          Show Usage Stats
+                        </>
+                      )}
+                    </Button>
+                  </motion.div>
+
+                  {cguardUsageOutput && (
+                    <pre className="font-mono text-xs p-3 border rounded-lg bg-muted overflow-auto max-h-96">
+                      {cguardUsageOutput}
+                    </pre>
+                  )}
+                </Card>
+              </div>
+            </TabsContent>
+
           </Tabs>
         </div>
       )}
