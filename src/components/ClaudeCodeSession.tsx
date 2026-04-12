@@ -6,7 +6,6 @@ import {
   GitBranch,
   ChevronUp,
   X,
-  Hash,
   Wrench
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -1130,7 +1129,7 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
   const messagesList = (
     <div
       ref={parentRef}
-      className="flex-1 overflow-y-auto relative pb-20"
+      className="flex-1 overflow-y-auto relative pb-4"
       style={{
         contain: 'strict',
       }}
@@ -1242,11 +1241,11 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
           onOpenFolder={projectPath && tauriOpen ? () => tauriOpen(projectPath) : undefined}
           setCopyPopoverOpen={setCopyPopoverOpen}
         />
-        <div className="w-full h-full flex flex-col">
+        <div className="flex-1 min-h-0 flex flex-col">
 
         {/* Main Content Area */}
         <div className={cn(
-          "flex-1 overflow-hidden transition-all duration-300",
+          "flex-1 min-h-0 overflow-hidden transition-all duration-300",
           showTimeline && "sm:mr-96"
         )}>
           {showPreview ? (
@@ -1451,6 +1450,10 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
             />
           )}
 
+        </ErrorBoundary>
+
+        {/* Bottom bar — in flow so messages stop above it */}
+        <div className="flex-shrink-0">
           <SessionStatusBar
             model={
               sessionMetrics.current.modelChanges.length > 0
@@ -1464,13 +1467,10 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
             diffAdditions={diffStat.additions}
             diffDeletions={diffStat.deletions}
             sessionState={sessionState}
-            className="fixed bottom-24 left-0 right-0 z-40"
           />
-
           <div className={cn(
-            "fixed bottom-0 left-0 right-0 transition-all duration-300 z-50",
-            showTimeline && "sm:right-96",
-            (sessionState === "waiting_approval" || sessionState === "waiting_elicitation") && "mt-[100px]"
+            "transition-all duration-300",
+            showTimeline && "sm:mr-96"
           )}>
             <FloatingPromptInput
               ref={floatingPromptRef}
@@ -1483,10 +1483,7 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
                 <>
                   {effectiveSession && (
                     <TooltipSimple content="Session Timeline" side="top">
-                      <motion.div
-                        whileTap={{ scale: 0.97 }}
-                        transition={{ duration: 0.15 }}
-                      >
+                      <motion.div whileTap={{ scale: 0.97 }} transition={{ duration: 0.15 }}>
                         <Button
                           variant="ghost"
                           size="icon"
@@ -1502,15 +1499,8 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
                     <Popover
                       trigger={
                         <TooltipSimple content="Copy conversation" side="top">
-                          <motion.div
-                            whileTap={{ scale: 0.97 }}
-                            transition={{ duration: 0.15 }}
-                          >
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              className="h-9 w-9 text-muted-foreground hover:text-foreground"
-                            >
+                          <motion.div whileTap={{ scale: 0.97 }} transition={{ duration: 0.15 }}>
+                            <Button variant="ghost" size="icon" className="h-9 w-9 text-muted-foreground hover:text-foreground">
                               <Copy className="h-3.5 w-3.5" />
                             </Button>
                           </motion.div>
@@ -1518,20 +1508,10 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
                       }
                       content={
                         <div className="w-44 p-1">
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={handleCopyAsMarkdown}
-                            className="w-full justify-start text-xs"
-                          >
+                          <Button variant="ghost" size="sm" onClick={handleCopyAsMarkdown} className="w-full justify-start text-xs">
                             Copy as Markdown
                           </Button>
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={handleCopyAsJsonl}
-                            className="w-full justify-start text-xs"
-                          >
+                          <Button variant="ghost" size="sm" onClick={handleCopyAsJsonl} className="w-full justify-start text-xs">
                             Copy as JSONL
                           </Button>
                         </div>
@@ -1543,10 +1523,7 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
                     />
                   )}
                   <TooltipSimple content="Checkpoint Settings" side="top">
-                    <motion.div
-                      whileTap={{ scale: 0.97 }}
-                      transition={{ duration: 0.15 }}
-                    >
+                    <motion.div whileTap={{ scale: 0.97 }} transition={{ duration: 0.15 }}>
                       <Button
                         variant="ghost"
                         size="icon"
@@ -1561,29 +1538,7 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
               }
             />
           </div>
-
-          {/* Token Counter - positioned under the Send button */}
-          {totalTokens > 0 && (
-            <div className="fixed bottom-0 left-0 right-0 z-30 pointer-events-none">
-              <div className="max-w-6xl mx-auto">
-                <div className="flex justify-end px-4 pb-2">
-                  <motion.div
-                    initial={{ opacity: 0, scale: 0.8 }}
-                    animate={{ opacity: 1, scale: 1 }}
-                    exit={{ opacity: 0, scale: 0.8 }}
-                    className="bg-background/95 backdrop-blur-md border rounded-full px-3 py-1 shadow-lg pointer-events-auto"
-                  >
-                    <div className="flex items-center gap-1.5 text-xs">
-                      <Hash className="h-3 w-3 text-muted-foreground" />
-                      <span className="font-mono">{totalTokens.toLocaleString()}</span>
-                      <span className="text-muted-foreground">tokens</span>
-                    </div>
-                  </motion.div>
-                </div>
-              </div>
-            </div>
-          )}
-        </ErrorBoundary>
+        </div>
 
         {/* Timeline */}
         <AnimatePresence>
