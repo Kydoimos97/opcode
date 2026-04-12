@@ -64,7 +64,6 @@ import { SplitPane } from "@/components/ui/split-pane";
 import { WebviewPreview } from "./WebviewPreview";
 import type { ClaudeStreamMessage } from "./AgentExecution";
 import { useVirtualizer } from "@tanstack/react-virtual";
-import { useTrackEvent, useComponentMetrics, useWorkflowTracking } from "@/hooks";
 import { useTabState } from "@/hooks/useTabState";
 import { SessionPersistenceService } from "@/services/sessionPersistence";
 
@@ -187,12 +186,6 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
     wasResumed: !!session,
     modelChanges: [] as Array<{ from: string; to: string; timestamp: number }>,
   });
-
-  // Analytics tracking
-  const trackEvent = useTrackEvent();
-  useComponentMetrics('ClaudeCodeSession');
-  // const aiTracking = useAIInteractionTracking('sonnet'); // Default model
-  const workflowTracking = useWorkflowTracking('claude_session');
 
   // Tab state management
   const { activeTab, updateTabTitle } = useTabState();
@@ -700,8 +693,6 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
                   sessionMetrics.current.filesDeleted += 1;
                 }
 
-                // Track tool start - we'll track completion when we get the result
-                workflowTracking.trackStep(toolUse.name);
               });
             }
 
@@ -714,18 +705,6 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
                 if (isError) {
                   sessionMetrics.current.toolsFailed += 1;
                   sessionMetrics.current.errorsEncountered += 1;
-
-                  trackEvent.enhancedError({
-                    error_type: 'tool_execution',
-                    error_code: 'tool_failed',
-                    error_message: result.content,
-                    context: `Tool execution failed`,
-                    user_action_before_error: 'executing_tool',
-                    recovery_attempted: false,
-                    recovery_successful: false,
-                    error_frequency: 1,
-                    stack_trace_hash: undefined
-                  });
                 }
               });
             }
@@ -779,63 +758,6 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
             return prevMessages;
           });
 
-          // Track enhanced session stopped metrics when session completes
-          if (effectiveSession && claudeSessionId) {
-            const sessionStartTimeValue = messages.length > 0 ? messages[0].timestamp || Date.now() : Date.now();
-            const duration = Date.now() - sessionStartTimeValue;
-            const metrics = sessionMetrics.current;
-            const timeToFirstMessage = metrics.firstMessageTime 
-              ? metrics.firstMessageTime - sessionStartTime.current 
-              : undefined;
-            const idleTime = Date.now() - metrics.lastActivityTime;
-            const avgResponseTime = metrics.toolExecutionTimes.length > 0
-              ? metrics.toolExecutionTimes.reduce((a, b) => a + b, 0) / metrics.toolExecutionTimes.length
-              : undefined;
-            
-            trackEvent.enhancedSessionStopped({
-              // Basic metrics
-              duration_ms: duration,
-              messages_count: messages.length,
-              reason: success ? 'completed' : 'error',
-              
-              // Timing metrics
-              time_to_first_message_ms: timeToFirstMessage,
-              average_response_time_ms: avgResponseTime,
-              idle_time_ms: idleTime,
-              
-              // Interaction metrics
-              prompts_sent: metrics.promptsSent,
-              tools_executed: metrics.toolsExecuted,
-              tools_failed: metrics.toolsFailed,
-              files_created: metrics.filesCreated,
-              files_modified: metrics.filesModified,
-              files_deleted: metrics.filesDeleted,
-              
-              // Content metrics
-              total_tokens_used: totalTokens,
-              code_blocks_generated: metrics.codeBlocksGenerated,
-              errors_encountered: metrics.errorsEncountered,
-              
-              // Session context
-              model: metrics.modelChanges.length > 0 
-                ? metrics.modelChanges[metrics.modelChanges.length - 1].to 
-                : 'sonnet',
-              has_checkpoints: metrics.checkpointCount > 0,
-              checkpoint_count: metrics.checkpointCount,
-              was_resumed: metrics.wasResumed,
-              
-              // Agent context (if applicable)
-              agent_type: undefined, // TODO: Pass from agent execution
-              agent_name: undefined, // TODO: Pass from agent execution
-              agent_success: success,
-              
-              // Stop context
-              stop_source: 'completed',
-              final_state: success ? 'success' : 'failed',
-              has_pending_prompts: queuedPrompts.length > 0,
-              pending_prompts_count: queuedPrompts.length,
-            });
-          }
 
           if (effectiveSession && success) {
             try {
@@ -922,38 +844,14 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
             timestamp: Date.now()
           });
         }
-        
-        // Track enhanced prompt submission
-        const codeBlockMatches = prompt.match(/```[\s\S]*?```/g) || [];
-        const hasCode = codeBlockMatches.length > 0;
-        const conversationDepth = messages.filter(m => m.user_message).length;
-        const sessionAge = sessionStartTime.current ? Date.now() - sessionStartTime.current : 0;
-        const wordCount = prompt.split(/\s+/).filter(word => word.length > 0).length;
-        
-        trackEvent.enhancedPromptSubmitted({
-          prompt_length: prompt.length,
-          model: model,
-          has_attachments: false, // TODO: Add attachment support when implemented
-          source: 'keyboard', // TODO: Track actual source (keyboard vs button)
-          word_count: wordCount,
-          conversation_depth: conversationDepth,
-          prompt_complexity: wordCount < 20 ? 'simple' : wordCount < 100 ? 'moderate' : 'complex',
-          contains_code: hasCode,
-          language_detected: hasCode ? codeBlockMatches?.[0]?.match(/```(\w+)/)?.[1] : undefined,
-          session_age_ms: sessionAge
-        });
 
         // Execute the appropriate command
         if (effectiveSession && !isFirstPrompt) {
           console.log('[ClaudeCodeSession] Resuming session:', effectiveSession.id);
-          trackEvent.sessionResumed(effectiveSession.id);
-          trackEvent.modelSelected(model);
           await api.resumeClaudeCode(projectPath, effectiveSession.id, prompt, model);
         } else {
           console.log('[ClaudeCodeSession] Starting new session');
           setIsFirstPrompt(false);
-          trackEvent.sessionCreated(model, 'prompt_input');
-          trackEvent.modelSelected(model);
           await api.executeClaudeCode(projectPath, prompt, model);
         }
       }
@@ -1059,66 +957,8 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
     if (!claudeSessionId || !isLoading) return;
     
     try {
-      const sessionStartTime = messages.length > 0 ? messages[0].timestamp || Date.now() : Date.now();
-      const duration = Date.now() - sessionStartTime;
-      
       await api.cancelClaudeExecution(claudeSessionId);
-      
-      // Calculate metrics for enhanced analytics
-      const metrics = sessionMetrics.current;
-      const timeToFirstMessage = metrics.firstMessageTime 
-        ? metrics.firstMessageTime - sessionStartTime.current 
-        : undefined;
-      const idleTime = Date.now() - metrics.lastActivityTime;
-      const avgResponseTime = metrics.toolExecutionTimes.length > 0
-        ? metrics.toolExecutionTimes.reduce((a, b) => a + b, 0) / metrics.toolExecutionTimes.length
-        : undefined;
-      
-      // Track enhanced session stopped
-      trackEvent.enhancedSessionStopped({
-        // Basic metrics
-        duration_ms: duration,
-        messages_count: messages.length,
-        reason: 'user_stopped',
-        
-        // Timing metrics
-        time_to_first_message_ms: timeToFirstMessage,
-        average_response_time_ms: avgResponseTime,
-        idle_time_ms: idleTime,
-        
-        // Interaction metrics
-        prompts_sent: metrics.promptsSent,
-        tools_executed: metrics.toolsExecuted,
-        tools_failed: metrics.toolsFailed,
-        files_created: metrics.filesCreated,
-        files_modified: metrics.filesModified,
-        files_deleted: metrics.filesDeleted,
-        
-        // Content metrics
-        total_tokens_used: totalTokens,
-        code_blocks_generated: metrics.codeBlocksGenerated,
-        errors_encountered: metrics.errorsEncountered,
-        
-        // Session context
-        model: metrics.modelChanges.length > 0 
-          ? metrics.modelChanges[metrics.modelChanges.length - 1].to 
-          : 'sonnet', // Default to sonnet
-        has_checkpoints: metrics.checkpointCount > 0,
-        checkpoint_count: metrics.checkpointCount,
-        was_resumed: metrics.wasResumed,
-        
-        // Agent context (if applicable)
-        agent_type: undefined, // TODO: Pass from agent execution
-        agent_name: undefined, // TODO: Pass from agent execution
-        agent_success: undefined, // TODO: Pass from agent execution
-        
-        // Stop context
-        stop_source: 'user_button',
-        final_state: 'cancelled',
-        has_pending_prompts: queuedPrompts.length > 0,
-        pending_prompts_count: queuedPrompts.length,
-      });
-      
+
       // Clean up listeners
       unlistenRefs.current.forEach(unlisten => unlisten());
       unlistenRefs.current = [];
@@ -1273,42 +1113,11 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
       console.log('[ClaudeCodeSession] Component unmounting, cleaning up listeners');
       isMountedRef.current = false;
       isListeningRef.current = false;
-      
-      // Track session completion with engagement metrics
-      if (effectiveSession) {
-        trackEvent.sessionCompleted();
-        
-        // Track session engagement
-        const sessionDuration = sessionStartTime.current ? Date.now() - sessionStartTime.current : 0;
-        const messageCount = messages.filter(m => m.user_message).length;
-        const toolsUsed = new Set<string>();
-        messages.forEach(msg => {
-          if (msg.type === 'assistant' && msg.message?.content) {
-            const tools = msg.message.content.filter((c: any) => c.type === 'tool_use');
-            tools.forEach((tool: any) => toolsUsed.add(tool.name));
-          }
-        });
-        
-        // Calculate engagement score (0-100)
-        const engagementScore = Math.min(100, 
-          (messageCount * 10) + 
-          (toolsUsed.size * 5) + 
-          (sessionDuration > 300000 ? 20 : sessionDuration / 15000) // 5+ min session gets 20 points
-        );
-        
-        trackEvent.sessionEngagement({
-          session_duration_ms: sessionDuration,
-          messages_sent: messageCount,
-          tools_used: Array.from(toolsUsed),
-          files_modified: 0, // TODO: Track file modifications
-          engagement_score: Math.round(engagementScore)
-        });
-      }
-      
+
       // Clean up listeners
       unlistenRefs.current.forEach(unlisten => unlisten());
       unlistenRefs.current = [];
-      
+
       // Clear checkpoint manager when session ends
       if (effectiveSession) {
         api.clearCheckpointManager(effectiveSession.id).catch(err => {

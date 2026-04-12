@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { motion } from 'framer-motion';
-import { Settings, Minus, Square, X, Bot, BarChart3, FileText, Network, Info, MoreVertical, Maximize2, PanelLeft, FolderOpen } from 'lucide-react';
+import { Settings, Minus, Square, X, Bot, BarChart3, FileText, Network, MoreVertical, Maximize2, PanelLeft, FolderOpen } from 'lucide-react';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { getVersion } from '@tauri-apps/api/app';
 import { TooltipProvider, TooltipSimple } from '@/components/ui/tooltip-modern';
@@ -13,7 +13,6 @@ interface CustomTitlebarProps {
   onUsageClick?: () => void;
   onClaudeClick?: () => void;
   onMCPClick?: () => void;
-  onInfoClick?: () => void;
   onSidebarToggle?: () => void;
   onExplorerClick?: () => void;
   onLogsClick?: () => void;
@@ -25,7 +24,6 @@ export const CustomTitlebar: React.FC<CustomTitlebarProps> = ({
   onUsageClick,
   onClaudeClick,
   onMCPClick,
-  onInfoClick,
   onSidebarToggle,
   onExplorerClick,
   onLogsClick
@@ -301,19 +299,6 @@ export const CustomTitlebar: React.FC<CustomTitlebarProps> = ({
                     >
                       <FileText size={14} />
                       <span>Session Logs</span>
-                    </button>
-                  )}
-
-                  {onInfoClick && (
-                    <button
-                      onClick={() => {
-                        onInfoClick();
-                        setIsDropdownOpen(false);
-                      }}
-                      className="w-full px-4 py-2 text-left text-sm hover:bg-accent hover:text-accent-foreground transition-colors flex items-center gap-3"
-                    >
-                      <Info size={14} />
-                      <span>About</span>
                     </button>
                   )}
                 </div>

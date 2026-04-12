@@ -18,14 +18,12 @@ import { Settings } from "@/components/Settings";
 import { CCAgents } from "@/components/CCAgents";
 import { UsageDashboard } from "@/components/UsageDashboard";
 import { MCPManager } from "@/components/MCPManager";
-import { NFOCredits } from "@/components/NFOCredits";
 import { ClaudeBinaryDialog } from "@/components/ClaudeBinaryDialog";
 import { Toast, ToastContainer } from "@/components/ui/toast";
 import { ProjectSettings } from '@/components/ProjectSettings';
 import { TabManager } from "@/components/TabManager";
 import { TabContent } from "@/components/TabContent";
 import { useTabState } from "@/hooks/useTabState";
-import { useAppLifecycle, useTrackEvent } from "@/hooks";
 import { StartupIntro } from "@/components/StartupIntro";
 
 type View = 
@@ -57,33 +55,12 @@ function AppContent() {
   const [editingClaudeFile, setEditingClaudeFile] = useState<ClaudeMdFile | null>(null);
   const [loading, setLoading] = useState(true);
   const [_error, setError] = useState<string | null>(null);
-  const [showNFO, setShowNFO] = useState(false);
   const [showClaudeBinaryDialog, setShowClaudeBinaryDialog] = useState(false);
   const [showProjectPicker, setShowProjectPicker] = useState(false);
   const [homeDirectory, setHomeDirectory] = useState<string>('/');
   const [toast, setToast] = useState<{ message: string; type: "success" | "error" | "info" } | null>(null);
   const [projectForSettings, setProjectForSettings] = useState<Project | null>(null);
   const [previousView] = useState<View>("welcome");
-  
-  // Initialize analytics lifecycle tracking
-  useAppLifecycle();
-  const trackEvent = useTrackEvent();
-  
-  // Track user journey milestones
-  const [hasTrackedFirstChat] = useState(false);
-  // const [hasTrackedFirstAgent] = useState(false);
-  
-  // Track when user reaches different journey stages
-  useEffect(() => {
-    if (view === "projects" && projects.length > 0 && !hasTrackedFirstChat) {
-      // User has projects - they're past onboarding
-      trackEvent.journeyMilestone({
-        journey_stage: 'onboarding',
-        milestone_reached: 'projects_created',
-        time_to_milestone_ms: Date.now() - performance.timing.navigationStart
-      });
-    }
-  }, [view, projects.length, hasTrackedFirstChat, trackEvent]);
 
   // Initialize web mode compatibility on mount
   useEffect(() => {
@@ -390,7 +367,6 @@ function AppContent() {
         onClaudeClick={() => createClaudeMdTab()}
         onMCPClick={() => createMCPTab()}
         onSettingsClick={() => createSettingsTab()}
-        onInfoClick={() => setShowNFO(true)}
         onExplorerClick={() => createExplorerTab()}
         onLogsClick={() => createLogsTab()}
       />
@@ -411,11 +387,7 @@ function AppContent() {
       <div className="flex-1 overflow-hidden">
         {renderContent()}
       </div>
-      
-      {/* NFO Credits Modal */}
-      {showNFO && <NFOCredits onClose={() => setShowNFO(false)} />}
-      
-      
+
       {/* Claude Binary Dialog */}
       <ClaudeBinaryDialog
         open={showClaudeBinaryDialog}

@@ -1,5 +1,5 @@
 import { AnimatePresence, motion } from "framer-motion";
-import opcodeLogo from "../../src-tauri/icons/icon.png";
+import opcodeLogo from "../assets/logo.png";
 import type { CSSProperties } from "react";
 
 /**
