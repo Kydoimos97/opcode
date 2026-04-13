@@ -1,12 +1,14 @@
 import React, { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { 
-  Network, 
-  Globe, 
-  Terminal, 
-  Trash2, 
-  Play, 
+import {
+  Network,
+  Globe,
+  Terminal,
+  Trash2,
+  Play,
   CheckCircle,
+  AlertCircle,
+  Circle,
   Loader2,
   RefreshCw,
   FolderOpen,
@@ -18,6 +20,7 @@ import {
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { cn } from "@/lib/utils";
 import { api, type MCPServer } from "@/lib/api";
 
 interface MCPServerListProps {
@@ -40,6 +43,84 @@ interface MCPServerListProps {
 }
 
 /**
+ * Extract a meaningful display name from an MCP server
+ * For stdio servers, uses the command basename or first package arg
+ * For SSE servers, uses the URL hostname
+ * Falls back to server.name
+ */
+function extractServerName(server: MCPServer): string {
+  if (server.command) {
+    const cmd = server.command.trim();
+    const exe = cmd.split(/\s+/)[0];
+    const basename = exe.split(/[/\\]/).pop() ?? exe;
+    const withoutExt = basename.replace(/\.(exe|sh|py|js|ts)$/i, "");
+    const boring = [
+      "node",
+      "python",
+      "python3",
+      "npx",
+      "uv",
+      "uvx",
+      "deno",
+      "bun"
+    ];
+    if (!boring.includes(withoutExt.toLowerCase())) {
+      return withoutExt;
+    }
+    if (server.args.length > 0) {
+      const pkg = server.args[0].split("/").pop() ?? server.args[0];
+      return pkg;
+    }
+  }
+  if (server.url) {
+    try {
+      return new URL(server.url).hostname;
+    } catch {
+      return server.url;
+    }
+  }
+  return server.name;
+}
+
+/**
+ * Get a status badge component for a server
+ * Shows Connected (green), Error (red), or Inactive (gray)
+ */
+function getStatusBadge(server: MCPServer): React.ReactNode {
+  if (server.status?.running) {
+    return (
+      <Badge
+        variant="outline"
+        className="gap-1 flex-shrink-0 border-green-500/50 text-green-600 bg-green-500/10"
+      >
+        <CheckCircle className="h-3 w-3" />
+        Connected
+      </Badge>
+    );
+  }
+  if (server.status?.error) {
+    return (
+      <Badge
+        variant="outline"
+        className="gap-1 flex-shrink-0 border-red-500/50 text-red-600 bg-red-500/10"
+      >
+        <AlertCircle className="h-3 w-3" />
+        Error
+      </Badge>
+    );
+  }
+  return (
+    <Badge
+      variant="outline"
+      className="gap-1 flex-shrink-0 border-muted text-muted-foreground bg-muted/20"
+    >
+      <Circle className="h-3 w-3" />
+      Inactive
+    </Badge>
+  );
+}
+
+/**
  * Component for displaying a list of MCP servers
  * Shows servers grouped by scope with status indicators
  */
@@ -53,6 +134,9 @@ export const MCPServerList: React.FC<MCPServerListProps> = ({
   const [testingServer, setTestingServer] = useState<string | null>(null);
   const [expandedServers, setExpandedServers] = useState<Set<string>>(new Set());
   const [copiedServer, setCopiedServer] = useState<string | null>(null);
+  const [testResults, setTestResults] = useState<
+    Record<string, { success: boolean; message: string } | null>
+  >({});
 
   // Group servers by scope
   const serversByScope = servers.reduce((acc, server) => {
@@ -113,12 +197,27 @@ export const MCPServerList: React.FC<MCPServerListProps> = ({
   const handleTestConnection = async (name: string) => {
     try {
       setTestingServer(name);
+      setTestResults((prev) => ({ ...prev, [name]: null }));
       const result = await api.mcpTestConnection(name);
-
-      // TODO: Show result in a toast or modal
-      console.log("Test result:", result);
+      setTestResults((prev) => ({
+        ...prev,
+        [name]: {
+          success: true,
+          message:
+            typeof result === "string"
+              ? result
+              : "Connection successful"
+        }
+      }));
     } catch (error) {
-      console.error("Failed to test connection:", error);
+      setTestResults((prev) => ({
+        ...prev,
+        [name]: {
+          success: false,
+          message:
+            error instanceof Error ? error.message : "Connection failed"
+        }
+      }));
     } finally {
       setTestingServer(null);
     }
@@ -192,13 +291,8 @@ export const MCPServerList: React.FC<MCPServerListProps> = ({
                 <div className="p-1.5 bg-primary/10 rounded">
                   {getTransportIcon(server.transport)}
                 </div>
-                <h4 className="font-medium truncate">{server.name}</h4>
-                {server.status?.running && (
-                  <Badge variant="outline" className="gap-1 flex-shrink-0 border-green-500/50 text-green-600 bg-green-500/10">
-                    <CheckCircle className="h-3 w-3" />
-                    Running
-                  </Badge>
-                )}
+                <h4 className="font-medium truncate">{extractServerName(server)}</h4>
+                {getStatusBadge(server)}
               </div>
               
               {server.command && !isExpanded && (
@@ -341,6 +435,19 @@ export const MCPServerList: React.FC<MCPServerListProps> = ({
                 </div>
               )}
             </motion.div>
+          )}
+
+          {testResults[server.name] && (
+            <div
+              className={cn(
+                "mt-2 text-xs rounded px-3 py-2 font-mono",
+                testResults[server.name]!.success
+                  ? "bg-green-500/10 text-green-600 border border-green-500/20"
+                  : "bg-red-500/10 text-red-600 border border-red-500/20"
+              )}
+            >
+              {testResults[server.name]!.message}
+            </div>
           )}
         </div>
       </motion.div>
