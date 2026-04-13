@@ -209,9 +209,8 @@ export const Settings: React.FC<SettingsProps> = ({
     loadClaudeBinaryPath();
     setTabPersistenceEnabled(TabPersistenceService.isEnabled());
     (async () => {
-      const ccodeSettingsData = await api.readCcodeSettings().catch(() => ({} as Record<string, string>));
-      const pref: string | null = ccodeSettingsData['startup_intro_enabled'] ?? null;
-      setStartupIntroEnabled(pref === null ? true : pref === 'true');
+      const startupIntroPref = await ccodeSettings.getPreference('startup_intro_enabled');
+      setStartupIntroEnabled(startupIntroPref === null || startupIntroPref === undefined ? true : Boolean(startupIntroPref));
       const cguardStatus = await api.checkCguardInstalled();
       setCguardInstalled(cguardStatus);
 
@@ -853,8 +852,7 @@ export const Settings: React.FC<SettingsProps> = ({
                         onCheckedChange={async (checked) => {
                           setStartupIntroEnabled(checked);
                           try {
-                            const current = await api.readCcodeSettings().catch(() => ({} as Record<string, string>));
-                            await api.writeCcodeSettings({ ...current, startup_intro_enabled: checked ? 'true' : 'false' });
+                            await ccodeSettings.setPreference('startup_intro_enabled', checked);
                             setToast({
                               message: checked
                                 ? 'Welcome intro enabled'

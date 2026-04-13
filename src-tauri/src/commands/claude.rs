@@ -1152,7 +1152,8 @@ pub async fn get_session_file_status(
                             let trimmed = text.trim().to_string();
                             if !trimmed.is_empty() {
                                 last_user_message = Some(if trimmed.len() > 120 {
-                                    format!("{}…", &trimmed[..120])
+                                    let truncated: String = trimmed.chars().take(120).collect();
+                                    format!("{}…", truncated)
                                 } else {
                                     trimmed
                                 });

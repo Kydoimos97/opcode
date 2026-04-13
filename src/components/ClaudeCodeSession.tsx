@@ -662,6 +662,15 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
             setRawJsonlOutput((prev) => [...prev, rawPayload]);
 
             setMessages((prev) => [...prev, message]);
+
+            // Drive session state from stream events
+            if (message.type === 'system') {
+              if (message.subtype === 'permission_request') {
+                setSessionState('waiting_approval');
+              } else if (message.subtype === 'elicitation') {
+                setSessionState('waiting_elicitation');
+              }
+            }
           } catch (err) {
             console.error('Failed to parse message:', err, payload);
           }
