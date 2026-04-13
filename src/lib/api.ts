@@ -737,6 +737,15 @@ export const api = {
     }
   },
 
+  async readPlanFile(path: string): Promise<string> {
+    try {
+      return await apiCall<string>("read_plan_file", { path });
+    } catch (error) {
+      console.error("Failed to read plan file:", error);
+      throw error;
+    }
+  },
+
   /**
    * Saves a specific CLAUDE.md file
    * @param filePath - The absolute path to the file

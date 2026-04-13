@@ -23,6 +23,7 @@ export interface HookState {
     toolInput: Record<string, unknown>;
     suggestions: Array<{ type: string; mode: string; destination: string }>;
   } | null;
+  activePlanPath: string | null;
 }
 
 const INITIAL_STATE: HookState = {
@@ -37,6 +38,7 @@ const INITIAL_STATE: HookState = {
   lastCompactSummary: null,
   instructionsLoaded: [],
   permissionRequest: null,
+  activePlanPath: null,
 };
 
 /**
@@ -50,6 +52,10 @@ export function deriveHookState(lines: string[]): HookState {
     try {
       const entry: HookEventEntry = JSON.parse(line);
       const { hook_type, payload } = entry;
+
+      if (typeof payload.planFilePath === "string" && payload.planFilePath) {
+        state.activePlanPath = payload.planFilePath;
+      }
 
       switch (hook_type) {
         case 'PreToolUse':

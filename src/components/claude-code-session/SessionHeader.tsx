@@ -19,7 +19,9 @@ import {
   ChevronDown,
   X,
   Terminal,
+  BookOpen,
 } from 'lucide-react';
+import { api } from '@/lib/api';
 import { Button } from '@/components/ui/button';
 import { Popover } from '@/components/ui/popover';
 import {
@@ -69,6 +71,7 @@ interface SessionHeaderProps {
   onSearchQueryChange?: (query: string) => void;
   onSearchNext?: () => void;
   onSearchPrev?: () => void;
+  activePlanPath?: string;
 }
 
 export const SessionHeader: React.FC<SessionHeaderProps> = React.memo(({
@@ -104,12 +107,16 @@ export const SessionHeader: React.FC<SessionHeaderProps> = React.memo(({
   onSearchQueryChange,
   onSearchNext,
   onSearchPrev,
+  activePlanPath,
 }) => {
   const { displayName, setDisplayName } = useProjectDisplayName(projectPath);
   const { color: projectColor } = useProjectColor(projectPath);
   const [isEditing, setIsEditing] = useState(false);
   const [editValue, setEditValue] = useState('');
   const [idCopied, setIdCopied] = useState(false);
+  const [planModalOpen, setPlanModalOpen] = useState(false);
+  const [planContent, setPlanContent] = useState<string | null>(null);
+  const [planLoading, setPlanLoading] = useState(false);
 
   const displayedSessionId = claudeSessionId ?? sessionId ?? null;
 
@@ -119,6 +126,26 @@ export const SessionHeader: React.FC<SessionHeaderProps> = React.memo(({
       setIdCopied(true);
       setTimeout(() => setIdCopied(false), 1500);
     });
+  };
+
+  const planName = activePlanPath
+    ? activePlanPath.replace(/\\/g, '/').split('/').pop()?.replace(/\.md$/, '') ?? 'Plan'
+    : null;
+
+  const handleOpenPlan = async () => {
+    if (!activePlanPath) return;
+    setPlanModalOpen(true);
+    if (planContent === null) {
+      setPlanLoading(true);
+      try {
+        const content = await api.readPlanFile(activePlanPath);
+        setPlanContent(content);
+      } catch {
+        setPlanContent('Failed to load plan file.');
+      } finally {
+        setPlanLoading(false);
+      }
+    }
   };
 
   const autoTitle = (() => {
@@ -216,6 +243,19 @@ export const SessionHeader: React.FC<SessionHeaderProps> = React.memo(({
               >
                 <Hash className="h-3 w-3 mr-1" />
                 {displayedSessionId.slice(0, 8)}
+              </Badge>
+            </TooltipSimple>
+          )}
+
+          {planName && (
+            <TooltipSimple content={activePlanPath ?? ''} side="bottom">
+              <Badge
+                variant="outline"
+                className="text-xs cursor-pointer hover:bg-accent transition-colors select-none gap-1 border-blue-500/30 text-blue-500 bg-blue-500/10"
+                onClick={handleOpenPlan}
+              >
+                <BookOpen className="h-3 w-3" />
+                {planName}
               </Badge>
             </TooltipSimple>
           )}
@@ -417,6 +457,40 @@ export const SessionHeader: React.FC<SessionHeaderProps> = React.memo(({
           <Button variant="ghost" size="icon" className="h-6 w-6 shrink-0" onClick={onSearchToggle}>
             <X className="h-3.5 w-3.5" />
           </Button>
+        </div>
+      )}
+
+      {/* Plan modal */}
+      {planModalOpen && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm"
+          onClick={() => setPlanModalOpen(false)}
+        >
+          <div
+            className="relative bg-background border border-border rounded-lg shadow-xl w-full max-w-2xl mx-4 max-h-[80vh] flex flex-col"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between px-4 py-3 border-b border-border flex-shrink-0">
+              <div className="flex items-center gap-2 text-sm font-medium">
+                <BookOpen className="h-4 w-4 text-blue-500" />
+                <span>{planName}</span>
+              </div>
+              <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => setPlanModalOpen(false)}>
+                <X className="h-4 w-4" />
+              </Button>
+            </div>
+            <div className="flex-1 overflow-y-auto p-4">
+              {planLoading ? (
+                <div className="flex items-center justify-center h-32 text-muted-foreground text-sm">
+                  Loading plan...
+                </div>
+              ) : (
+                <pre className="text-xs text-foreground/90 font-mono whitespace-pre-wrap leading-relaxed">
+                  {planContent}
+                </pre>
+              )}
+            </div>
+          </div>
         </div>
       )}
     </div>

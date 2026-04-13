@@ -3796,3 +3796,50 @@ pub async fn open_path(path: String) -> Result<(), String> {
     }
     Ok(())
 }
+
+#[derive(serde::Serialize)]
+pub struct PlanFile {
+    pub path: String,
+    pub name: String,
+    pub modified_ms: u64,
+}
+
+#[tauri::command]
+pub fn list_plan_files() -> Result<Vec<PlanFile>, String> {
+    let home = dirs::home_dir().ok_or_else(|| "Cannot find home directory".to_string())?;
+    let plans_dir = home.join(".claude").join("plans");
+    if !plans_dir.exists() {
+        return Ok(vec![]);
+    }
+    let mut plans: Vec<PlanFile> = std::fs::read_dir(&plans_dir)
+        .map_err(|e| format!("Failed to read plans directory: {}", e))?
+        .filter_map(|entry| {
+            let entry = entry.ok()?;
+            let path = entry.path();
+            if path.extension()?.to_str()? != "md" {
+                return None;
+            }
+            let metadata = path.metadata().ok()?;
+            let modified_ms = metadata
+                .modified()
+                .ok()?
+                .duration_since(std::time::UNIX_EPOCH)
+                .ok()?
+                .as_millis() as u64;
+            let name = path.file_stem()?.to_str()?.to_string();
+            Some(PlanFile {
+                path: path.to_string_lossy().to_string(),
+                name,
+                modified_ms,
+            })
+        })
+        .collect();
+    plans.sort_by(|a, b| b.modified_ms.cmp(&a.modified_ms));
+    Ok(plans)
+}
+
+#[tauri::command]
+pub fn read_plan_file(path: String) -> Result<String, String> {
+    std::fs::read_to_string(&path)
+        .map_err(|e| format!("Failed to read plan file: {}", e))
+}

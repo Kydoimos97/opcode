@@ -1265,6 +1265,7 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
               setError(typeof e === 'string' ? e : 'No terminal emulator found. Install WezTerm or Windows Terminal.');
             }
           } : undefined}
+          activePlanPath={hookState.activePlanPath ?? undefined}
           onShowTimeline={effectiveSession ? () => setShowTimeline(true) : undefined}
           setCopyPopoverOpen={setCopyPopoverOpen}
           searchOpen={searchOpen}
