@@ -1,5 +1,7 @@
 import React, { useState } from "react";
-import { Download, Upload, FileText, Loader2, Info, Network, Settings2 } from "lucide-react";
+import { Download, Upload, FileText, Loader2, Info, Network, Settings2, AlertCircle } from "lucide-react";
+
+const IS_WINDOWS = navigator.userAgent.toLowerCase().includes("win");
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
@@ -193,7 +195,7 @@ export const MCPImportExport: React.FC<MCPImportExportProps> = ({
         </Card>
 
         {/* Import from Claude Desktop */}
-        <Card className="p-4 hover:bg-accent/5 transition-colors">
+        <Card className={`p-4 transition-colors ${IS_WINDOWS ? "opacity-60" : "hover:bg-accent/5"}`}>
           <div className="space-y-3">
             <div className="flex items-start gap-3">
               <div className="p-2.5 bg-blue-500/10 rounded-lg">
@@ -206,9 +208,15 @@ export const MCPImportExport: React.FC<MCPImportExportProps> = ({
                 </p>
               </div>
             </div>
+            {IS_WINDOWS && (
+              <div className="flex items-center gap-2 text-xs text-amber-600 bg-amber-500/10 border border-amber-500/20 rounded px-3 py-2">
+                <AlertCircle className="h-3 w-3 flex-shrink-0" />
+                Not available on Windows — Claude Desktop config import requires macOS or WSL.
+              </div>
+            )}
             <Button
               onClick={handleImportFromDesktop}
-              disabled={importingDesktop}
+              disabled={importingDesktop || IS_WINDOWS}
               className="w-full gap-2 bg-primary hover:bg-primary/90"
             >
               {importingDesktop ? (
