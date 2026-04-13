@@ -10,6 +10,7 @@ import {
   Pencil,
   RefreshCw,
   ChevronsUpDown,
+  ChevronsDownUp,
   FileText,
   Zap,
 } from 'lucide-react';
@@ -237,7 +238,10 @@ export const SessionHeader: React.FC<SessionHeaderProps> = React.memo(({
                 onClick={onCollapseAll}
                 className={cn('h-8 w-8 transition-colors', allCollapsed && 'bg-accent text-accent-foreground')}
               >
-                <ChevronsUpDown className="h-4 w-4" />
+                {allCollapsed
+                  ? <ChevronsUpDown className="h-4 w-4" />
+                  : <ChevronsDownUp className="h-4 w-4" />
+                }
               </Button>
             </TooltipSimple>
           )}
