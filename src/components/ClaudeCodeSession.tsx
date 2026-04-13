@@ -114,7 +114,7 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
   const [rawJsonlOutput, setRawJsonlOutput] = useState<string[]>([]);
   const [copyPopoverOpen, setCopyPopoverOpen] = useState(false);
   const [isFirstPrompt, setIsFirstPrompt] = useState(!session);
-  const [selectedModel, setSelectedModel] = useState<"sonnet" | "opus">("sonnet");
+  const [selectedModel, setSelectedModel] = useState<"sonnet" | "opus" | "haiku">("sonnet");
   const [selectedPermissionMode, setSelectedPermissionMode] = useState<"default" | "acceptEdits" | "plan" | "dontAsk" | "bypassPermissions">("bypassPermissions");
   const [extractedSessionInfo, setExtractedSessionInfo] = useState<{ sessionId: string; projectId: string } | null>(null);
   const [claudeSessionId, setClaudeSessionId] = useState<string | null>(null);
@@ -128,7 +128,7 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
   const [gitInfo, setGitInfo] = useState<GitInfo | null>(null);
 
   // Queued prompts state
-  const [queuedPrompts, setQueuedPrompts] = useState<Array<{ id: string; prompt: string; model: "sonnet" | "opus" }>>([]);
+  const [queuedPrompts, setQueuedPrompts] = useState<Array<{ id: string; prompt: string; model: "sonnet" | "opus" | "haiku" }>>([]);
   
   // New state for preview feature
   const [showPreview, setShowPreview] = useState(false);
@@ -158,7 +158,7 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
   const hasActiveSessionRef = useRef(false);
   const fileLineCountRef = useRef<number>(0);
   const floatingPromptRef = useRef<FloatingPromptInputRef>(null);
-  const queuedPromptsRef = useRef<Array<{ id: string; prompt: string; model: "sonnet" | "opus" }>>([]);
+  const queuedPromptsRef = useRef<Array<{ id: string; prompt: string; model: "sonnet" | "opus" | "haiku" }>>([]);
   const isMountedRef = useRef(true);
   const isListeningRef = useRef(false);
   const isIMEComposingRef = useRef(false);
@@ -581,7 +581,7 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
 
   // Project path selection handled by parent tab controls
 
-  const handleSendPrompt = async (prompt: string, model: "sonnet" | "opus", permissionMode?: "default" | "acceptEdits" | "plan" | "dontAsk" | "bypassPermissions") => {
+  const handleSendPrompt = async (prompt: string, model: "sonnet" | "opus" | "haiku", permissionMode?: "default" | "acceptEdits" | "plan" | "dontAsk" | "bypassPermissions") => {
     if (!projectPath) {
       setError("Please select a project directory first");
       return;

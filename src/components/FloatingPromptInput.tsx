@@ -44,7 +44,7 @@ interface FloatingPromptInputProps {
   /**
    * Callback when prompt is sent
    */
-  onSend: (prompt: string, model: "sonnet" | "opus", permissionMode?: PermissionMode) => void;
+  onSend: (prompt: string, model: "sonnet" | "opus" | "haiku", permissionMode?: PermissionMode) => void;
   /**
    * Whether the input is loading
    */
@@ -56,7 +56,7 @@ interface FloatingPromptInputProps {
   /**
    * Currently selected model (controlled by parent)
    */
-  selectedModel: "sonnet" | "opus";
+  selectedModel: "sonnet" | "opus" | "haiku";
   /**
    * Currently selected permission mode (controlled by parent)
    */
@@ -183,9 +183,10 @@ const ThinkingModeIndicator: React.FC<{ level: number; color?: string }> = ({ le
   );
 };
 
-const MODELS_DISPLAY: Record<"sonnet" | "opus", string> = {
+const MODELS_DISPLAY: Record<"sonnet" | "opus" | "haiku", string> = {
   sonnet: "Sonnet",
   opus: "Opus",
+  haiku: "Haiku",
 };
 
 type PermissionModeConfig = {

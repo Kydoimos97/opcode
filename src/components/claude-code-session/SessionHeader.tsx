@@ -13,6 +13,7 @@ import {
   ChevronsDownUp,
   FileText,
   Zap,
+  Feather,
   Search,
   ChevronUp,
   ChevronDown,
@@ -38,7 +39,7 @@ interface SessionHeaderProps {
   projectPath: string;
   claudeSessionId: string | null;
   sessionId?: string | null;
-  selectedModel: 'sonnet' | 'opus';
+  selectedModel: 'sonnet' | 'opus' | 'haiku';
   isStreaming: boolean;
   hasMessages: boolean;
   allCollapsed?: boolean;
@@ -48,7 +49,7 @@ interface SessionHeaderProps {
   onSelectPath: () => void;
   onCopyAsJsonl: () => void;
   onCopyAsMarkdown: () => void;
-  onModelChange: (model: 'sonnet' | 'opus') => void;
+  onModelChange: (model: 'sonnet' | 'opus' | 'haiku') => void;
   onProjectSettings?: () => void;
   onSlashCommandsSettings?: () => void;
   onOpenFolder?: () => void;
@@ -332,6 +333,18 @@ export const SessionHeader: React.FC<SessionHeaderProps> = React.memo(({
                 >
                   <Zap className="h-3 w-3 rotate-180" />
                   Opus
+                </button>
+                <button
+                  onClick={() => onModelChange('haiku')}
+                  className={cn(
+                    'flex-1 flex items-center justify-center gap-1.5 h-7 rounded text-xs font-medium transition-colors',
+                    selectedModel === 'haiku'
+                      ? 'bg-primary text-primary-foreground'
+                      : 'bg-muted hover:bg-accent'
+                  )}
+                >
+                  <Feather className="h-3 w-3" />
+                  Haiku
                 </button>
               </div>
               {(onProjectSettings || onSlashCommandsSettings || onShowTimeline) && <DropdownMenuSeparator />}
