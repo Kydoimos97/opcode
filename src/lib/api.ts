@@ -1227,6 +1227,35 @@ export const api = {
   },
 
   /**
+   * Loads the persisted usage cache from disk
+   * @returns Promise resolving to cached data with savedAt timestamp, or null if not available
+   */
+  async loadUsageCache(): Promise<{ stats: any; sessionStats: any; savedAt: number } | null> {
+    try {
+      const raw = await apiCall<any>("read_usage_cache");
+      if (!raw || typeof raw !== 'object') return null;
+      return raw;
+    } catch {
+      return null;
+    }
+  },
+
+  /**
+   * Saves usage stats to the persistent cache on disk
+   * @param stats - Usage statistics to cache
+   * @param sessionStats - Session statistics to cache
+   */
+  async saveUsageCache(stats: any, sessionStats: any): Promise<void> {
+    try {
+      await apiCall<void>("write_usage_cache", {
+        data: { stats, sessionStats, savedAt: Date.now() }
+      });
+    } catch (err) {
+      console.error("Failed to save usage cache:", err);
+    }
+  },
+
+  /**
    * Creates a checkpoint for the current session state
    */
   async createCheckpoint(

@@ -46,6 +46,7 @@ use commands::mcp::{
 use commands::proxy::{apply_proxy_settings, get_proxy_settings, load_proxy_at_startup, save_proxy_settings};
 use commands::usage::{
     get_session_stats, get_usage_by_date_range, get_usage_details, get_usage_stats,
+    read_usage_cache, write_usage_cache,
 };
 use process::ProcessRegistryState;
 use tauri::Manager;
@@ -213,6 +214,8 @@ fn main() {
             get_usage_by_date_range,
             get_usage_details,
             get_session_stats,
+            read_usage_cache,
+            write_usage_cache,
             // MCP (Model Context Protocol)
             mcp_add,
             mcp_list,

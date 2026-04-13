@@ -704,3 +704,37 @@ pub async fn get_session_stats(
     .await
     .map_err(|e| format!("Task failed: {}", e))?
 }
+
+fn usage_cache_path() -> Result<PathBuf, String> {
+    let home = dirs::home_dir().ok_or_else(|| "Cannot find home directory".to_string())?;
+    let dir = home.join(".ccode");
+    if !dir.exists() {
+        fs::create_dir_all(&dir).map_err(|e| format!("Failed to create ~/.ccode: {}", e))?;
+    }
+    Ok(dir.join("usage_cache.json"))
+}
+
+#[command]
+pub fn read_usage_cache() -> Result<serde_json::Value, String> {
+    let path = usage_cache_path()?;
+    if !path.exists() {
+        return Ok(serde_json::json!(null));
+    }
+    let contents = fs::read_to_string(&path)
+        .map_err(|e| format!("Failed to read usage cache: {}", e))?;
+    serde_json::from_str(&contents)
+        .map_err(|e| format!("Failed to parse usage cache: {}", e))
+}
+
+#[command]
+pub fn write_usage_cache(data: serde_json::Value) -> Result<(), String> {
+    let path = usage_cache_path()?;
+    let tmp = path.with_extension("json.tmp");
+    let contents = serde_json::to_string_pretty(&data)
+        .map_err(|e| format!("Failed to serialize usage cache: {}", e))?;
+    fs::write(&tmp, &contents)
+        .map_err(|e| format!("Failed to write usage cache tmp: {}", e))?;
+    fs::rename(&tmp, &path)
+        .map_err(|e| format!("Failed to rename usage cache: {}", e))?;
+    Ok(())
+}
