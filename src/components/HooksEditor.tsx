@@ -80,7 +80,8 @@ interface EditableHookMatcher extends Omit<HookMatcher, 'hooks'> {
   expanded?: boolean;
 }
 
-const EVENT_INFO: Record<HookEvent, { label: string; description: string; icon: React.ReactNode }> = {
+// Default event info for known hook types
+const DEFAULT_EVENT_INFO: Record<HookEvent, { label: string; description: string; icon: React.ReactNode }> = {
   PreToolUse: {
     label: 'Pre Tool Use',
     description: 'Runs before tool calls, can block and provide feedback',
@@ -126,11 +127,52 @@ export const HooksEditor: React.FC<HooksEditorProps> = ({
   const [isLoading, setIsLoading] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [hooks, setHooks] = useState<HooksConfiguration>({});
+  const [availableEvents, setAvailableEvents] = useState<HookEvent[]>([]);
   
   // Events with matchers (tool-related)
   const matcherEvents = ['PreToolUse', 'PostToolUse'] as const;
   // Events without matchers (non-tool-related)
   const directEvents = ['Notification', 'Stop', 'SubagentStop'] as const;
+
+  // Helper to get event info with fallback for unknown events
+  const getEventInfo = (event: HookEvent) => {
+    return DEFAULT_EVENT_INFO[event] || {
+      label: event,
+      description: `Custom hook event: ${event}`,
+      icon: <Code2 className="h-4 w-4" />
+    };
+  };
+
+  // Helper to derive available events from hooks config
+  const deriveAvailableEvents = (config: HooksConfiguration): HookEvent[] => {
+    const events = new Set<HookEvent>();
+
+    // Add all events that exist in the config
+    const allKnownEvents: HookEvent[] = ['PreToolUse', 'PostToolUse', 'Notification', 'Stop', 'SubagentStop'];
+    for (const event of allKnownEvents) {
+      if (config[event] && (config[event] as any).length > 0) {
+        events.add(event);
+      }
+    }
+
+    // Also add any unknown event keys from the config (for future extensibility)
+    for (const key of Object.keys(config)) {
+      if ((config as any)[key] && Array.isArray((config as any)[key]) && (config as any)[key].length > 0) {
+        events.add(key as HookEvent);
+      }
+    }
+
+    // If no events exist, provide defaults
+    if (events.size === 0) {
+      events.add('PreToolUse');
+      events.add('PostToolUse');
+      events.add('Notification');
+      events.add('Stop');
+    }
+
+    // Sort for consistent ordering
+    return Array.from(events).sort();
+  };
   
   // Convert hooks to editable format with IDs
   const [editableHooks, setEditableHooks] = useState<{
@@ -184,23 +226,29 @@ export const HooksEditor: React.FC<HooksEditorProps> = ({
     if (scope === 'user' || projectPath) {
       setIsLoading(true);
       setLoadError(null);
-      
+
       api.getHooksConfig(scope, projectPath)
         .then((config) => {
-          setHooks(config || {});
+          const loadedConfig = config || {};
+          setHooks(loadedConfig);
+          setAvailableEvents(deriveAvailableEvents(loadedConfig));
           setHasUnsavedChanges(false);
         })
         .catch((err) => {
           console.error("Failed to load hooks configuration:", err);
           setLoadError(err instanceof Error ? err.message : "Failed to load hooks configuration");
-          setHooks({});
+          const emptyConfig: HooksConfiguration = {};
+          setHooks(emptyConfig);
+          setAvailableEvents(deriveAvailableEvents(emptyConfig));
         })
         .finally(() => {
           setIsLoading(false);
         });
     } else {
       // No projectPath for project/local scopes
-      setHooks({});
+      const emptyConfig: HooksConfiguration = {};
+      setHooks(emptyConfig);
+      setAvailableEvents(deriveAvailableEvents(emptyConfig));
     }
   }, [projectPath, scope]);
 
@@ -208,7 +256,10 @@ export const HooksEditor: React.FC<HooksEditorProps> = ({
   useEffect(() => {
     isInitialMount.current = true;
     setHasUnsavedChanges(false); // Reset unsaved changes when hooks prop changes
-    
+
+    // Update available events based on the loaded hooks
+    setAvailableEvents(deriveAvailableEvents(hooks));
+
     // Reinitialize editable hooks when hooks prop changes
     const result = {
       PreToolUse: [],
@@ -217,7 +268,7 @@ export const HooksEditor: React.FC<HooksEditorProps> = ({
       Stop: [],
       SubagentStop: []
     } as any;
-    
+
     // Initialize matcher events
     matcherEvents.forEach(event => {
       const matchers = hooks?.[event] as HookMatcher[] | undefined;
@@ -233,7 +284,7 @@ export const HooksEditor: React.FC<HooksEditorProps> = ({
         }));
       }
     });
-    
+
     // Initialize direct events
     directEvents.forEach(event => {
       const commands = hooks?.[event] as HookCommand[] | undefined;
@@ -244,7 +295,7 @@ export const HooksEditor: React.FC<HooksEditorProps> = ({
         }));
       }
     });
-    
+
     setEditableHooks(result);
   }, [hooks]);
 
@@ -293,11 +344,11 @@ export const HooksEditor: React.FC<HooksEditorProps> = ({
   // Save function to be called explicitly
   const handleSave = async () => {
     if (scope !== 'user' && !projectPath) return;
-    
+
     setIsSaving(true);
-    
+
     const newHooks: HooksConfiguration = {};
-    
+
     // Handle matcher events
     matcherEvents.forEach(event => {
       const matchers = editableHooks[event];
@@ -308,7 +359,7 @@ export const HooksEditor: React.FC<HooksEditorProps> = ({
         }));
       }
     });
-    
+
     // Handle direct events
     directEvents.forEach(event => {
       const commands = editableHooks[event];
@@ -316,7 +367,15 @@ export const HooksEditor: React.FC<HooksEditorProps> = ({
         newHooks[event] = commands.map(({ id, ...hook }) => hook);
       }
     });
-    
+
+    // Validate before saving
+    await validateHooks();
+    const validationResult = await HooksManager.validateConfig(newHooks);
+    if (!validationResult.valid) {
+      setIsSaving(false);
+      return;
+    }
+
     try {
       await api.updateHooksConfig(scope, newHooks, projectPath);
       setHooks(newHooks);
@@ -444,15 +503,11 @@ export const HooksEditor: React.FC<HooksEditorProps> = ({
       setValidationWarnings([]);
       return;
     }
-    
+
     const result = await HooksManager.validateConfig(hooks);
     setValidationErrors(result.errors.map(e => e.message));
     setValidationWarnings(result.warnings.map(w => `${w.message} in command: ${(w.command || '').substring(0, 50)}...`));
   };
-
-  useEffect(() => {
-    validateHooks();
-  }, [hooks]);
 
   const addCommand = (event: HookEvent, matcherId: string) => {
     if (!matcherEvents.includes(event as any)) return;
@@ -821,16 +876,17 @@ export const HooksEditor: React.FC<HooksEditorProps> = ({
           {/* Event Tabs */}
           <Tabs value={selectedEvent} onValueChange={(v) => setSelectedEvent(v as HookEvent)}>
             <TabsList className="w-full">
-              {(Object.keys(EVENT_INFO) as HookEvent[]).map(event => {
+              {availableEvents.map(event => {
                 const isMatcherEvent = matcherEvents.includes(event as any);
-                const count = isMatcherEvent 
+                const count = isMatcherEvent
                   ? (editableHooks[event as 'PreToolUse' | 'PostToolUse'] as EditableHookMatcher[]).length
                   : (editableHooks[event as 'Notification' | 'Stop' | 'SubagentStop'] as EditableHookCommand[]).length;
-                
+                const eventInfo = getEventInfo(event);
+
                 return (
                   <TabsTrigger key={event} value={event} className="flex items-center gap-2">
-                    {EVENT_INFO[event].icon}
-                    <span className="hidden sm:inline">{EVENT_INFO[event].label}</span>
+                    {eventInfo.icon}
+                    <span className="hidden sm:inline">{eventInfo.label}</span>
                     {count > 0 && (
                       <Badge variant="secondary" className="ml-1 h-5 px-1">
                         {count}
@@ -841,17 +897,18 @@ export const HooksEditor: React.FC<HooksEditorProps> = ({
               })}
             </TabsList>
 
-            {(Object.keys(EVENT_INFO) as HookEvent[]).map(event => {
+            {availableEvents.map(event => {
               const isMatcherEvent = matcherEvents.includes(event as any);
-              const items = isMatcherEvent 
+              const items = isMatcherEvent
                 ? (editableHooks[event as 'PreToolUse' | 'PostToolUse'] as EditableHookMatcher[])
                 : (editableHooks[event as 'Notification' | 'Stop' | 'SubagentStop'] as EditableHookCommand[]);
-              
+              const eventInfo = getEventInfo(event);
+
               return (
                 <TabsContent key={event} value={event} className="space-y-4">
                   <div className="space-y-2">
                     <p className="text-sm text-muted-foreground">
-                      {EVENT_INFO[event].description}
+                      {eventInfo.description}
                     </p>
                   </div>
 
@@ -867,11 +924,11 @@ export const HooksEditor: React.FC<HooksEditorProps> = ({
                     </Card>
                   ) : (
                     <div className="space-y-4">
-                      {isMatcherEvent 
+                      {isMatcherEvent
                         ? (items as EditableHookMatcher[]).map(matcher => renderMatcher(event, matcher))
                         : (items as EditableHookCommand[]).map(command => renderDirectCommand(event, command))
                       }
-                      
+
                       {!readOnly && (
                         <Button
                           variant="outline"
@@ -909,7 +966,7 @@ export const HooksEditor: React.FC<HooksEditorProps> = ({
                     <div className="space-y-2">
                       <div className="flex items-center justify-between">
                         <h4 className="font-medium">{template.name}</h4>
-                        <Badge>{EVENT_INFO[template.event].label}</Badge>
+                        <Badge>{getEventInfo(template.event).label}</Badge>
                       </div>
                       <p className="text-sm text-muted-foreground">{template.description}</p>
                       {matcherEvents.includes(template.event as any) && template.matcher && (
