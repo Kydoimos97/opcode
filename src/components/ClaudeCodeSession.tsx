@@ -415,7 +415,14 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
         ...entry,
         type: entry.type || "assistant"
       }));
-      
+
+      // Sync permission mode from the last permission-mode entry in the session
+      const validModes = new Set(["default", "acceptEdits", "plan", "dontAsk", "bypassPermissions"]);
+      const lastPermEntry = [...history].reverse().find((e: any) => e.type === "permission-mode");
+      if (lastPermEntry && validModes.has(lastPermEntry.permissionMode)) {
+        setSelectedPermissionMode(lastPermEntry.permissionMode);
+      }
+
       setMessages(loadedMessages);
       setRawJsonlOutput(history.map(h => JSON.stringify(h)));
       fileLineCountRef.current = history.length;
