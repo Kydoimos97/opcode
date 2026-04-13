@@ -18,6 +18,8 @@ interface SerializedTab {
   claudeFileId?: string;
   initialProjectPath?: string;
   projectPath?: string;
+  claudeSessionId?: string;
+  claudeProjectId?: string;
   status: Tab['status'];
   hasUnsavedChanges: boolean;
   order: number;
@@ -76,6 +78,8 @@ export class TabPersistenceService {
         claudeFileId: tab.claudeFileId,
         initialProjectPath: tab.initialProjectPath,
         projectPath: tab.projectPath,
+        claudeSessionId: tab.claudeSessionId,
+        claudeProjectId: tab.claudeProjectId,
         status: tab.status === 'running' ? 'idle' : tab.status, // Reset running status
         hasUnsavedChanges: false, // Reset unsaved changes
         order: tab.order,
