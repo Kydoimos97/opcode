@@ -21,11 +21,12 @@ import { CCAgents } from "@/components/CCAgents";
 import { UsageDashboard } from "@/components/UsageDashboard";
 import { MCPManager } from "@/components/MCPManager";
 import { ClaudeBinaryDialog } from "@/components/ClaudeBinaryDialog";
-import { Toast, ToastContainer } from "@/components/ui/toast";
 import { ProjectSettings } from '@/components/ProjectSettings';
 import { TabContent } from "@/components/TabContent";
 import { useTabState } from "@/hooks/useTabState";
 import { StartupIntro } from "@/components/StartupIntro";
+import { Toaster } from "@/components/ui/Toaster";
+import { showError, showSuccess } from "@/hooks/useToast";
 
 type View = 
   | "welcome" 
@@ -59,7 +60,6 @@ function AppContent() {
   const [showClaudeBinaryDialog, setShowClaudeBinaryDialog] = useState(false);
   const [showProjectPicker, setShowProjectPicker] = useState(false);
   const [homeDirectory, setHomeDirectory] = useState<string>('/');
-  const [toast, setToast] = useState<{ message: string; type: "success" | "error" | "info" } | null>(null);
   const [projectForSettings, setProjectForSettings] = useState<Project | null>(null);
   const [previousView] = useState<View>("welcome");
 
@@ -383,11 +383,11 @@ function AppContent() {
         open={showClaudeBinaryDialog}
         onOpenChange={setShowClaudeBinaryDialog}
         onSuccess={() => {
-          setToast({ message: "Claude binary path saved successfully", type: "success" });
+          showSuccess("Claude binary path saved successfully");
           // Trigger a refresh of the Claude version check
           window.location.reload();
         }}
-        onError={(message) => setToast({ message, type: "error" })}
+        onError={(message) => showError(message)}
       />
 
       {/* File picker modal for selecting project directory */}
@@ -415,44 +415,9 @@ function AppContent() {
           </div>
         </div>
       )}
-      
-      {/* Toast Container */}
-      <ToastContainer>
-        {toast && (
-          <Toast
-            message={toast.message}
-            type={toast.type}
-            onDismiss={() => setToast(null)}
-          />
-        )}
-      </ToastContainer>
 
-      {/* File picker modal for selecting project directory */}
-      {showProjectPicker && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/80 backdrop-blur-sm">
-          <div className="w-full max-w-2xl h-[600px] bg-background border rounded-lg shadow-lg">
-            <FilePicker
-              basePath={homeDirectory}
-              onSelect={async (entry) => {
-                if (entry.is_directory) {
-                  // Create or open a project for this directory
-                  try {
-                    const project = await api.createProject(entry.path);
-                    setShowProjectPicker(false);
-                    await loadProjects();
-                    // Load sessions for the selected project
-                    await handleProjectClick(project);
-                  } catch (err) {
-                    console.error('Failed to create project:', err);
-                    setError('Failed to create project for the selected directory.');
-                  }
-                }
-              }}
-              onClose={() => setShowProjectPicker(false)}
-            />
-          </div>
-        </div>
-      )}
+      {/* Global Toast System */}
+      <Toaster />
     </div>
   );
 }

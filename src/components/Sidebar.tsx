@@ -68,7 +68,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onToggle }) => {
   const worktreeCache = useRef<Map<string, WorktreeInfo[]>>(new Map());
   const displayNameCache = useRef<Map<string, string | null>>(new Map());
   const [hoveredSessionId, setHoveredSessionId] = useState<string | null>(null);
-  const [lastMessageVersion, setLastMessageVersion] = useState(0);
+  const [_lastMessageVersion, setLastMessageVersion] = useState(0);
   const lastMessageCache = useRef<Map<string, string>>(new Map());
 
   const chatTabs = useMemo(
