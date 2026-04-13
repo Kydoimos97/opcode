@@ -82,6 +82,13 @@ function AppContent() {
       if (size) document.documentElement.style.setProperty('font-size', `${size}px`);
       if (footer !== null && footer !== undefined) setShowSystemFooter(Boolean(footer));
     }).catch(() => {});
+
+    // Listen for live preference changes emitted by Settings
+    const handleFooterToggle = (e: Event) => {
+      setShowSystemFooter((e as CustomEvent<boolean>).detail);
+    };
+    window.addEventListener('ccode:show-system-footer', handleFooterToggle);
+    return () => window.removeEventListener('ccode:show-system-footer', handleFooterToggle);
   }, []);
 
   // Load projects on mount when in projects view

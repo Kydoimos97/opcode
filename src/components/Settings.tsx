@@ -840,6 +840,7 @@ export const Settings: React.FC<SettingsProps> = ({
                         checked={showSystemFooter}
                         onCheckedChange={async (checked) => {
                           setShowSystemFooter(checked);
+                          window.dispatchEvent(new CustomEvent('ccode:show-system-footer', { detail: checked }));
                           try {
                             await ccodeSettings.setPreference('show_system_footer', checked);
                             setToast({ message: checked ? 'System footer enabled' : 'System footer disabled', type: 'success' });
