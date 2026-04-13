@@ -46,6 +46,7 @@ use commands::mcp::{
     mcp_read_project_config, mcp_remove, mcp_reset_project_choices, mcp_save_project_config,
     mcp_serve, mcp_test_connection,
 };
+use commands::startup::get_startup_snapshot;
 
 use commands::proxy::{apply_proxy_settings, get_proxy_settings, load_proxy_at_startup, save_proxy_settings};
 use commands::pty::{spawn_pty, write_pty, resize_pty, kill_pty};
@@ -321,6 +322,8 @@ fn main() {
             check_hook_bridge_installed,
             install_hook_bridge,
             remove_hook_bridge,
+            // Startup
+            get_startup_snapshot,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

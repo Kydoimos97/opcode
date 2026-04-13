@@ -474,32 +474,35 @@ function App() {
       }
     };
 
-    // Hard timeout: always dismiss after 3s regardless of hydration state
-    const hardTimeout = window.setTimeout(dismiss, 3000);
+    // Hard timeout: always dismiss after 20s regardless of hydration state
+    const hardTimeout = window.setTimeout(dismiss, 20000);
 
     (async () => {
       try {
-        // Step 1: check startup intro preference (20%)
+        // Step 1: read local settings (instant) — 15%
         const settingsData = await api.readCcodeSettings().catch(() => ({} as Record<string, string>));
         const pref: string | null = settingsData['startup_intro_enabled'] ?? null;
         const enabled = pref === null ? true : pref === 'true';
         if (!enabled) { dismiss(); return; }
-        setIntroProgress(20);
+        setIntroProgress(15);
 
-        // Step 2: warm ccodeSettings cache (40%)
+        // Step 2: warm ccodeSettings cache — 30%
         ccodeSettings.warmup();
-        setIntroProgress(40);
+        setIntroProgress(30);
 
-        // Step 3: check hook bridge installation status (60%)
-        await api.checkHookBridgeInstalled().catch(() => false);
-        setIntroProgress(60);
+        // Step 3: run full startup snapshot (includes slow CLI calls) — runs to 90%
+        // Fake progress ticks while waiting so the bar keeps moving
+        const ticker = setInterval(() => {
+          setIntroProgress(p => Math.min(p + 3, 88));
+        }, 400);
 
-        // Step 4: check Claude binary version (80%)
-        await api.checkClaudeVersion().catch(() => null);
-        setIntroProgress(80);
+        await api.getStartupSnapshot().catch(() => null);
 
-        // Step 5: check cguard status (100% driven by dismiss)
-        await api.checkCguardInstalled().catch(() => false);
+        clearInterval(ticker);
+        setIntroProgress(90);
+
+        // Step 4: brief settle — 100%
+        await new Promise(r => setTimeout(r, 100));
 
         dismiss();
       } catch {

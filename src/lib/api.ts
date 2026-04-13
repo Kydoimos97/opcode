@@ -2190,6 +2190,26 @@ export const api = {
     return apiCall<void>('remove_hook_bridge');
   },
 
+  /**
+   * Gets a startup snapshot with all system checks
+   * @returns Promise resolving to startup snapshot data
+   */
+  async getStartupSnapshot(): Promise<{
+    hookBridgeTypeCount: number;
+    cguardInstalled: boolean;
+    claudeVersion: string | null;
+    claudeJsonValid: boolean;
+    claudeSettingsValid: boolean;
+    mcpServerCount: number;
+    pluginCount: number;
+    sessionCount: number;
+    projectCount: number;
+    skillCount: number;
+    agentCount: number;
+  }> {
+    return apiCall('get_startup_snapshot');
+  },
+
   async spawnPty(path: string): Promise<string> {
     return apiCall<string>('spawn_pty', { path });
   },
