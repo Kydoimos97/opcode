@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { Terminal, User, Bot, AlertCircle, CheckCircle2, RefreshCw, GitPullRequest, PenLine, PenOff } from "lucide-react";
-import { open } from "@tauri-apps/plugin-shell";
+import { api } from "@/lib/api";
 import { Card, CardContent } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
 import ReactMarkdown from "react-markdown";
@@ -527,7 +527,7 @@ const PrLinkMessage: React.FC<{ message: any; className?: string }> = ({ message
   const handleOpen = async (e: React.MouseEvent) => {
     e.preventDefault();
     try {
-      await open(message.prUrl);
+      await api.openPath(message.prUrl);
     } catch {
       /* ignore */
     }

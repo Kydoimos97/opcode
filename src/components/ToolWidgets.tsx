@@ -59,7 +59,7 @@ import * as Diff from 'diff';
 import { Card, CardContent } from "@/components/ui/card";
 import { detectLinks, makeLinksClickable } from "@/lib/linkDetector";
 import ReactMarkdown from "react-markdown";
-import { open } from "@tauri-apps/plugin-shell";
+import { api } from "@/lib/api";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Input } from "@/components/ui/input";
 import { motion, AnimatePresence } from "framer-motion";
@@ -76,11 +76,11 @@ const FilePathLink: React.FC<{ path: string; className?: string }> = ({ path, cl
   const handleClick = async (e: React.MouseEvent) => {
     e.stopPropagation();
     try {
-      await open(path);
+      await api.openPath(path);
     } catch {
       // Fallback: open parent directory
       const parent = path.replace(/[/\\][^/\\]+$/, '');
-      try { await open(parent || path); } catch { /* ignore */ }
+      try { await api.openPath(parent || path); } catch { /* ignore */ }
     }
   };
 
