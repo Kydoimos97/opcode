@@ -1131,19 +1131,10 @@ pub async fn get_session_file_status(
     })
 }
 
-/// Build the permission-related CLI flags for a given mode.
-/// - "default"        → no flags (Claude prompts for each tool use)
-/// - "acceptEdits"    → --allowedTools covering file ops; Bash still requires approval
-/// - "bypassPermissions" (anything else) → --dangerously-skip-permissions
+/// Map a permission mode string to the --permission-mode CLI flag.
+/// Claude Code owns the full semantics of each mode including hooks.
 fn permission_args(mode: &str) -> Vec<String> {
-    match mode {
-        "default" => vec![],
-        "acceptEdits" => vec![
-            "--allowedTools".to_string(),
-            "Edit,MultiEdit,Write,Read,Glob,Grep,LS".to_string(),
-        ],
-        _ => vec!["--dangerously-skip-permissions".to_string()],
-    }
+    vec!["--permission-mode".to_string(), mode.to_string()]
 }
 
 /// Execute a new interactive Claude Code session with streaming output

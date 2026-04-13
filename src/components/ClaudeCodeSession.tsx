@@ -114,7 +114,7 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
   const [copyPopoverOpen, setCopyPopoverOpen] = useState(false);
   const [isFirstPrompt, setIsFirstPrompt] = useState(!session);
   const [selectedModel, setSelectedModel] = useState<"sonnet" | "opus">("sonnet");
-  const [selectedPermissionMode, setSelectedPermissionMode] = useState<"default" | "acceptEdits" | "bypassPermissions">("bypassPermissions");
+  const [selectedPermissionMode, setSelectedPermissionMode] = useState<"default" | "acceptEdits" | "plan" | "dontAsk" | "bypassPermissions">("bypassPermissions");
   const [extractedSessionInfo, setExtractedSessionInfo] = useState<{ sessionId: string; projectId: string } | null>(null);
   const [claudeSessionId, setClaudeSessionId] = useState<string | null>(null);
   const [showTimeline, setShowTimeline] = useState(false);
@@ -523,7 +523,7 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
 
   // Project path selection handled by parent tab controls
 
-  const handleSendPrompt = async (prompt: string, model: "sonnet" | "opus", permissionMode?: "default" | "acceptEdits" | "bypassPermissions") => {
+  const handleSendPrompt = async (prompt: string, model: "sonnet" | "opus", permissionMode?: "default" | "acceptEdits" | "plan" | "dontAsk" | "bypassPermissions") => {
     if (!projectPath) {
       setError("Please select a project directory first");
       return;

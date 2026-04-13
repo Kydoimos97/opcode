@@ -38,7 +38,7 @@ try {
 // Web-compatible replacement
 const getCurrentWebviewWindow = tauriGetCurrentWebviewWindow || (() => ({ listen: () => Promise.resolve(() => {}) }));
 
-type PermissionMode = "default" | "acceptEdits" | "bypassPermissions";
+type PermissionMode = "default" | "acceptEdits" | "plan" | "dontAsk" | "bypassPermissions";
 
 interface FloatingPromptInputProps {
   /**
@@ -200,8 +200,8 @@ type PermissionModeConfig = {
 const PERMISSION_MODES: PermissionModeConfig[] = [
   {
     id: "default",
-    name: "Ask",
-    shortName: "Ask",
+    name: "Default",
+    shortName: "Default",
     description: "Claude asks before each tool use",
     icon: <Shield className="h-3.5 w-3.5" />,
     color: "text-muted-foreground",
@@ -210,15 +210,31 @@ const PERMISSION_MODES: PermissionModeConfig[] = [
     id: "acceptEdits",
     name: "Accept Edits",
     shortName: "Edits",
-    description: "Auto-approve file edits; ask for shell commands",
+    description: "Auto-approve file edits; ask for other tools",
     icon: <ShieldCheck className="h-3.5 w-3.5" />,
     color: "text-blue-500",
+  },
+  {
+    id: "plan",
+    name: "Plan",
+    shortName: "Plan",
+    description: "Plan only — no tool execution",
+    icon: <ShieldCheck className="h-3.5 w-3.5" />,
+    color: "text-purple-500",
+  },
+  {
+    id: "dontAsk",
+    name: "Don't Ask",
+    shortName: "Auto",
+    description: "Skip prompts but respect hooks and settings",
+    icon: <ShieldOff className="h-3.5 w-3.5" />,
+    color: "text-green-500",
   },
   {
     id: "bypassPermissions",
     name: "Bypass All",
     shortName: "Bypass",
-    description: "Skip all permission prompts",
+    description: "Skip all checks including hooks",
     icon: <ShieldOff className="h-3.5 w-3.5" />,
     color: "text-amber-500",
   },
@@ -1103,8 +1119,8 @@ const FloatingPromptInputInner = (
 
           <div className="p-3">
             <div className="flex items-end gap-2">
-              {/* Thinking Mode Selector - Left side */}
-              <div className="flex items-center gap-1 shrink-0 mb-1">
+              {/* Thinking + Permission Mode Selectors - Left side, stacked vertically */}
+              <div className="flex flex-col gap-0.5 shrink-0 mb-1">
                 <Popover
                   trigger={
                     <Tooltip>
