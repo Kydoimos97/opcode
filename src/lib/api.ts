@@ -2112,6 +2112,24 @@ export const api = {
     }
   },
 
+  async getAutoModeConfig(): Promise<unknown> {
+    try {
+      return await apiCall<unknown>("get_auto_mode_config");
+    } catch (error) {
+      console.error("Failed to get auto-mode config:", error);
+      throw error;
+    }
+  },
+
+  async runDoctor(): Promise<string> {
+    try {
+      return await apiCall<string>("run_doctor");
+    } catch (error) {
+      console.error("Failed to run doctor:", error);
+      throw error;
+    }
+  },
+
   async listClaudeDirectory(subpath: string): Promise<ClaudeEntry[]> {
     try {
       return await apiCall<ClaudeEntry[]>("list_claude_directory", { subpath });

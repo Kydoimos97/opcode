@@ -37,7 +37,7 @@ use commands::claude::{
     poll_session_file, read_session_tail, get_session_file_status, get_session_file_path,
     read_ccode_settings, write_ccode_settings, read_session_status, open_path,
     list_plugins, install_plugin, uninstall_plugin, enable_plugin, disable_plugin,
-    list_plan_files, read_plan_file,
+    list_plan_files, read_plan_file, get_auto_mode_config, run_doctor,
 };
 use commands::fonts::list_system_fonts;
 use commands::system::get_system_resources;
@@ -325,6 +325,8 @@ fn main() {
             open_path,
             list_plan_files,
             read_plan_file,
+            get_auto_mode_config,
+            run_doctor,
             list_system_fonts,
             get_system_resources,
             // Terminal

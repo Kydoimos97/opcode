@@ -3868,3 +3868,33 @@ pub fn read_plan_file(path: String) -> Result<String, String> {
     std::fs::read_to_string(&path)
         .map_err(|e| format!("Failed to read plan file: {}", e))
 }
+
+#[tauri::command]
+pub async fn get_auto_mode_config(app: AppHandle) -> Result<serde_json::Value, String> {
+    let claude_path = find_claude_binary(&app)
+        .unwrap_or_else(|_| "claude".to_string());
+    let output = std::process::Command::new(&claude_path)
+        .args(["auto-mode", "config"])
+        .output()
+        .map_err(|e| format!("Failed to run claude auto-mode config: {}", e))?;
+    let stdout = String::from_utf8_lossy(&output.stdout).to_string();
+    serde_json::from_str(&stdout)
+        .or_else(|_| Ok(serde_json::Value::String(stdout)))
+}
+
+#[tauri::command]
+pub async fn run_doctor(app: AppHandle) -> Result<String, String> {
+    let claude_path = find_claude_binary(&app)
+        .unwrap_or_else(|_| "claude".to_string());
+    let output = std::process::Command::new(&claude_path)
+        .arg("doctor")
+        .output()
+        .map_err(|e| format!("Failed to run claude doctor: {}", e))?;
+    let stdout = String::from_utf8_lossy(&output.stdout).to_string();
+    let stderr = String::from_utf8_lossy(&output.stderr).to_string();
+    if stdout.is_empty() && !stderr.is_empty() {
+        Ok(stderr)
+    } else {
+        Ok(stdout)
+    }
+}

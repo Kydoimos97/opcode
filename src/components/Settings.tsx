@@ -208,6 +208,14 @@ export const Settings: React.FC<SettingsProps> = ({
     authMethod: string | null;
   } | null>(null);
 
+  const [autoModeConfig, setAutoModeConfig] = useState<unknown>(null);
+  const [autoModeLoading, setAutoModeLoading] = useState(false);
+  const [autoModeError, setAutoModeError] = useState<string | null>(null);
+
+  const [doctorOutput, setDoctorOutput] = useState<string | null>(null);
+  const [doctorLoading, setDoctorLoading] = useState(false);
+  const [doctorError, setDoctorError] = useState<string | null>(null);
+
   useEffect(() => {
     setSidebarDefaultOpen(localStorage.getItem('ui_pref:sidebar_default_open') === 'true');
     setStatusBarVisible(localStorage.getItem('ui_pref:status_bar_visible') !== 'false');
@@ -1064,6 +1072,45 @@ export const Settings: React.FC<SettingsProps> = ({
                   </div>
                 </div>
               </Card>
+
+              <Card className="p-4 space-y-3">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-sm font-medium">Health Check</p>
+                    <p className="text-xs text-muted-foreground mt-0.5">
+                      Run <code className="font-mono">claude doctor</code> to check your installation
+                    </p>
+                  </div>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    disabled={doctorLoading}
+                    onClick={async () => {
+                      setDoctorLoading(true);
+                      setDoctorError(null);
+                      try {
+                        const output = await api.runDoctor();
+                        setDoctorOutput(output);
+                      } catch (e) {
+                        setDoctorError(e instanceof Error ? e.message : String(e));
+                      } finally {
+                        setDoctorLoading(false);
+                      }
+                    }}
+                  >
+                    {doctorLoading ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
+                    Run Health Check
+                  </Button>
+                </div>
+                {doctorError && (
+                  <p className="text-xs text-destructive">{doctorError}</p>
+                )}
+                {doctorOutput && (
+                  <pre className="text-xs font-mono bg-muted rounded p-3 overflow-x-auto max-h-48 whitespace-pre-wrap">
+                    {doctorOutput}
+                  </pre>
+                )}
+              </Card>
               </div>
               )}
 
@@ -1696,6 +1743,45 @@ export const Settings: React.FC<SettingsProps> = ({
                     </p>
                   </div>
                 </div>
+              </Card>
+
+              <Card className="p-6 space-y-4">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <h3 className="text-base font-semibold">Auto-Mode Config</h3>
+                    <p className="text-xs text-muted-foreground mt-1">
+                      Current allow/deny rules from <code className="font-mono">claude auto-mode config</code>
+                    </p>
+                  </div>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    disabled={autoModeLoading}
+                    onClick={async () => {
+                      setAutoModeLoading(true);
+                      setAutoModeError(null);
+                      try {
+                        const config = await api.getAutoModeConfig();
+                        setAutoModeConfig(config);
+                      } catch (e) {
+                        setAutoModeError(e instanceof Error ? e.message : String(e));
+                      } finally {
+                        setAutoModeLoading(false);
+                      }
+                    }}
+                  >
+                    {autoModeLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
+                    <span className="ml-2">{autoModeConfig ? 'Refresh' : 'Load'}</span>
+                  </Button>
+                </div>
+                {autoModeError && (
+                  <p className="text-xs text-destructive">{autoModeError}</p>
+                )}
+                {autoModeConfig !== null && (
+                  <div className="p-3 rounded-md bg-muted font-mono text-xs overflow-x-auto max-h-64">
+                    <pre className="whitespace-pre-wrap">{JSON.stringify(autoModeConfig, null, 2)}</pre>
+                  </div>
+                )}
               </Card>
               </div>
               )}
