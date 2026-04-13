@@ -151,73 +151,87 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onToggle }) => {
     }
   };
 
-  // Tick every 2s. Active tab polls every tick. Background tabs poll every 15th tick (30s),
-  // and back off after 5 consecutive unchanged polls (reset when tab becomes active or message changes).
-  const tickRef = useRef(0);
-  const bgUnchangedCount = useRef<Map<string, number>>(new Map());
-  const BG_TICK_DIVISOR = 15; // 15 × 2s = 30s
-  const BG_STALE_LIMIT = 5;
-
+  // Listen to OS-level watcher events
   useEffect(() => {
-    const pollTab = async (tab: Tab) => {
-      try {
-        const status: SessionFileStatus = await api.getSessionFileStatus(
-          tab.claudeSessionId!,
-          tab.claudeProjectId!,
+    let unlisten: (() => void) | null = null;
+
+    // Dynamic import to avoid SSR issues
+    import('@tauri-apps/api/event').then(({ listen }) => {
+      listen<{ session_id: string; project_id: string }>('session-file-changed', async (event) => {
+        const { session_id, project_id } = event.payload;
+        const matchingTab = tabs.find(
+          t => t.type === 'chat' && t.claudeSessionId === session_id && t.claudeProjectId === project_id
         );
-        let newStatus: Tab['status'];
-        if (status.last_type === 'result') {
-          newStatus = status.is_error ? 'error' : 'complete';
-        } else if (status.awaiting_approval) {
-          newStatus = 'idle';
-        } else if (status.modified_secs_ago < 30) {
-          newStatus = 'running';
-        } else {
-          newStatus = 'idle';
-        }
-        if (status.last_user_message) {
-          const prev = lastMessageCache.current.get(tab.id);
-          if (prev !== status.last_user_message) {
-            lastMessageCache.current.set(tab.id, status.last_user_message);
-            bgUnchangedCount.current.set(tab.id, 0);
-            setLastMessageVersion((v) => v + 1);
+        if (!matchingTab) return;
+        try {
+          const status: SessionFileStatus = await api.getSessionFileStatus(session_id, project_id);
+          let newStatus: Tab['status'];
+          if (status.last_type === 'result') {
+            newStatus = status.is_error ? 'error' : 'complete';
+          } else if (status.awaiting_approval) {
+            newStatus = 'idle';
+          } else if (status.modified_secs_ago < 30) {
+            newStatus = 'running';
           } else {
-            bgUnchangedCount.current.set(tab.id, (bgUnchangedCount.current.get(tab.id) ?? 0) + 1);
+            newStatus = 'idle';
           }
+          if (status.last_user_message) {
+            const prev = lastMessageCache.current.get(matchingTab.id);
+            if (prev !== status.last_user_message) {
+              lastMessageCache.current.set(matchingTab.id, status.last_user_message);
+              setLastMessageVersion(v => v + 1);
+            }
+          }
+          if (matchingTab.status !== newStatus) {
+            updateTab(matchingTab.id, { status: newStatus });
+          }
+        } catch {
+          // Silently ignore
         }
-        if (tab.status !== newStatus) {
-          updateTab(tab.id, { status: newStatus });
+      }).then(fn => { unlisten = fn; });
+    });
+
+    return () => { unlisten?.(); };
+  }, [tabs, updateTab]);
+
+  // 60s safety poll — catches watcher gaps and startup state
+  useEffect(() => {
+    const pollAll = async () => {
+      const targets = tabs.filter(t => t.type === 'chat' && t.claudeSessionId && t.claudeProjectId);
+      for (const tab of targets) {
+        try {
+          const status: SessionFileStatus = await api.getSessionFileStatus(tab.claudeSessionId!, tab.claudeProjectId!);
+          let newStatus: Tab['status'];
+          if (status.last_type === 'result') {
+            newStatus = status.is_error ? 'error' : 'complete';
+          } else if (status.awaiting_approval) {
+            newStatus = 'idle';
+          } else if (status.modified_secs_ago < 30) {
+            newStatus = 'running';
+          } else {
+            newStatus = 'idle';
+          }
+          if (status.last_user_message) {
+            const prev = lastMessageCache.current.get(tab.id);
+            if (prev !== status.last_user_message) {
+              lastMessageCache.current.set(tab.id, status.last_user_message);
+              setLastMessageVersion(v => v + 1);
+            }
+          }
+          if (tab.status !== newStatus) {
+            updateTab(tab.id, { status: newStatus });
+          }
+        } catch {
+          // Silently ignore
         }
-      } catch {
-        // Silently ignore
       }
     };
 
-    const interval = setInterval(() => {
-      tickRef.current += 1;
-      const tick = tickRef.current;
-
-      const pollTargets = tabs.filter(
-        t => t.type === 'chat' && t.claudeSessionId && t.claudeProjectId
-      );
-
-      for (const tab of pollTargets) {
-        const isActive = tab.id === activeTabId;
-        if (isActive) {
-          // Reset stale counter when active so it polls freely when next backgrounded
-          bgUnchangedCount.current.set(tab.id, 0);
-          pollTab(tab);
-        } else if (tick % BG_TICK_DIVISOR === 0) {
-          const stale = bgUnchangedCount.current.get(tab.id) ?? 0;
-          if (stale < BG_STALE_LIMIT) {
-            pollTab(tab);
-          }
-        }
-      }
-    }, 2000);
-
+    // Poll immediately on mount / tab changes
+    pollAll();
+    const interval = setInterval(pollAll, 60_000);
     return () => clearInterval(interval);
-  }, [tabs, activeTabId, updateTab]);
+  }, [tabs, updateTab]);
 
   useEffect(() => {
     chatTabs.forEach((tab) => {

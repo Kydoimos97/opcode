@@ -5,6 +5,7 @@ mod checkpoint;
 mod claude_binary;
 mod commands;
 mod process;
+mod watcher;
 
 use checkpoint::state::CheckpointState;
 use commands::agents::{
@@ -91,6 +92,10 @@ fn main() {
 
             // Initialize Claude process state
             app.manage(ClaudeProcessState::default());
+
+            // Initialize session watcher
+            let watcher_state = watcher::init_session_watcher(app.handle().clone());
+            app.manage(watcher_state);
 
             // Apply window vibrancy with rounded corners on macOS
             #[cfg(target_os = "macos")]
