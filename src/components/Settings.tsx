@@ -52,6 +52,7 @@ import { ProxySettings } from "./ProxySettings";
 import { useTheme } from "@/hooks";
 import { TabPersistenceService } from "@/services/tabPersistence";
 import { ccodeSettings } from "@/lib/ccodeSettings";
+import { startupCache } from "@/lib/startupCache";
 
 interface SettingsProps {
   /**
@@ -349,7 +350,13 @@ export const Settings: React.FC<SettingsProps> = ({
   const loadPlugins = async () => {
     try {
       setPluginsLoading(true);
-      const result = await api.listPlugins();
+      let result: any;
+      if (startupCache.plugins !== null) {
+        result = startupCache.plugins;
+        startupCache.plugins = null; // consume once
+      } else {
+        result = await api.listPlugins();
+      }
       setPluginList(result);
     } catch (err) {
       console.error('Failed to load plugins:', err);

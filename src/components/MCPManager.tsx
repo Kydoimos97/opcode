@@ -5,6 +5,7 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Card } from "@/components/ui/card";
 import { Toast, ToastContainer } from "@/components/ui/toast";
 import { api, type MCPServer } from "@/lib/api";
+import { startupCache } from "@/lib/startupCache";
 import { MCPServerList } from "./MCPServerList";
 import { MCPAddServer } from "./MCPAddServer";
 import { MCPImportExport } from "./MCPImportExport";
@@ -47,7 +48,13 @@ export const MCPManager: React.FC<MCPManagerProps> = ({
       setLoading(true);
       setError(null);
       console.log("MCPManager: Loading servers...");
-      const serverList = await api.mcpList();
+      let serverList: MCPServer[];
+      if (startupCache.mcpServers !== null) {
+        serverList = startupCache.mcpServers;
+        startupCache.mcpServers = null; // consume once; next refresh hits API
+      } else {
+        serverList = await api.mcpList();
+      }
       console.log("MCPManager: Received server list:", serverList);
       console.log("MCPManager: Server count:", serverList.length);
       setServers(serverList);

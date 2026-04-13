@@ -27,6 +27,7 @@ export interface Tab {
 interface TabContextType {
   tabs: Tab[];
   activeTabId: string | null;
+  isTabsReady: boolean;
   addTab: (tab: Omit<Tab, 'id' | 'order' | 'createdAt' | 'updatedAt'>) => string;
   removeTab: (id: string) => void;
   updateTab: (id: string, updates: Partial<Tab>) => void;
@@ -45,6 +46,7 @@ const MAX_TABS = 20;
 export const TabProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [tabs, setTabs] = useState<Tab[]>([]);
   const [activeTabId, setActiveTabId] = useState<string | null>(null);
+  const [isTabsReady, setIsTabsReady] = useState(false);
   const isInitialized = useRef(false);
   const saveTimeoutRef = useRef<NodeJS.Timeout>();
 
@@ -127,8 +129,10 @@ export const TabProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       setActiveTabId(defaultTab.id);
     }
     };
-    
-    loadTabs();
+
+    loadTabs().finally(() => {
+      setIsTabsReady(true);
+    });
   }, []);
 
   // Save tabs to localStorage with debounce
@@ -276,6 +280,7 @@ export const TabProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const value: TabContextType = {
     tabs,
     activeTabId,
+    isTabsReady,
     addTab,
     removeTab,
     updateTab,
