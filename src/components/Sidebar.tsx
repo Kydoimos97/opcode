@@ -15,6 +15,8 @@ import {
   FolderSearch,
   Settings,
   X,
+  Wrench,
+  Puzzle,
 } from 'lucide-react';
 import appLogo from '@/assets/logo.png';
 import { useTabContext, type Tab } from '@/contexts/TabContext';
@@ -40,6 +42,8 @@ const UTILITY_ITEMS = [
   { icon: Bot, label: 'Agents', type: 'agents' as const },
   { icon: BarChart3, label: 'Usage', type: 'usage' as const },
   { icon: Server, label: 'MCP Servers', type: 'mcp' as const },
+  { icon: Wrench, label: 'Skills', type: 'skills' as const },
+  { icon: Puzzle, label: 'Plugins', type: 'plugins' as const },
   { icon: FileText, label: 'CLAUDE.md', type: 'claude-md' as const },
   { icon: FolderSearch, label: '.claude Explorer', type: 'claude-explorer' as const },
   { icon: Settings, label: 'Settings', type: 'settings' as const },
@@ -57,6 +61,8 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onToggle }) => {
     createExplorerTab,
     createLogsTab,
     createSettingsTab,
+    createSkillsTab,
+    createPluginsTab,
     closeTab,
   } = useTabState();
 
@@ -106,7 +112,16 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onToggle }) => {
       }
     });
 
-    return Array.from(groups.values());
+    groups.forEach((group) => {
+      group.ungroupedTabs.sort((a, b) => b.updatedAt.getTime() - a.updatedAt.getTime());
+      group.worktrees.forEach((tabs) => {
+        tabs.sort((a, b) => b.updatedAt.getTime() - a.updatedAt.getTime());
+      });
+    });
+
+    const sortedGroups = [...groups.entries()]
+      .sort(([a], [b]) => a.toLowerCase().localeCompare(b.toLowerCase()));
+    return Array.from(new Map(sortedGroups).values());
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [chatTabs, gitInfoVersion, worktreeVersion, displayNameVersion]);
 
@@ -271,6 +286,8 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onToggle }) => {
       'agents': createAgentsTab,
       'usage': createUsageTab,
       'mcp': createMCPTab,
+      'skills': createSkillsTab,
+      'plugins': createPluginsTab,
       'claude-md': createClaudeMdTab,
       'claude-explorer': createExplorerTab,
       'session-logs': createLogsTab,

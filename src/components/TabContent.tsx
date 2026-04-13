@@ -449,6 +449,12 @@ const TabPanel: React.FC<TabPanelProps> = ({ tab, isActive }) => {
           </div>
         );
 
+      case 'skills':
+        return <div className="p-6 text-muted-foreground text-sm">Skills — coming soon</div>;
+
+      case 'plugins':
+        return <div className="p-6 text-muted-foreground text-sm">Plugins — coming soon</div>;
+
       default:
         return (
           <div className="h-full">

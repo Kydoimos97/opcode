@@ -10,7 +10,7 @@ interface UseTabStateReturn {
   tabCount: number;
   chatTabCount: number;
   agentTabCount: number;
-  
+
   // Operations
   createChatTab: (projectId?: string, title?: string, projectPath?: string) => string;
   createAgentTab: (agentRunId: string, agentName: string) => string;
@@ -26,6 +26,8 @@ interface UseTabStateReturn {
   createImportAgentTab: () => string;
   createExplorerTab: () => string | null;
   createLogsTab: () => string | null;
+  createSkillsTab: () => string | null;
+  createPluginsTab: () => string | null;
   closeTab: (id: string, force?: boolean) => Promise<boolean>;
   closeCurrentTab: () => Promise<boolean>;
   switchToTab: (id: string) => void;
@@ -286,6 +288,38 @@ export const useTabState = (): UseTabStateReturn => {
     });
   }, [addTab, tabs, setActiveTab]);
 
+  const createSkillsTab = useCallback((): string | null => {
+    const existingTab = tabs.find(tab => tab.type === 'skills');
+    if (existingTab) {
+      setActiveTab(existingTab.id);
+      return existingTab.id;
+    }
+
+    return addTab({
+      type: 'skills',
+      title: 'Skills',
+      status: 'idle',
+      hasUnsavedChanges: false,
+      icon: 'wrench'
+    });
+  }, [addTab, tabs, setActiveTab]);
+
+  const createPluginsTab = useCallback((): string | null => {
+    const existingTab = tabs.find(tab => tab.type === 'plugins');
+    if (existingTab) {
+      setActiveTab(existingTab.id);
+      return existingTab.id;
+    }
+
+    return addTab({
+      type: 'plugins',
+      title: 'Plugins',
+      status: 'idle',
+      hasUnsavedChanges: false,
+      icon: 'puzzle'
+    });
+  }, [addTab, tabs, setActiveTab]);
+
   const closeTab = useCallback(async (id: string, force: boolean = false): Promise<boolean> => {
     const tab = getTabById(id);
     if (!tab) return true;
@@ -364,7 +398,7 @@ export const useTabState = (): UseTabStateReturn => {
     tabCount,
     chatTabCount,
     agentTabCount,
-    
+
     // Operations
     createChatTab,
     createAgentTab,
@@ -380,6 +414,8 @@ export const useTabState = (): UseTabStateReturn => {
     createImportAgentTab,
     createExplorerTab,
     createLogsTab,
+    createSkillsTab,
+    createPluginsTab,
     closeTab,
     closeCurrentTab,
     switchToTab: setActiveTab,
