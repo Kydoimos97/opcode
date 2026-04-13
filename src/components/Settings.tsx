@@ -63,21 +63,25 @@ interface EnvironmentVariable {
   value: string;
 }
 
-const NAV_ITEMS = [
+const CCODE_NAV_ITEMS = [
   { id: 'general', label: 'General', icon: Settings2 },
   { id: 'interface', label: 'Interface', icon: Layout },
   { id: 'theme', label: 'Theme', icon: Palette },
   { id: 'permissions', label: 'Permissions', icon: Shield },
   { id: 'environment', label: 'Environment', icon: Terminal },
+  { id: 'proxy', label: 'Proxy', icon: Network },
   { id: 'advanced', label: 'Advanced', icon: SlidersHorizontal },
+  { id: 'hooks-display', label: 'Hooks Display', icon: Eye },
+] as const;
+
+const CLAUDE_NAV_ITEMS = [
   { id: 'hooks', label: 'Hooks', icon: Zap },
   { id: 'commands', label: 'Commands', icon: Command },
-  { id: 'proxy', label: 'Proxy', icon: Network },
-  { id: 'skills', label: 'Skills', icon: Package },
-  { id: 'hooks-display', label: 'Hooks Display', icon: Eye },
   { id: 'cguard', label: 'c-guard', icon: ShieldCheck },
+  { id: 'skills', label: 'Skills', icon: Package },
 ] as const;
-type SectionId = typeof NAV_ITEMS[number]['id'];
+
+type SectionId = typeof CCODE_NAV_ITEMS[number]['id'] | typeof CLAUDE_NAV_ITEMS[number]['id'];
 
 const DEFAULT_COMMANDS_CONF_TEMPLATE = `# c-guard commands configuration
 # Lines starting with # are comments
@@ -628,7 +632,10 @@ export const Settings: React.FC<SettingsProps> = ({
             <p className="text-xs text-muted-foreground mt-0.5">Configure Claude Code</p>
           </div>
           <nav className="flex-1 overflow-y-auto py-2">
-            {NAV_ITEMS.map(item => (
+            <p className="px-4 pt-3 pb-1 text-[10px] font-semibold text-muted-foreground/60 uppercase tracking-widest select-none">
+              C-Code
+            </p>
+            {CCODE_NAV_ITEMS.map(item => (
               <button
                 key={item.id}
                 onClick={() => setActiveSection(item.id)}
@@ -641,6 +648,28 @@ export const Settings: React.FC<SettingsProps> = ({
               >
                 <item.icon size={14} className="flex-shrink-0" />
                 {item.label}
+              </button>
+            ))}
+
+            <p className="px-4 pt-4 pb-1 text-[10px] font-semibold text-muted-foreground/60 uppercase tracking-widest select-none">
+              .claude
+            </p>
+            {CLAUDE_NAV_ITEMS.map(item => (
+              <button
+                key={item.id}
+                onClick={() => setActiveSection(item.id)}
+                className={cn(
+                  "w-full px-4 py-2 text-left text-sm flex items-center gap-2 transition-colors",
+                  activeSection === item.id
+                    ? "bg-accent text-accent-foreground font-medium"
+                    : "text-muted-foreground hover:bg-accent/50 hover:text-foreground"
+                )}
+              >
+                <item.icon size={14} className="flex-shrink-0" />
+                <span className="flex-1">{item.label}</span>
+                <span className="text-[9px] font-mono text-muted-foreground/50 bg-muted/50 px-1 rounded leading-tight flex-shrink-0">
+                  ~/.claude
+                </span>
               </button>
             ))}
           </nav>
