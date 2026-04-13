@@ -51,24 +51,23 @@ export const MessageList: React.FC<MessageListProps> = React.memo(({
   const shouldAutoScrollRef = useRef(true);
   const userHasScrolledRef = useRef(false);
 
-  const { turns, standaloneMessages } = useGroupedMessages(messages);
+  const turns = useGroupedMessages(messages);
 
   const renderItems = useMemo(() => {
     const items: RenderItem[] = [];
     for (const turn of turns) {
-      items.push({ kind: "user", message: turn.userMessage, turnId: turn.id });
+      if (turn.userMessage) {
+        items.push({ kind: "user", message: turn.userMessage, turnId: turn.id });
+      }
       if (turn.workItems.length > 0) {
         items.push({ kind: "work", items: turn.workItems, isComplete: turn.isComplete, turnId: turn.id });
       }
-      if (turn.assistantResponse) {
-        items.push({ kind: "response", message: turn.assistantResponse, turnId: turn.id });
+      if (turn.result) {
+        items.push({ kind: "response", message: turn.result, turnId: turn.id });
       }
     }
-    for (let i = 0; i < standaloneMessages.length; i++) {
-      items.push({ kind: "standalone", message: standaloneMessages[i], index: i });
-    }
     return items;
-  }, [turns, standaloneMessages]);
+  }, [turns]);
 
   // Virtual scrolling setup
   const virtualizer = useVirtualizer({

@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import { motion } from "framer-motion";
 import { Bot, FolderCode } from "lucide-react";
 import { api, type Project, type Session, type ClaudeMdFile } from "@/lib/api";
+import { ccodeSettings } from "@/lib/ccodeSettings";
 import { initializeWebMode } from "@/lib/apiAdapter";
 import { OutputCacheProvider } from "@/lib/outputCache";
 import { TabProvider } from "@/contexts/TabContext";
@@ -65,6 +66,7 @@ function AppContent() {
   // Initialize web mode compatibility on mount
   useEffect(() => {
     initializeWebMode();
+    ccodeSettings.warmup();
   }, []);
 
   // Load projects on mount when in projects view
@@ -226,7 +228,7 @@ function AppContent() {
               >
                 <h1 className="text-4xl font-bold tracking-tight">
                   <span className="rotating-symbol"></span>
-                  Welcome to opcode
+                  Welcome to C-Code
                 </h1>
               </motion.div>
 
@@ -319,7 +321,7 @@ function AppContent() {
         return (
           <div className="h-full flex flex-row overflow-hidden">
             <Sidebar isOpen={sidebarOpen} onToggle={() => setSidebarOpen(v => !v)} />
-            <div className="flex-1 overflow-hidden">
+            <div className="flex-1 min-w-0 overflow-hidden">
               <TabContent />
             </div>
           </div>
@@ -357,7 +359,7 @@ function AppContent() {
   return (
     <div className="h-screen flex flex-col">
       {/* Custom Titlebar */}
-      <CustomTitlebar />
+      <CustomTitlebar sidebarOpen={sidebarOpen} onToggleSidebar={() => setSidebarOpen(v => !v)} />
       
       {/* Topbar - Commented out since navigation moved to titlebar */}
       {/* <Topbar

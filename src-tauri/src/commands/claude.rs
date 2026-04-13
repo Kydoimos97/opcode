@@ -37,6 +37,10 @@ pub struct Project {
     pub created_at: u64,
     /// Unix timestamp of the most recent session (if any)
     pub most_recent_session: Option<u64>,
+    /// Absolute path to the git repository root (None if not a git repo)
+    pub git_root: Option<String>,
+    /// Current git branch for this worktree (None if not a git repo)
+    pub git_branch: Option<String>,
 }
 
 /// Represents a session with its metadata
@@ -417,12 +421,33 @@ pub async fn list_projects() -> Result<Vec<Project>, String> {
                 }
             }
 
+            // Detect git root and branch for this project path
+            let git_root = std::process::Command::new("git")
+                .args(["-C", &project_path, "rev-parse", "--show-toplevel"])
+                .output()
+                .ok()
+                .and_then(|o| if o.status.success() {
+                    Some(String::from_utf8_lossy(&o.stdout).trim().to_string())
+                } else { None });
+
+            let git_branch = git_root.as_ref().and_then(|_| {
+                std::process::Command::new("git")
+                    .args(["-C", &project_path, "rev-parse", "--abbrev-ref", "HEAD"])
+                    .output()
+                    .ok()
+                    .and_then(|o| if o.status.success() {
+                        Some(String::from_utf8_lossy(&o.stdout).trim().to_string())
+                    } else { None })
+            });
+
             projects.push(Project {
                 id: dir_name.to_string(),
                 path: project_path,
                 sessions,
                 created_at,
                 most_recent_session,
+                git_root,
+                git_branch,
             });
         }
     }
@@ -479,6 +504,25 @@ pub async fn create_project(path: String) -> Result<Project, String> {
         .unwrap_or_default()
         .as_secs();
 
+    // Detect git info for the new project
+    let git_root = std::process::Command::new("git")
+        .args(["-C", &path, "rev-parse", "--show-toplevel"])
+        .output()
+        .ok()
+        .and_then(|o| if o.status.success() {
+            Some(String::from_utf8_lossy(&o.stdout).trim().to_string())
+        } else { None });
+
+    let git_branch = git_root.as_ref().and_then(|_| {
+        std::process::Command::new("git")
+            .args(["-C", &path, "rev-parse", "--abbrev-ref", "HEAD"])
+            .output()
+            .ok()
+            .and_then(|o| if o.status.success() {
+                Some(String::from_utf8_lossy(&o.stdout).trim().to_string())
+            } else { None })
+    });
+
     // Return the created project
     Ok(Project {
         id: project_id,
@@ -486,6 +530,8 @@ pub async fn create_project(path: String) -> Result<Project, String> {
         sessions: Vec::new(),
         created_at,
         most_recent_session: None,
+        git_root,
+        git_branch,
     })
 }
 
@@ -935,6 +981,145 @@ pub async fn load_session_history(
     }
 
     Ok(messages)
+}
+
+/// Status of a JSONL session file for sidebar polling
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SessionFileStatus {
+    /// The type string of the last meaningful entry
+    pub last_type: Option<String>,
+    /// Whether the last result entry has is_error = true
+    pub is_error: bool,
+    /// Total lines currently in the file
+    pub lines_total: u64,
+    /// Seconds since the file was last modified
+    pub modified_secs_ago: u64,
+    /// Whether a PermissionRequest/approval prompt is pending
+    pub awaiting_approval: bool,
+}
+
+/// Reads new lines from a JSONL session file starting at `from_line`.
+/// Returns the parsed JSON objects for all new lines.
+#[tauri::command]
+pub async fn poll_session_file(
+    session_id: String,
+    project_id: String,
+    from_line: u64,
+) -> Result<Vec<serde_json::Value>, String> {
+    let claude_dir = get_claude_dir().map_err(|e| e.to_string())?;
+    let session_path = claude_dir
+        .join("projects")
+        .join(&project_id)
+        .join(format!("{}.jsonl", session_id));
+
+    if !session_path.exists() {
+        return Err(format!("Session file not found: {}", session_id));
+    }
+
+    let file = fs::File::open(&session_path)
+        .map_err(|e| format!("Failed to open session file: {}", e))?;
+    let reader = BufReader::new(file);
+    let mut messages = Vec::new();
+
+    for (idx, line) in reader.lines().enumerate() {
+        if (idx as u64) < from_line {
+            continue;
+        }
+        if let Ok(line) = line {
+            if let Ok(json) = serde_json::from_str::<serde_json::Value>(&line) {
+                messages.push(json);
+            }
+        }
+    }
+
+    Ok(messages)
+}
+
+/// Returns the absolute path of a session JSONL file.
+#[tauri::command]
+pub async fn get_session_file_path(session_id: String, project_id: String) -> Result<String, String> {
+    let claude_dir = get_claude_dir().map_err(|e| e.to_string())?;
+    let path = claude_dir
+        .join("projects")
+        .join(&project_id)
+        .join(format!("{}.jsonl", session_id));
+    path.to_str()
+        .ok_or_else(|| "Path contains invalid UTF-8".to_string())
+        .map(|s| s.to_string())
+}
+
+/// Returns lightweight status info about a session JSONL file for sidebar status dots.
+#[tauri::command]
+pub async fn get_session_file_status(
+    session_id: String,
+    project_id: String,
+) -> Result<SessionFileStatus, String> {
+    let claude_dir = get_claude_dir().map_err(|e| e.to_string())?;
+    let session_path = claude_dir
+        .join("projects")
+        .join(&project_id)
+        .join(format!("{}.jsonl", session_id));
+
+    if !session_path.exists() {
+        return Ok(SessionFileStatus {
+            last_type: None,
+            is_error: false,
+            lines_total: 0,
+            modified_secs_ago: u64::MAX,
+            awaiting_approval: false,
+        });
+    }
+
+    let metadata = fs::metadata(&session_path)
+        .map_err(|e| format!("Failed to read metadata: {}", e))?;
+
+    let modified_secs_ago = metadata
+        .modified()
+        .ok()
+        .and_then(|t| SystemTime::now().duration_since(t).ok())
+        .map(|d| d.as_secs())
+        .unwrap_or(u64::MAX);
+
+    let file = fs::File::open(&session_path)
+        .map_err(|e| format!("Failed to open session file: {}", e))?;
+    let reader = BufReader::new(file);
+
+    let mut lines_total: u64 = 0;
+    let mut last_type: Option<String> = None;
+    let mut is_error = false;
+    let mut awaiting_approval = false;
+
+    for line in reader.lines() {
+        if let Ok(line) = line {
+            lines_total += 1;
+            if let Ok(json) = serde_json::from_str::<serde_json::Value>(&line) {
+                if let Some(t) = json.get("type").and_then(|v| v.as_str()) {
+                    last_type = Some(t.to_string());
+                    if t == "result" {
+                        is_error = json
+                            .get("is_error")
+                            .and_then(|v| v.as_bool())
+                            .unwrap_or(false);
+                        awaiting_approval = false;
+                    } else if t == "system" {
+                        if let Some(subtype) = json.get("subtype").and_then(|v| v.as_str()) {
+                            if subtype == "permission_request" || subtype == "approval" {
+                                awaiting_approval = true;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    Ok(SessionFileStatus {
+        last_type,
+        is_error,
+        lines_total,
+        modified_secs_ago,
+        awaiting_approval,
+    })
 }
 
 /// Execute a new interactive Claude Code session with streaming output
@@ -3130,4 +3315,38 @@ pub async fn list_session_logs() -> Result<Vec<SessionLogEntry>, String> {
     })
     .await
     .map_err(|e| format!("Task failed: {}", e))?
+}
+
+fn ccode_settings_path() -> Result<PathBuf, String> {
+    let home = dirs::home_dir().ok_or_else(|| "Cannot find home directory".to_string())?;
+    let dir = home.join(".ccode");
+    if !dir.exists() {
+        fs::create_dir_all(&dir).map_err(|e| format!("Failed to create ~/.ccode: {}", e))?;
+    }
+    Ok(dir.join("settings.json"))
+}
+
+#[tauri::command]
+pub fn read_ccode_settings() -> Result<serde_json::Value, String> {
+    let path = ccode_settings_path()?;
+    if !path.exists() {
+        return Ok(serde_json::json!({}));
+    }
+    let contents = fs::read_to_string(&path)
+        .map_err(|e| format!("Failed to read ~/.ccode/settings.json: {}", e))?;
+    serde_json::from_str(&contents)
+        .map_err(|e| format!("Failed to parse ~/.ccode/settings.json: {}", e))
+}
+
+#[tauri::command]
+pub fn write_ccode_settings(settings: serde_json::Value) -> Result<(), String> {
+    let path = ccode_settings_path()?;
+    let tmp = path.with_extension("json.tmp");
+    let contents = serde_json::to_string_pretty(&settings)
+        .map_err(|e| format!("Failed to serialize settings: {}", e))?;
+    fs::write(&tmp, &contents)
+        .map_err(|e| format!("Failed to write temp settings file: {}", e))?;
+    fs::rename(&tmp, &path)
+        .map_err(|e| format!("Failed to rename settings file: {}", e))?;
+    Ok(())
 }

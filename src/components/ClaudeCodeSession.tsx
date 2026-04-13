@@ -50,7 +50,6 @@ const listen = tauriListen || ((eventName: string, callback: (event: any) => voi
     window.removeEventListener(eventName, domEventHandler);
   });
 });
-import { StreamMessage } from "./StreamMessage";
 import { FloatingPromptInput, type FloatingPromptInputRef } from "./FloatingPromptInput";
 import { ErrorBoundary } from "./ErrorBoundary";
 import { TimelineNavigator } from "./TimelineNavigator";
@@ -65,6 +64,8 @@ import type { ClaudeStreamMessage } from "./AgentExecution";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { useTabState } from "@/hooks/useTabState";
 import { SessionPersistenceService } from "@/services/sessionPersistence";
+import { useGroupedMessages } from "@/hooks/useGroupedMessages";
+import { TurnBlock } from "./TurnBlock";
 
 export type SessionState =
   | "idle"
@@ -144,12 +145,14 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
   // New state for preview feature
   const [showPreview, setShowPreview] = useState(false);
   const [previewUrl, setPreviewUrl] = useState("");
-  const [showPreviewPrompt, setShowPreviewPrompt] = useState(false);
   const [splitPosition, setSplitPosition] = useState(50);
   const [isPreviewMaximized, setIsPreviewMaximized] = useState(false);
   
   // Add collapsed state for queued prompts
   const [queuedPromptsCollapsed, setQueuedPromptsCollapsed] = useState(false);
+
+  // Collapse all signal for work blocks
+  const [collapseSignal, setCollapseSignal] = useState(0);
 
   // Session state tracking
   const [sessionState, setSessionState] = useState<SessionState>("idle");
@@ -161,6 +164,7 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
   const parentRef = useRef<HTMLDivElement>(null);
   const unlistenRefs = useRef<UnlistenFn[]>([]);
   const hasActiveSessionRef = useRef(false);
+  const fileLineCountRef = useRef<number>(0);
   const floatingPromptRef = useRef<FloatingPromptInputRef>(null);
   const queuedPromptsRef = useRef<Array<{ id: string; prompt: string; model: "sonnet" | "opus" }>>([]);
   const isMountedRef = useRef(true);
@@ -187,7 +191,7 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
   });
 
   // Tab state management
-  const { activeTab, updateTabTitle } = useTabState();
+  const { activeTab, updateTabTitle, updateTab } = useTabState();
 
   // Call onProjectPathChange when component mounts with initial path
   useEffect(() => {
@@ -308,11 +312,14 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
     });
   }, [messages]);
 
+  // Group messages into turns
+  const turns = useGroupedMessages(displayableMessages);
+
   const rowVirtualizer = useVirtualizer({
-    count: displayableMessages.length,
+    count: turns.length,
     getScrollElement: () => parentRef.current,
-    estimateSize: () => 150, // Estimate, will be dynamically measured
-    overscan: 5,
+    estimateSize: () => 250,
+    overscan: 3,
   });
 
   // Debug logging
@@ -387,6 +394,63 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
     setTotalTokens(tokens);
   }, [messages]);
 
+  // Store session IDs on the tab so the sidebar can poll status for non-active tabs
+  useEffect(() => {
+    if (!activeTab) return;
+    const sessionId = claudeSessionId || session?.id;
+    const projectId = effectiveSession?.project_id;
+    if (sessionId && projectId) {
+      updateTab(activeTab.id, {
+        claudeSessionId: sessionId,
+        claudeProjectId: projectId,
+      });
+    }
+  }, [claudeSessionId, session?.id, effectiveSession?.project_id, activeTab?.id]);
+
+  // Poll the JSONL session file for external changes (e.g., session driven from a terminal)
+  // Only runs when not actively streaming via Tauri events
+  useEffect(() => {
+    const sessionId = claudeSessionId || session?.id;
+    const projectId = effectiveSession?.project_id;
+    if (!sessionId || !projectId || isLoading) return;
+
+    const interval = setInterval(async () => {
+      if (!isMountedRef.current || isLoading) return;
+      try {
+        const newLines = await api.pollSessionFile(sessionId, projectId, fileLineCountRef.current);
+        if (!isMountedRef.current || newLines.length === 0) return;
+
+        fileLineCountRef.current += newLines.length;
+        const newMessages: ClaudeStreamMessage[] = newLines.map((entry: any) => ({
+          ...entry,
+          type: entry.type || 'assistant',
+        }));
+        setMessages(prev => [...prev, ...newMessages]);
+
+        // Derive tab status from the last meaningful entry
+        const lastEntry = newLines[newLines.length - 1] as any;
+        if (lastEntry && activeTab) {
+          if (lastEntry.type === 'result') {
+            updateTab(activeTab.id, { status: lastEntry.is_error ? 'error' : 'complete' });
+          } else if (lastEntry.type === 'assistant' || lastEntry.type === 'tool_use') {
+            updateTab(activeTab.id, { status: 'running' });
+          }
+        }
+      } catch {
+        // Silently ignore polling errors (file may not exist yet)
+      }
+    }, 2000);
+
+    return () => clearInterval(interval);
+  }, [claudeSessionId, session?.id, effectiveSession?.project_id, isLoading, activeTab?.id]);
+
+  const handleRefresh = async () => {
+    if (!session || isLoading) return;
+    setMessages([]);
+    fileLineCountRef.current = 0;
+    await loadSessionHistory();
+  };
+
   const loadSessionHistory = async () => {
     if (!session) return;
     
@@ -414,7 +478,8 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
       
       setMessages(loadedMessages);
       setRawJsonlOutput(history.map(h => JSON.stringify(h)));
-      
+      fileLineCountRef.current = history.length;
+
       // After loading history, we're continuing a conversation
       setIsFirstPrompt(false);
       
@@ -1052,14 +1117,6 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
     }
   };
 
-  // Handle URL detection from terminal output
-  const handleLinkDetected = (url: string) => {
-    if (!showPreview && !showPreviewPrompt) {
-      setPreviewUrl(url);
-      setShowPreviewPrompt(true);
-    }
-  };
-
   const handleClosePreview = () => {
     setShowPreview(false);
     setIsPreviewMaximized(false);
@@ -1132,10 +1189,12 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
       className="flex-1 overflow-y-auto relative pb-4"
       style={{
         contain: 'strict',
+        scrollbarGutter: 'stable',
+        scrollbarWidth: 'thin',
       }}
     >
       <div
-        className="relative w-full max-w-6xl mx-auto px-4 pt-8 pb-4"
+        className="relative w-full mx-auto px-4 pt-8 pb-4"
         style={{
           height: `${Math.max(rowVirtualizer.getTotalSize(), 100)}px`,
           minHeight: '100px',
@@ -1143,7 +1202,7 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
       >
         <AnimatePresence>
           {rowVirtualizer.getVirtualItems().map((virtualItem) => {
-            const message = displayableMessages[virtualItem.index];
+            const turn = turns[virtualItem.index];
             return (
               <motion.div
                 key={virtualItem.key}
@@ -1158,10 +1217,11 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
                   top: virtualItem.start,
                 }}
               >
-                <StreamMessage 
-                  message={message} 
-                  streamMessages={messages}
-                  onLinkDetected={handleLinkDetected}
+                <TurnBlock
+                  turn={turn}
+                  streamMessages={displayableMessages}
+                  isStreaming={isLoading}
+                  collapseSignal={collapseSignal}
                 />
               </motion.div>
             );
@@ -1187,7 +1247,7 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
           initial={{ opacity: 0, y: 8 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.15 }}
-          className="rounded-lg border border-destructive/50 bg-destructive/10 p-4 text-sm text-destructive mb-20 w-full max-w-6xl mx-auto"
+          className="rounded-lg border border-destructive/50 bg-destructive/10 p-4 text-sm text-destructive mb-20 w-full mx-auto"
         >
           {error}
         </motion.div>
@@ -1239,6 +1299,16 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
           onCopyAsMarkdown={() => {}}
           onToggleTimeline={() => setShowTimeline(!showTimeline)}
           onOpenFolder={projectPath && tauriOpen ? () => tauriOpen(projectPath) : undefined}
+          onRefresh={session ? handleRefresh : undefined}
+          onCollapseAll={() => setCollapseSignal(s => s + 1)}
+          onOpenSessionFile={claudeSessionId && effectiveSession?.project_id && tauriOpen ? async () => {
+            try {
+              const filePath = await api.getSessionFilePath(claudeSessionId, effectiveSession.project_id);
+              await tauriOpen(filePath);
+            } catch (e) {
+              console.error('Failed to open session file:', e);
+            }
+          } : undefined}
           setCopyPopoverOpen={setCopyPopoverOpen}
         />
         <div className="flex-1 min-h-0 flex flex-col">
@@ -1274,7 +1344,7 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
             />
           ) : (
             // Original layout when no preview
-            <div className="h-full flex flex-col max-w-6xl mx-auto px-6">
+            <div className="h-full flex flex-col mx-auto px-6">
               {projectPathInput}
               {messagesList}
               

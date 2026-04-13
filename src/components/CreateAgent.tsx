@@ -122,7 +122,7 @@ export const CreateAgent: React.FC<CreateAgentProps> = ({
       transition={{ duration: 0.15 }}
       className={cn("h-full overflow-y-auto bg-background", className)}
     >
-      <div className="max-w-6xl mx-auto flex flex-col h-full">
+      <div className="mx-auto flex flex-col h-full">
         {/* Header */}
         <div className="p-6 border-b border-border">
           <div className="flex items-center justify-between">

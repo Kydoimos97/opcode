@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   Plus,
@@ -21,6 +21,7 @@ import {
   Terminal,
   Command,
   ShieldCheck,
+  Palette,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -67,6 +68,7 @@ interface EnvironmentVariable {
 const NAV_ITEMS = [
   { id: 'general', label: 'General', icon: Settings2 },
   { id: 'interface', label: 'Interface', icon: Layout },
+  { id: 'theme', label: 'Theme', icon: Palette },
   { id: 'permissions', label: 'Permissions', icon: Shield },
   { id: 'environment', label: 'Environment', icon: Terminal },
   { id: 'advanced', label: 'Advanced', icon: SlidersHorizontal },
@@ -79,6 +81,67 @@ const NAV_ITEMS = [
   { id: 'cguard', label: 'c-guard', icon: ShieldCheck },
 ] as const;
 type SectionId = typeof NAV_ITEMS[number]['id'];
+
+function parseRgba(value: string): { hex: string; alpha: number } {
+  const m = value.match(/rgba?\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)(?:\s*,\s*([\d.]+))?\s*\)/);
+  if (m) {
+    const hex = '#' + [m[1], m[2], m[3]].map(n => parseInt(n).toString(16).padStart(2, '0')).join('');
+    return { hex, alpha: m[4] !== undefined ? parseFloat(m[4]) : 1 };
+  }
+  if (/^#[0-9a-f]{6}$/i.test(value)) return { hex: value, alpha: 1 };
+  return { hex: '#888888', alpha: 1 };
+}
+
+function hexToRgba(hex: string, alpha: number): string {
+  const r = parseInt(hex.slice(1, 3), 16);
+  const g = parseInt(hex.slice(3, 5), 16);
+  const b = parseInt(hex.slice(5, 7), 16);
+  return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+}
+
+interface ChatColorFieldProps {
+  id: string;
+  label: string;
+  value: string;
+  onChange: (v: string) => void;
+}
+
+const ChatColorField: React.FC<ChatColorFieldProps> = ({ id, label, value, onChange }) => {
+  const { hex, alpha } = parseRgba(value);
+  const pickerRef = useRef<HTMLInputElement>(null);
+  return (
+    <div className="space-y-1.5">
+      <Label htmlFor={id} className="text-caption">{label}</Label>
+      <div className="flex items-center gap-2">
+        <div
+          className="w-8 h-8 rounded border border-border flex-shrink-0 cursor-pointer relative overflow-hidden"
+          style={{ backgroundColor: value }}
+          onClick={() => pickerRef.current?.click()}
+        >
+          <input
+            ref={pickerRef}
+            type="color"
+            value={hex}
+            onChange={(e) => onChange(hexToRgba(e.target.value, alpha))}
+            className="absolute inset-0 opacity-0 cursor-pointer w-full h-full p-0 m-0 border-0"
+            tabIndex={-1}
+          />
+        </div>
+        <input
+          type="number"
+          min="0"
+          max="1"
+          step="0.05"
+          value={alpha}
+          onChange={(e) => onChange(hexToRgba(hex, Math.min(1, Math.max(0, parseFloat(e.target.value) || 0))))}
+          className="w-14 text-xs px-2 py-1.5 rounded border border-border bg-background text-foreground"
+          title="Opacity (0-1)"
+        />
+        <Input id={id} type="text" value={value} onChange={(e) => onChange(e.target.value)} className="font-mono text-xs flex-1" />
+      </div>
+    </div>
+  );
+};
 
 /**
  * Comprehensive Settings UI for managing Claude Code settings
@@ -109,7 +172,7 @@ export const Settings: React.FC<SettingsProps> = ({
   const getUserHooks = React.useRef<(() => any) | null>(null);
   
   // Theme hook
-  const { theme, setTheme, customColors, setCustomColors } = useTheme();
+  const { theme, setTheme, customColors, setCustomColors, chatColors, setChatColors } = useTheme();
   
   // Proxy state
   const [proxySettingsChanged, setProxySettingsChanged] = useState(false);
@@ -144,11 +207,16 @@ export const Settings: React.FC<SettingsProps> = ({
   const [workBlockAutoExpand, setWorkBlockAutoExpand] = useState(false);
   const [showStreamingIndicator, setShowStreamingIndicator] = useState(true);
 
+  const [fontSans, setFontSans] = useState('');
+  const [fontMono, setFontMono] = useState('');
+
   useEffect(() => {
     setSidebarDefaultOpen(localStorage.getItem('ui_pref:sidebar_default_open') === 'true');
     setStatusBarVisible(localStorage.getItem('ui_pref:status_bar_visible') !== 'false');
     setWorkBlockAutoExpand(localStorage.getItem('ui_pref:work_block_auto_expand') === 'true');
     setShowStreamingIndicator(localStorage.getItem('ui_pref:show_streaming_indicator') !== 'false');
+    setFontSans(localStorage.getItem('ui_pref:font_sans') || '');
+    setFontMono(localStorage.getItem('ui_pref:font_mono') || '');
   }, []);
 
   useEffect(() => {
@@ -166,6 +234,24 @@ export const Settings: React.FC<SettingsProps> = ({
   useEffect(() => {
     localStorage.setItem('ui_pref:show_streaming_indicator', showStreamingIndicator.toString());
   }, [showStreamingIndicator]);
+
+  useEffect(() => {
+    localStorage.setItem('ui_pref:font_sans', fontSans);
+    if (fontSans) {
+      document.documentElement.style.setProperty('--font-sans', fontSans);
+    } else {
+      document.documentElement.style.removeProperty('--font-sans');
+    }
+  }, [fontSans]);
+
+  useEffect(() => {
+    localStorage.setItem('ui_pref:font_mono', fontMono);
+    if (fontMono) {
+      document.documentElement.style.setProperty('--font-mono', fontMono);
+    } else {
+      document.documentElement.style.removeProperty('--font-mono');
+    }
+  }, [fontMono]);
 
   // Load settings on mount
   useEffect(() => {
@@ -643,197 +729,125 @@ export const Settings: React.FC<SettingsProps> = ({
               <div className="space-y-6">
               <Card className="p-6 space-y-6">
                 <div>
-                  <h3 className="text-heading-4 mb-4">General Settings</h3>
-                  
+                  <h3 className="text-heading-4 mb-4">Opcode Settings</h3>
+                  <p className="text-caption text-muted-foreground mb-4">
+                    Configure app-level preferences
+                  </p>
+
                   <div className="space-y-4">
-                    {/* Theme Selector */}
                     <div className="flex items-center justify-between">
-                      <div>
-                        <Label>Theme</Label>
-                        <p className="text-caption text-muted-foreground mt-1">
-                          Choose your preferred color theme
-                        </p>
+                      <div className="space-y-1">
+                        <Label htmlFor="sidebar-default-open-gen" className="text-label">
+                          Sidebar visible by default
+                        </Label>
                       </div>
-                      <div className="flex items-center gap-1 p-1 bg-muted/30 rounded-lg">
-                        <button
-                          onClick={() => setTheme('dark')}
-                          className={cn(
-                            "flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-md transition-all",
-                            theme === 'dark' 
-                              ? "bg-background shadow-sm" 
-                              : "hover:bg-background/50"
-                          )}
-                        >
-                          {theme === 'dark' && <Check className="h-3 w-3" />}
-                          Dark
-                        </button>
-                        <button
-                          onClick={() => setTheme('gray')}
-                          className={cn(
-                            "flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-md transition-all",
-                            theme === 'gray' 
-                              ? "bg-background shadow-sm" 
-                              : "hover:bg-background/50"
-                          )}
-                        >
-                          {theme === 'gray' && <Check className="h-3 w-3" />}
-                          Gray
-                        </button>
-                        <button
-                          onClick={() => setTheme('light')}
-                          className={cn(
-                            "flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-md transition-all",
-                            theme === 'light' 
-                              ? "bg-background shadow-sm" 
-                              : "hover:bg-background/50"
-                          )}
-                        >
-                          {theme === 'light' && <Check className="h-3 w-3" />}
-                          Light
-                        </button>
-                        <button
-                          onClick={() => setTheme('custom')}
-                          className={cn(
-                            "flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-md transition-all",
-                            theme === 'custom' 
-                              ? "bg-background shadow-sm" 
-                              : "hover:bg-background/50"
-                          )}
-                        >
-                          {theme === 'custom' && <Check className="h-3 w-3" />}
-                          Custom
-                        </button>
-                      </div>
+                      <Switch
+                        id="sidebar-default-open-gen"
+                        checked={sidebarDefaultOpen}
+                        onCheckedChange={setSidebarDefaultOpen}
+                      />
                     </div>
-                    
-                    {/* Custom Color Editor */}
-                    {theme === 'custom' && (
-                      <div className="space-y-4 p-4 border rounded-lg bg-muted/20">
-                        <h4 className="text-label">Custom Theme Colors</h4>
-                        
-                        <div className="grid grid-cols-2 gap-4">
-                          {/* Background Color */}
-                          <div className="space-y-2">
-                            <Label htmlFor="color-background" className="text-caption">Background</Label>
-                            <div className="flex gap-2">
-                              <Input
-                                id="color-background"
-                                type="text"
-                                value={customColors.background}
-                                onChange={(e) => setCustomColors({ background: e.target.value })}
-                                placeholder="oklch(0.12 0.01 240)"
-                                className="font-mono text-xs"
-                              />
-                              <div 
-                                className="w-10 h-10 rounded border"
-                                style={{ backgroundColor: customColors.background }}
-                              />
-                            </div>
-                          </div>
-                          
-                          {/* Foreground Color */}
-                          <div className="space-y-2">
-                            <Label htmlFor="color-foreground" className="text-caption">Foreground</Label>
-                            <div className="flex gap-2">
-                              <Input
-                                id="color-foreground"
-                                type="text"
-                                value={customColors.foreground}
-                                onChange={(e) => setCustomColors({ foreground: e.target.value })}
-                                placeholder="oklch(0.98 0.01 240)"
-                                className="font-mono text-xs"
-                              />
-                              <div 
-                                className="w-10 h-10 rounded border"
-                                style={{ backgroundColor: customColors.foreground }}
-                              />
-                            </div>
-                          </div>
-                          
-                          {/* Primary Color */}
-                          <div className="space-y-2">
-                            <Label htmlFor="color-primary" className="text-caption">Primary</Label>
-                            <div className="flex gap-2">
-                              <Input
-                                id="color-primary"
-                                type="text"
-                                value={customColors.primary}
-                                onChange={(e) => setCustomColors({ primary: e.target.value })}
-                                placeholder="oklch(0.98 0.01 240)"
-                                className="font-mono text-xs"
-                              />
-                              <div 
-                                className="w-10 h-10 rounded border"
-                                style={{ backgroundColor: customColors.primary }}
-                              />
-                            </div>
-                          </div>
-                          
-                          {/* Card Color */}
-                          <div className="space-y-2">
-                            <Label htmlFor="color-card" className="text-caption">Card</Label>
-                            <div className="flex gap-2">
-                              <Input
-                                id="color-card"
-                                type="text"
-                                value={customColors.card}
-                                onChange={(e) => setCustomColors({ card: e.target.value })}
-                                placeholder="oklch(0.14 0.01 240)"
-                                className="font-mono text-xs"
-                              />
-                              <div 
-                                className="w-10 h-10 rounded border"
-                                style={{ backgroundColor: customColors.card }}
-                              />
-                            </div>
-                          </div>
-                          
-                          {/* Accent Color */}
-                          <div className="space-y-2">
-                            <Label htmlFor="color-accent" className="text-caption">Accent</Label>
-                            <div className="flex gap-2">
-                              <Input
-                                id="color-accent"
-                                type="text"
-                                value={customColors.accent}
-                                onChange={(e) => setCustomColors({ accent: e.target.value })}
-                                placeholder="oklch(0.16 0.01 240)"
-                                className="font-mono text-xs"
-                              />
-                              <div 
-                                className="w-10 h-10 rounded border"
-                                style={{ backgroundColor: customColors.accent }}
-                              />
-                            </div>
-                          </div>
-                          
-                          {/* Destructive Color */}
-                          <div className="space-y-2">
-                            <Label htmlFor="color-destructive" className="text-caption">Destructive</Label>
-                            <div className="flex gap-2">
-                              <Input
-                                id="color-destructive"
-                                type="text"
-                                value={customColors.destructive}
-                                onChange={(e) => setCustomColors({ destructive: e.target.value })}
-                                placeholder="oklch(0.6 0.2 25)"
-                                className="font-mono text-xs"
-                              />
-                              <div 
-                                className="w-10 h-10 rounded border"
-                                style={{ backgroundColor: customColors.destructive }}
-                              />
-                            </div>
-                          </div>
-                        </div>
-                        
+
+                    <div className="flex items-center justify-between">
+                      <div className="space-y-1">
+                        <Label htmlFor="status-bar-visible-gen" className="text-label">
+                          Show session status bar
+                        </Label>
+                      </div>
+                      <Switch
+                        id="status-bar-visible-gen"
+                        checked={statusBarVisible}
+                        onCheckedChange={setStatusBarVisible}
+                      />
+                    </div>
+
+                    <div className="flex items-center justify-between">
+                      <div className="space-y-1">
+                        <Label htmlFor="work-block-auto-expand-gen" className="text-label">
+                          Auto-expand work blocks
+                        </Label>
+                      </div>
+                      <Switch
+                        id="work-block-auto-expand-gen"
+                        checked={workBlockAutoExpand}
+                        onCheckedChange={setWorkBlockAutoExpand}
+                      />
+                    </div>
+
+                    <div className="flex items-center justify-between">
+                      <div className="space-y-1">
+                        <Label htmlFor="show-streaming-indicator-gen" className="text-label">
+                          Show streaming indicator
+                        </Label>
+                      </div>
+                      <Switch
+                        id="show-streaming-indicator-gen"
+                        checked={showStreamingIndicator}
+                        onCheckedChange={setShowStreamingIndicator}
+                      />
+                    </div>
+
+                    <div className="flex items-center justify-between">
+                      <div className="space-y-1">
+                        <Label htmlFor="tab-persistence">Remember Open Tabs</Label>
                         <p className="text-caption text-muted-foreground">
-                          Use CSS color values (hex, rgb, oklch, etc.). Changes apply immediately.
+                          Restore your tabs when you restart the app
                         </p>
                       </div>
-                    )}
-                    
-                    {/* Include Co-authored By */}
+                      <Switch
+                        id="tab-persistence"
+                        checked={tabPersistenceEnabled}
+                        onCheckedChange={(checked) => {
+                          TabPersistenceService.setEnabled(checked);
+                          setTabPersistenceEnabled(checked);
+                          setToast({
+                            message: checked
+                              ? "Tab persistence enabled - your tabs will be restored on restart"
+                              : "Tab persistence disabled - tabs will not be saved",
+                            type: "success"
+                          });
+                        }}
+                      />
+                    </div>
+
+                    <div className="flex items-center justify-between">
+                      <div className="space-y-1">
+                        <Label htmlFor="startup-intro">Show Welcome Intro on Startup</Label>
+                        <p className="text-caption text-muted-foreground">
+                          Display a brief welcome animation when the app launches
+                        </p>
+                      </div>
+                      <Switch
+                        id="startup-intro"
+                        checked={startupIntroEnabled}
+                        onCheckedChange={async (checked) => {
+                          setStartupIntroEnabled(checked);
+                          try {
+                            await api.saveSetting('startup_intro_enabled', checked ? 'true' : 'false');
+                            setToast({
+                              message: checked
+                                ? 'Welcome intro enabled'
+                                : 'Welcome intro disabled',
+                              type: 'success'
+                            });
+                          } catch (e) {
+                            setToast({ message: 'Failed to update preference', type: 'error' });
+                          }
+                        }}
+                      />
+                    </div>
+                  </div>
+                </div>
+              </Card>
+
+              <Card className="p-6 space-y-6">
+                <div>
+                  <h3 className="text-heading-4 mb-4">Claude Code Settings</h3>
+                  <p className="text-caption text-muted-foreground mb-4">
+                    Configure Claude Code behavior and binary path
+                  </p>
+
+                  <div className="space-y-4">
                     <div className="flex items-center justify-between">
                       <div className="space-y-0.5 flex-1">
                         <Label htmlFor="coauthored">Include "Co-authored by Claude"</Label>
@@ -847,8 +861,7 @@ export const Settings: React.FC<SettingsProps> = ({
                         onCheckedChange={(checked) => updateSetting("includeCoAuthoredBy", checked)}
                       />
                     </div>
-                    
-                    {/* Verbose Output */}
+
                     <div className="flex items-center justify-between">
                       <div className="space-y-0.5 flex-1">
                         <Label htmlFor="verbose">Verbose Output</Label>
@@ -862,8 +875,7 @@ export const Settings: React.FC<SettingsProps> = ({
                         onCheckedChange={(checked) => updateSetting("verbose", checked)}
                       />
                     </div>
-                    
-                    {/* Cleanup Period */}
+
                     <div className="space-y-2">
                       <div className="flex items-center justify-between">
                         <div className="flex-1">
@@ -886,8 +898,7 @@ export const Settings: React.FC<SettingsProps> = ({
                         />
                       </div>
                     </div>
-                    
-                    {/* Claude Binary Path Selector */}
+
                     <div className="space-y-3">
                       <ClaudeVersionSelector
                         selectedPath={currentBinaryPath}
@@ -900,61 +911,6 @@ export const Settings: React.FC<SettingsProps> = ({
                           Changes will be applied when you save settings.
                         </p>
                       )}
-                    </div>
-
-                    {/* Separator */}
-                    <div className="border-t border-border pt-4 mt-6" />
-
-                    {/* Tab Persistence Toggle */}
-                    <div className="flex items-center justify-between">
-                      <div className="space-y-1">
-                        <Label htmlFor="tab-persistence">Remember Open Tabs</Label>
-                        <p className="text-caption text-muted-foreground">
-                          Restore your tabs when you restart the app
-                        </p>
-                      </div>
-                      <Switch
-                        id="tab-persistence"
-                        checked={tabPersistenceEnabled}
-                        onCheckedChange={(checked) => {
-                          TabPersistenceService.setEnabled(checked);
-                          setTabPersistenceEnabled(checked);
-                          setToast({ 
-                            message: checked 
-                              ? "Tab persistence enabled - your tabs will be restored on restart" 
-                              : "Tab persistence disabled - tabs will not be saved", 
-                            type: "success" 
-                          });
-                        }}
-                      />
-                    </div>
-
-                    {/* Startup Intro Toggle */}
-                    <div className="flex items-center justify-between">
-                      <div className="space-y-1">
-                        <Label htmlFor="startup-intro">Show Welcome Intro on Startup</Label>
-                        <p className="text-caption text-muted-foreground">
-                          Display a brief welcome animation when the app launches
-                        </p>
-                      </div>
-                      <Switch
-                        id="startup-intro"
-                        checked={startupIntroEnabled}
-                        onCheckedChange={async (checked) => {
-                          setStartupIntroEnabled(checked);
-                          try {
-                            await api.saveSetting('startup_intro_enabled', checked ? 'true' : 'false');
-                            setToast({ 
-                              message: checked 
-                                ? 'Welcome intro enabled' 
-                                : 'Welcome intro disabled', 
-                              type: 'success' 
-                            });
-                          } catch (e) {
-                            setToast({ message: 'Failed to update preference', type: 'error' });
-                          }
-                        }}
-                      />
                     </div>
                   </div>
                 </div>
@@ -1014,6 +970,534 @@ export const Settings: React.FC<SettingsProps> = ({
                         checked={showStreamingIndicator}
                         onCheckedChange={setShowStreamingIndicator}
                       />
+                    </div>
+                  </div>
+                </div>
+              </Card>
+              </div>
+              )}
+
+              {activeSection === 'theme' && (
+              <div className="space-y-6">
+              <Card className="p-6 space-y-6">
+                <div>
+                  <h3 className="text-heading-4 mb-4">Theme Mode</h3>
+
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-1 p-1 bg-muted/30 rounded-lg">
+                      <button
+                        onClick={() => setTheme('dark')}
+                        className={cn(
+                          "flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-md transition-all",
+                          theme === 'dark'
+                            ? "bg-background shadow-sm"
+                            : "hover:bg-background/50"
+                        )}
+                      >
+                        {theme === 'dark' && <Check className="h-3 w-3" />}
+                        Dark
+                      </button>
+                      <button
+                        onClick={() => setTheme('gray')}
+                        className={cn(
+                          "flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-md transition-all",
+                          theme === 'gray'
+                            ? "bg-background shadow-sm"
+                            : "hover:bg-background/50"
+                        )}
+                      >
+                        {theme === 'gray' && <Check className="h-3 w-3" />}
+                        Gray
+                      </button>
+                      <button
+                        onClick={() => setTheme('light')}
+                        className={cn(
+                          "flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-md transition-all",
+                          theme === 'light'
+                            ? "bg-background shadow-sm"
+                            : "hover:bg-background/50"
+                        )}
+                      >
+                        {theme === 'light' && <Check className="h-3 w-3" />}
+                        Light
+                      </button>
+                      <button
+                        onClick={() => setTheme('custom')}
+                        className={cn(
+                          "flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-md transition-all",
+                          theme === 'custom'
+                            ? "bg-background shadow-sm"
+                            : "hover:bg-background/50"
+                        )}
+                      >
+                        {theme === 'custom' && <Check className="h-3 w-3" />}
+                        Custom
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </Card>
+
+              {theme === 'custom' && (
+              <Card className="p-6 space-y-6">
+                <div>
+                  <h3 className="text-heading-4 mb-4">Custom Colors</h3>
+
+                  <div className="space-y-6">
+                    <div>
+                      <h4 className="text-label mb-4">Surface</h4>
+                      <div className="grid grid-cols-2 gap-4">
+                        <div className="space-y-2">
+                          <Label htmlFor="color-background" className="text-caption">Background</Label>
+                          <div className="flex gap-2">
+                            <Input
+                              id="color-background"
+                              type="text"
+                              value={customColors.background}
+                              onChange={(e) => setCustomColors({ background: e.target.value })}
+                              placeholder="oklch(0.12 0.01 240)"
+                              className="font-mono text-xs flex-1"
+                            />
+                            <div
+                              className="w-10 h-10 rounded border flex-shrink-0"
+                              style={{ backgroundColor: customColors.background }}
+                            />
+                          </div>
+                        </div>
+
+                        <div className="space-y-2">
+                          <Label htmlFor="color-card" className="text-caption">Card</Label>
+                          <div className="flex gap-2">
+                            <Input
+                              id="color-card"
+                              type="text"
+                              value={customColors.card}
+                              onChange={(e) => setCustomColors({ card: e.target.value })}
+                              placeholder="oklch(0.14 0.01 240)"
+                              className="font-mono text-xs flex-1"
+                            />
+                            <div
+                              className="w-10 h-10 rounded border flex-shrink-0"
+                              style={{ backgroundColor: customColors.card }}
+                            />
+                          </div>
+                        </div>
+
+                        <div className="space-y-2">
+                          <Label htmlFor="color-secondary" className="text-caption">Secondary</Label>
+                          <div className="flex gap-2">
+                            <Input
+                              id="color-secondary"
+                              type="text"
+                              value={customColors.secondary}
+                              onChange={(e) => setCustomColors({ secondary: e.target.value })}
+                              placeholder="oklch(0.15 0.01 240)"
+                              className="font-mono text-xs flex-1"
+                            />
+                            <div
+                              className="w-10 h-10 rounded border flex-shrink-0"
+                              style={{ backgroundColor: customColors.secondary }}
+                            />
+                          </div>
+                        </div>
+
+                        <div className="space-y-2">
+                          <Label htmlFor="color-muted" className="text-caption">Muted</Label>
+                          <div className="flex gap-2">
+                            <Input
+                              id="color-muted"
+                              type="text"
+                              value={customColors.muted}
+                              onChange={(e) => setCustomColors({ muted: e.target.value })}
+                              placeholder="oklch(0.11 0.01 240)"
+                              className="font-mono text-xs flex-1"
+                            />
+                            <div
+                              className="w-10 h-10 rounded border flex-shrink-0"
+                              style={{ backgroundColor: customColors.muted }}
+                            />
+                          </div>
+                        </div>
+
+                        <div className="space-y-2">
+                          <Label htmlFor="color-accent" className="text-caption">Accent</Label>
+                          <div className="flex gap-2">
+                            <Input
+                              id="color-accent"
+                              type="text"
+                              value={customColors.accent}
+                              onChange={(e) => setCustomColors({ accent: e.target.value })}
+                              placeholder="oklch(0.16 0.01 240)"
+                              className="font-mono text-xs flex-1"
+                            />
+                            <div
+                              className="w-10 h-10 rounded border flex-shrink-0"
+                              style={{ backgroundColor: customColors.accent }}
+                            />
+                          </div>
+                        </div>
+
+                        <div className="space-y-2">
+                          <Label htmlFor="color-input" className="text-caption">Input</Label>
+                          <div className="flex gap-2">
+                            <Input
+                              id="color-input"
+                              type="text"
+                              value={customColors.input}
+                              onChange={(e) => setCustomColors({ input: e.target.value })}
+                              placeholder="oklch(0.13 0.01 240)"
+                              className="font-mono text-xs flex-1"
+                            />
+                            <div
+                              className="w-10 h-10 rounded border flex-shrink-0"
+                              style={{ backgroundColor: customColors.input }}
+                            />
+                          </div>
+                        </div>
+
+                        <div className="space-y-2">
+                          <Label htmlFor="color-border" className="text-caption">Border</Label>
+                          <div className="flex gap-2">
+                            <Input
+                              id="color-border"
+                              type="text"
+                              value={customColors.border}
+                              onChange={(e) => setCustomColors({ border: e.target.value })}
+                              placeholder="oklch(0.18 0.01 240)"
+                              className="font-mono text-xs flex-1"
+                            />
+                            <div
+                              className="w-10 h-10 rounded border flex-shrink-0"
+                              style={{ backgroundColor: customColors.border }}
+                            />
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div>
+                      <h4 className="text-label mb-4">Text</h4>
+                      <div className="grid grid-cols-2 gap-4">
+                        <div className="space-y-2">
+                          <Label htmlFor="color-foreground" className="text-caption">Foreground</Label>
+                          <div className="flex gap-2">
+                            <Input
+                              id="color-foreground"
+                              type="text"
+                              value={customColors.foreground}
+                              onChange={(e) => setCustomColors({ foreground: e.target.value })}
+                              placeholder="oklch(0.98 0.01 240)"
+                              className="font-mono text-xs flex-1"
+                            />
+                            <div
+                              className="w-10 h-10 rounded border flex-shrink-0"
+                              style={{ backgroundColor: customColors.foreground }}
+                            />
+                          </div>
+                        </div>
+
+                        <div className="space-y-2">
+                          <Label htmlFor="color-cardForeground" className="text-caption">Card Foreground</Label>
+                          <div className="flex gap-2">
+                            <Input
+                              id="color-cardForeground"
+                              type="text"
+                              value={customColors.cardForeground}
+                              onChange={(e) => setCustomColors({ cardForeground: e.target.value })}
+                              placeholder="oklch(0.98 0.01 240)"
+                              className="font-mono text-xs flex-1"
+                            />
+                            <div
+                              className="w-10 h-10 rounded border flex-shrink-0"
+                              style={{ backgroundColor: customColors.cardForeground }}
+                            />
+                          </div>
+                        </div>
+
+                        <div className="space-y-2">
+                          <Label htmlFor="color-secondaryForeground" className="text-caption">Secondary Foreground</Label>
+                          <div className="flex gap-2">
+                            <Input
+                              id="color-secondaryForeground"
+                              type="text"
+                              value={customColors.secondaryForeground}
+                              onChange={(e) => setCustomColors({ secondaryForeground: e.target.value })}
+                              placeholder="oklch(0.98 0.01 240)"
+                              className="font-mono text-xs flex-1"
+                            />
+                            <div
+                              className="w-10 h-10 rounded border flex-shrink-0"
+                              style={{ backgroundColor: customColors.secondaryForeground }}
+                            />
+                          </div>
+                        </div>
+
+                        <div className="space-y-2">
+                          <Label htmlFor="color-mutedForeground" className="text-caption">Muted Foreground</Label>
+                          <div className="flex gap-2">
+                            <Input
+                              id="color-mutedForeground"
+                              type="text"
+                              value={customColors.mutedForeground}
+                              onChange={(e) => setCustomColors({ mutedForeground: e.target.value })}
+                              placeholder="oklch(0.7 0.01 240)"
+                              className="font-mono text-xs flex-1"
+                            />
+                            <div
+                              className="w-10 h-10 rounded border flex-shrink-0"
+                              style={{ backgroundColor: customColors.mutedForeground }}
+                            />
+                          </div>
+                        </div>
+
+                        <div className="space-y-2">
+                          <Label htmlFor="color-accentForeground" className="text-caption">Accent Foreground</Label>
+                          <div className="flex gap-2">
+                            <Input
+                              id="color-accentForeground"
+                              type="text"
+                              value={customColors.accentForeground}
+                              onChange={(e) => setCustomColors({ accentForeground: e.target.value })}
+                              placeholder="oklch(0.98 0.01 240)"
+                              className="font-mono text-xs flex-1"
+                            />
+                            <div
+                              className="w-10 h-10 rounded border flex-shrink-0"
+                              style={{ backgroundColor: customColors.accentForeground }}
+                            />
+                          </div>
+                        </div>
+
+                        <div className="space-y-2">
+                          <Label htmlFor="color-destructiveForeground" className="text-caption">Destructive Foreground</Label>
+                          <div className="flex gap-2">
+                            <Input
+                              id="color-destructiveForeground"
+                              type="text"
+                              value={customColors.destructiveForeground}
+                              onChange={(e) => setCustomColors({ destructiveForeground: e.target.value })}
+                              placeholder="oklch(0.98 0.01 240)"
+                              className="font-mono text-xs flex-1"
+                            />
+                            <div
+                              className="w-10 h-10 rounded border flex-shrink-0"
+                              style={{ backgroundColor: customColors.destructiveForeground }}
+                            />
+                          </div>
+                        </div>
+
+                        <div className="space-y-2">
+                          <Label htmlFor="color-primaryForeground" className="text-caption">Primary Foreground</Label>
+                          <div className="flex gap-2">
+                            <Input
+                              id="color-primaryForeground"
+                              type="text"
+                              value={customColors.primaryForeground}
+                              onChange={(e) => setCustomColors({ primaryForeground: e.target.value })}
+                              placeholder="oklch(0.98 0.01 240)"
+                              className="font-mono text-xs flex-1"
+                            />
+                            <div
+                              className="w-10 h-10 rounded border flex-shrink-0"
+                              style={{ backgroundColor: customColors.primaryForeground }}
+                            />
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div>
+                      <h4 className="text-label mb-4">Interactive</h4>
+                      <div className="grid grid-cols-2 gap-4">
+                        <div className="space-y-2">
+                          <Label htmlFor="color-primary" className="text-caption">Primary</Label>
+                          <div className="flex gap-2">
+                            <Input
+                              id="color-primary"
+                              type="text"
+                              value={customColors.primary}
+                              onChange={(e) => setCustomColors({ primary: e.target.value })}
+                              placeholder="oklch(0.98 0.01 240)"
+                              className="font-mono text-xs flex-1"
+                            />
+                            <div
+                              className="w-10 h-10 rounded border flex-shrink-0"
+                              style={{ backgroundColor: customColors.primary }}
+                            />
+                          </div>
+                        </div>
+
+                        <div className="space-y-2">
+                          <Label htmlFor="color-destructive" className="text-caption">Destructive</Label>
+                          <div className="flex gap-2">
+                            <Input
+                              id="color-destructive"
+                              type="text"
+                              value={customColors.destructive}
+                              onChange={(e) => setCustomColors({ destructive: e.target.value })}
+                              placeholder="oklch(0.6 0.2 25)"
+                              className="font-mono text-xs flex-1"
+                            />
+                            <div
+                              className="w-10 h-10 rounded border flex-shrink-0"
+                              style={{ backgroundColor: customColors.destructive }}
+                            />
+                          </div>
+                        </div>
+
+                        <div className="space-y-2">
+                          <Label htmlFor="color-ring" className="text-caption">Ring</Label>
+                          <div className="flex gap-2">
+                            <Input
+                              id="color-ring"
+                              type="text"
+                              value={customColors.ring}
+                              onChange={(e) => setCustomColors({ ring: e.target.value })}
+                              placeholder="oklch(0.62 0.2 29)"
+                              className="font-mono text-xs flex-1"
+                            />
+                            <div
+                              className="w-10 h-10 rounded border flex-shrink-0"
+                              style={{ backgroundColor: customColors.ring }}
+                            />
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </Card>
+              )}
+
+              <Card className="p-6 space-y-6">
+                <div>
+                  <h3 className="text-heading-4 mb-1">Chat Message Colors</h3>
+                  <p className="text-caption text-muted-foreground mb-4">
+                    Customize colors for each message type. Accepts any CSS color value.
+                  </p>
+                  <div className="grid grid-cols-2 gap-4">
+                    <ChatColorField id="chat-user-border" label="User bubble border" value={chatColors.userBorder} onChange={(v) => setChatColors({ userBorder: v })} />
+                    <ChatColorField id="chat-user-bg" label="User bubble background" value={chatColors.userBg} onChange={(v) => setChatColors({ userBg: v })} />
+                    <ChatColorField id="chat-work-border" label="Work block border" value={chatColors.workBorder} onChange={(v) => setChatColors({ workBorder: v })} />
+                    <ChatColorField id="chat-agent-border" label="Agent response border" value={chatColors.agentBorder} onChange={(v) => setChatColors({ agentBorder: v })} />
+                    <ChatColorField id="chat-agent-bg" label="Agent response background" value={chatColors.agentBg} onChange={(v) => setChatColors({ agentBg: v })} />
+                    <ChatColorField id="chat-tool-border" label="Tool call border" value={chatColors.toolBorder} onChange={(v) => setChatColors({ toolBorder: v })} />
+                    <ChatColorField id="chat-tool-bg" label="Tool call background" value={chatColors.toolBg} onChange={(v) => setChatColors({ toolBg: v })} />
+                    <ChatColorField id="chat-final-border" label="Final response border" value={chatColors.finalBorder} onChange={(v) => setChatColors({ finalBorder: v })} />
+                    <ChatColorField id="chat-final-bg" label="Final response background" value={chatColors.finalBg} onChange={(v) => setChatColors({ finalBg: v })} />
+                    <ChatColorField id="chat-interrupt-border" label="Interrupted border" value={chatColors.interruptBorder} onChange={(v) => setChatColors({ interruptBorder: v })} />
+                    <ChatColorField id="chat-interrupt-bg" label="Interrupted background" value={chatColors.interruptBg} onChange={(v) => setChatColors({ interruptBg: v })} />
+                    <ChatColorField id="chat-interrupt-fg" label="Interrupted text" value={chatColors.interruptFg} onChange={(v) => setChatColors({ interruptFg: v })} />
+                    <ChatColorField id="chat-result-ok-border" label="Success result border" value={chatColors.resultOkBorder} onChange={(v) => setChatColors({ resultOkBorder: v })} />
+                    <ChatColorField id="chat-result-ok-bg" label="Success result background" value={chatColors.resultOkBg} onChange={(v) => setChatColors({ resultOkBg: v })} />
+                    <ChatColorField id="chat-result-err-border" label="Error result border" value={chatColors.resultErrBorder} onChange={(v) => setChatColors({ resultErrBorder: v })} />
+                    <ChatColorField id="chat-result-err-bg" label="Error result background" value={chatColors.resultErrBg} onChange={(v) => setChatColors({ resultErrBg: v })} />
+                  </div>
+                </div>
+              </Card>
+
+              <Card className="p-6 space-y-6">
+                <div>
+                  <h3 className="text-heading-4 mb-4">Typography</h3>
+
+                  <div className="space-y-6">
+                    <div className="space-y-3">
+                      <div>
+                        <Label htmlFor="font-sans-select" className="text-label">
+                          Sans-serif Font
+                        </Label>
+                        <p className="text-caption text-muted-foreground mt-1 mb-2">
+                          Default system font is Inter
+                        </p>
+                      </div>
+
+                      <div className="space-y-2">
+                        <select
+                          id="font-sans-select"
+                          value={fontSans}
+                          onChange={(e) => setFontSans(e.target.value)}
+                          className="w-full px-3 py-2 border rounded-md bg-background border-border text-sm"
+                        >
+                          <option value="">Default (Inter)</option>
+                          <option value="system-ui">System UI</option>
+                          <option value="Arial">Arial</option>
+                          <option value="Georgia">Georgia</option>
+                        </select>
+                      </div>
+
+                      <div>
+                        <Label htmlFor="font-sans-custom" className="text-caption">
+                          Or enter custom font name
+                        </Label>
+                        <Input
+                          id="font-sans-custom"
+                          type="text"
+                          placeholder="e.g., Roboto, Segoe UI"
+                          value={fontSans}
+                          onChange={(e) => setFontSans(e.target.value)}
+                          className="font-mono text-xs mt-1"
+                        />
+                      </div>
+
+                      {fontSans && (
+                        <div
+                          className="p-3 rounded-md bg-muted/30 border border-border"
+                          style={{ fontFamily: fontSans }}
+                        >
+                          <p className="text-sm">
+                            The quick brown fox jumps over the lazy dog. Grumpy wizards make toxic brew.
+                          </p>
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="space-y-3">
+                      <div>
+                        <Label htmlFor="font-mono-select" className="text-label">
+                          Monospace Font
+                        </Label>
+                        <p className="text-caption text-muted-foreground mt-1 mb-2">
+                          Used for code and terminal text
+                        </p>
+                      </div>
+
+                      <div className="space-y-2">
+                        <select
+                          id="font-mono-select"
+                          value={fontMono}
+                          onChange={(e) => setFontMono(e.target.value)}
+                          className="w-full px-3 py-2 border rounded-md bg-background border-border text-sm"
+                        >
+                          <option value="">Default monospace</option>
+                          <option value="Consolas">Consolas</option>
+                          <option value="Courier New">Courier New</option>
+                          <option value="JetBrains Mono">JetBrains Mono</option>
+                        </select>
+                      </div>
+
+                      <div>
+                        <Label htmlFor="font-mono-custom" className="text-caption">
+                          Or enter custom font name
+                        </Label>
+                        <Input
+                          id="font-mono-custom"
+                          type="text"
+                          placeholder="e.g., Fira Code, Monaco"
+                          value={fontMono}
+                          onChange={(e) => setFontMono(e.target.value)}
+                          className="font-mono text-xs mt-1"
+                        />
+                      </div>
+
+                      {fontMono && (
+                        <div
+                          className="p-3 rounded-md bg-muted/30 border border-border font-mono text-xs"
+                          style={{ fontFamily: fontMono }}
+                        >
+                          <p>const message = "Sample monospace text";</p>
+                          <p>const value = 42;</p>
+                        </div>
+                      )}
                     </div>
                   </div>
                 </div>

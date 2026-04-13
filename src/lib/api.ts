@@ -31,6 +31,10 @@ export interface Project {
   created_at: number;
   /** Unix timestamp of the most recent session (if any) */
   most_recent_session?: number;
+  /** Absolute path to the git repository root (undefined if not a git repo) */
+  git_root?: string;
+  /** Current git branch for this worktree (undefined if not a git repo) */
+  git_branch?: string;
 }
 
 /**
@@ -482,6 +486,17 @@ export interface WorktreeInfo {
   path: string;
   branch: string;
   is_main: boolean;
+}
+
+/**
+ * Status of a JSONL session file for sidebar polling
+ */
+export interface SessionFileStatus {
+  last_type: string | null;
+  is_error: boolean;
+  lines_total: number;
+  modified_secs_ago: number;
+  awaiting_approval: boolean;
 }
 
 export interface ClaudeEntry {
@@ -1959,6 +1974,47 @@ export const api = {
     }
   },
 
+  /**
+   * Reads new lines from a JSONL session file starting at fromLine.
+   */
+  async pollSessionFile(sessionId: string, projectId: string, fromLine: number): Promise<any[]> {
+    try {
+      return await apiCall<any[]>("poll_session_file", {
+        session_id: sessionId,
+        project_id: projectId,
+        from_line: fromLine,
+      });
+    } catch (error) {
+      console.error("Failed to poll session file:", error);
+      throw error;
+    }
+  },
+
+  /**
+   * Returns the absolute filesystem path of a session JSONL file.
+   */
+  async getSessionFilePath(sessionId: string, projectId: string): Promise<string> {
+    return await apiCall<string>("get_session_file_path", {
+      session_id: sessionId,
+      project_id: projectId,
+    });
+  },
+
+  /**
+   * Gets lightweight status info about a session JSONL file for sidebar status dots.
+   */
+  async getSessionFileStatus(sessionId: string, projectId: string): Promise<SessionFileStatus> {
+    try {
+      return await apiCall<SessionFileStatus>("get_session_file_status", {
+        session_id: sessionId,
+        project_id: projectId,
+      });
+    } catch (error) {
+      console.error("Failed to get session file status:", error);
+      throw error;
+    }
+  },
+
   // Slash Commands API methods
 
   /**
@@ -2202,6 +2258,24 @@ export const api = {
       return await apiCall<SessionLogEntry[]>("list_session_logs");
     } catch (error) {
       console.error("Failed to list session logs:", error);
+      throw error;
+    }
+  },
+
+  async readCcodeSettings(): Promise<Record<string, any>> {
+    try {
+      return await apiCall<Record<string, any>>("read_ccode_settings");
+    } catch (error) {
+      console.error("Failed to read ~/.ccode/settings.json:", error);
+      return {};
+    }
+  },
+
+  async writeCcodeSettings(settings: Record<string, any>): Promise<void> {
+    try {
+      return await apiCall<void>("write_ccode_settings", { settings });
+    } catch (error) {
+      console.error("Failed to write ~/.ccode/settings.json:", error);
       throw error;
     }
   },

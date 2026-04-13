@@ -2,10 +2,16 @@ import React, { useState, useEffect } from 'react';
 import { Minus, Square, X, Maximize2 } from 'lucide-react';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { getVersion } from '@tauri-apps/api/app';
+import appLogo from '../assets/logo.png';
 
 const isWindows = navigator.userAgent.toLowerCase().includes('windows');
 
-export const CustomTitlebar: React.FC = () => {
+interface CustomTitlebarProps {
+  sidebarOpen?: boolean;
+  onToggleSidebar?: () => void;
+}
+
+export const CustomTitlebar: React.FC<CustomTitlebarProps> = ({ sidebarOpen: _sidebarOpen, onToggleSidebar: _onToggleSidebar }) => {
   const [isHovered, setIsHovered] = useState(false);
   const [isMaximized, setIsMaximized] = useState(false);
   const [appVersion, setAppVersion] = useState<string>('');
@@ -47,35 +53,40 @@ export const CustomTitlebar: React.FC = () => {
       onMouseEnter={() => setIsHovered(true)}
       onMouseLeave={() => setIsHovered(false)}
     >
-      {/* Left side */}
-      <div className="flex items-center pl-3">
+      {/* Left side — logo + name */}
+      <div className="flex items-center pl-3 gap-3">
         {isWindows ? (
-          <span className="text-xs text-muted-foreground font-mono">
-            opcode {appVersion && `v${appVersion}`}
-          </span>
+          <div className="flex items-center gap-1.5">
+            <img src={appLogo} alt="C-Code" className="w-4 h-4 object-contain" />
+            <span className="text-xs text-muted-foreground font-mono">
+              C-Code {appVersion && `v${appVersion}`}
+            </span>
+          </div>
         ) : (
-          <div className="flex items-center space-x-2">
-            <button
-              onClick={handleClose}
-              className="group relative w-3 h-3 rounded-full bg-red-500 hover:bg-red-600 transition-all duration-200 flex items-center justify-center tauri-no-drag"
-              title="Close"
-            >
-              {isHovered && <X size={8} className="text-red-900 opacity-60 group-hover:opacity-100" />}
-            </button>
-            <button
-              onClick={handleMinimize}
-              className="group relative w-3 h-3 rounded-full bg-yellow-500 hover:bg-yellow-600 transition-all duration-200 flex items-center justify-center tauri-no-drag"
-              title="Minimize"
-            >
-              {isHovered && <Minus size={8} className="text-yellow-900 opacity-60 group-hover:opacity-100" />}
-            </button>
-            <button
-              onClick={handleMaximize}
-              className="group relative w-3 h-3 rounded-full bg-green-500 hover:bg-green-600 transition-all duration-200 flex items-center justify-center tauri-no-drag"
-              title="Maximize"
-            >
-              {isHovered && <Square size={6} className="text-green-900 opacity-60 group-hover:opacity-100" />}
-            </button>
+          <div className="flex items-center gap-3">
+            <div className="flex items-center space-x-2">
+              <button
+                onClick={handleClose}
+                className="group relative w-3 h-3 rounded-full bg-red-500 hover:bg-red-600 transition-all duration-200 flex items-center justify-center tauri-no-drag"
+                title="Close"
+              >
+                {isHovered && <X size={8} className="text-red-900 opacity-60 group-hover:opacity-100" />}
+              </button>
+              <button
+                onClick={handleMinimize}
+                className="group relative w-3 h-3 rounded-full bg-yellow-500 hover:bg-yellow-600 transition-all duration-200 flex items-center justify-center tauri-no-drag"
+                title="Minimize"
+              >
+                {isHovered && <Minus size={8} className="text-yellow-900 opacity-60 group-hover:opacity-100" />}
+              </button>
+              <button
+                onClick={handleMaximize}
+                className="group relative w-3 h-3 rounded-full bg-green-500 hover:bg-green-600 transition-all duration-200 flex items-center justify-center tauri-no-drag"
+                title="Maximize"
+              >
+                {isHovered && <Square size={6} className="text-green-900 opacity-60 group-hover:opacity-100" />}
+              </button>
+            </div>
           </div>
         )}
       </div>

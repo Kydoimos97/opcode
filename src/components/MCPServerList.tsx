@@ -173,13 +173,13 @@ export const MCPServerList: React.FC<MCPServerListProps> = ({
   /**
    * Renders a single server item
    */
-  const renderServerItem = (server: MCPServer) => {
+  const renderServerItem = (server: MCPServer, uniqueKey?: string) => {
     const isExpanded = expandedServers.has(server.name);
     const isCopied = copiedServer === server.name;
     
     return (
       <motion.div
-        key={server.name}
+        key={uniqueKey ?? server.name}
         initial={{ opacity: 0, x: -20 }}
         animate={{ opacity: 1, x: 0 }}
         exit={{ opacity: 0, x: -20 }}
@@ -398,7 +398,7 @@ export const MCPServerList: React.FC<MCPServerListProps> = ({
               </div>
               <AnimatePresence>
                 <div className="space-y-2">
-                  {scopeServers.map(renderServerItem)}
+                  {scopeServers.map((server, idx) => renderServerItem(server, `${scope}-${server.name}-${idx}`))}
                 </div>
               </AnimatePresence>
             </div>

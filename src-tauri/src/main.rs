@@ -33,6 +33,8 @@ use commands::claude::{
     track_session_messages, update_checkpoint_settings, update_hooks_config, validate_hook_command,
     write_and_verify_commands_conf, write_native_agent, ClaudeProcessState,
     list_claude_directory, read_claude_file, list_session_logs,
+    poll_session_file, get_session_file_status, get_session_file_path,
+    read_ccode_settings, write_ccode_settings,
 };
 use commands::mcp::{
     mcp_add, mcp_add_from_claude_desktop, mcp_add_json, mcp_get, mcp_get_server_status, mcp_list,
@@ -62,6 +64,7 @@ fn main() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_shell::init())
+        .plugin(tauri_plugin_window_state::Builder::default().build())
         .setup(|app| {
             // Initialize agents database
             let conn = init_database(&app.handle()).expect("Failed to initialize agents database");
@@ -311,6 +314,12 @@ fn main() {
             list_claude_directory,
             read_claude_file,
             list_session_logs,
+            // Session file polling
+            poll_session_file,
+            get_session_file_status,
+            get_session_file_path,
+            read_ccode_settings,
+            write_ccode_settings,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

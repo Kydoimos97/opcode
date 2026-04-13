@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { ccodeSettings } from '@/lib/ccodeSettings';
 
 export function useProjectDisplayName(projectPath: string | null | undefined): {
   displayName: string | null;
@@ -6,35 +7,17 @@ export function useProjectDisplayName(projectPath: string | null | undefined): {
 } {
   const [displayName, setDisplayNameState] = useState<string | null>(null);
 
-  if (!projectPath) {
-    return {
-      displayName: null,
-      setDisplayName: () => {}
-    };
-  }
-
-  const storageKey = `display_name:${projectPath}`;
-
   useEffect(() => {
-    try {
-      const stored = window.localStorage.getItem(storageKey);
-      setDisplayNameState(stored);
-    } catch (e) {
-      console.error('Failed to load display name from localStorage:', e);
-    }
-  }, [projectPath, storageKey]);
+    if (!projectPath) { setDisplayNameState(null); return; }
+    ccodeSettings.getProject(projectPath).then(meta => {
+      setDisplayNameState(meta.name ?? null);
+    });
+  }, [projectPath]);
 
   const setDisplayName = (name: string | null) => {
-    try {
-      if (name === null) {
-        window.localStorage.removeItem(storageKey);
-      } else {
-        window.localStorage.setItem(storageKey, name);
-      }
-      setDisplayNameState(name);
-    } catch (e) {
-      console.error('Failed to save display name to localStorage:', e);
-    }
+    if (!projectPath) return;
+    setDisplayNameState(name);
+    ccodeSettings.setProject(projectPath, { name: name ?? undefined });
   };
 
   return { displayName, setDisplayName };

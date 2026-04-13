@@ -76,7 +76,7 @@ export const MarkdownEditor: React.FC<MarkdownEditorProps> = ({
   
   return (
     <div className={cn("h-full overflow-y-auto", className)}>
-      <div className="max-w-6xl mx-auto flex flex-col h-full">
+      <div className="mx-auto flex flex-col h-full">
         {/* Header */}
         <div className="p-6">
           <div className="flex items-center justify-between">

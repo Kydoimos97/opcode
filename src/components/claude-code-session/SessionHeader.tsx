@@ -9,7 +9,9 @@ import {
   Settings,
   Hash,
   Command,
-  Pencil
+  Pencil,
+  RefreshCw,
+  ChevronsUpDown,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Popover } from '@/components/ui/popover';
@@ -36,6 +38,9 @@ interface SessionHeaderProps {
   onProjectSettings?: () => void;
   onSlashCommandsSettings?: () => void;
   onOpenFolder?: () => void;
+  onRefresh?: () => void;
+  onCollapseAll?: () => void;
+  onOpenSessionFile?: () => void;
   setCopyPopoverOpen: (open: boolean) => void;
 }
 
@@ -56,6 +61,9 @@ export const SessionHeader: React.FC<SessionHeaderProps> = React.memo(({
   onProjectSettings,
   onSlashCommandsSettings,
   onOpenFolder,
+  onRefresh,
+  onCollapseAll,
+  onOpenSessionFile,
   setCopyPopoverOpen
 }) => {
   const { displayName, setDisplayName } = useProjectDisplayName(projectPath);
@@ -76,10 +84,10 @@ export const SessionHeader: React.FC<SessionHeaderProps> = React.memo(({
   const displayedTitle = displayName ?? autoTitle;
 
   return (
-    <motion.div 
+    <motion.div
       initial={{ opacity: 0, y: -20 }}
       animate={{ opacity: 1, y: 0 }}
-      className="bg-background/95 backdrop-blur-sm border-b px-4 py-3 sticky top-0 z-40"
+      className="bg-background/95 backdrop-blur-sm border-b px-4 py-3 flex-shrink-0 z-10"
     >
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">
@@ -160,12 +168,30 @@ export const SessionHeader: React.FC<SessionHeaderProps> = React.memo(({
         </div>
 
         <div className="flex items-center gap-2">
+          {onRefresh && claudeSessionId && !isStreaming && (
+            <TooltipSimple content="Reload session from file" side="bottom">
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={onRefresh}
+                className="h-8 w-8"
+              >
+                <RefreshCw className="h-4 w-4" />
+              </Button>
+            </TooltipSimple>
+          )}
           {claudeSessionId && (
             <div className="flex items-center gap-2">
-              <Badge variant="outline" className="text-xs">
-                <Hash className="h-3 w-3 mr-1" />
-                {claudeSessionId.slice(0, 8)}
-              </Badge>
+              <TooltipSimple content="Open session file" side="bottom">
+                <Badge
+                  variant="outline"
+                  className={cn("text-xs", onOpenSessionFile && "cursor-pointer hover:bg-accent transition-colors")}
+                  onClick={onOpenSessionFile}
+                >
+                  <Hash className="h-3 w-3 mr-1" />
+                  {claudeSessionId.slice(0, 8)}
+                </Badge>
+              </TooltipSimple>
               {totalTokens > 0 && (
                 <Badge variant="secondary" className="text-xs">
                   {totalTokens.toLocaleString()} tokens
@@ -205,6 +231,19 @@ export const SessionHeader: React.FC<SessionHeaderProps> = React.memo(({
               }
               className="w-48 p-2"
             />
+          )}
+
+          {hasMessages && onCollapseAll && (
+            <TooltipSimple content="Collapse all steps" side="bottom">
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={onCollapseAll}
+                className="h-8 w-8"
+              >
+                <ChevronsUpDown className="h-4 w-4" />
+              </Button>
+            </TooltipSimple>
           )}
 
           <Button

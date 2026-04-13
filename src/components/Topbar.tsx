@@ -141,9 +141,16 @@ export const Topbar: React.FC<TopbarProps> = ({
               </Button>
               <a
                 href="https://www.anthropic.com/claude-code"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="flex items-center space-x-1 text-xs text-primary hover:underline"
+                onClick={async (e) => {
+                  e.preventDefault();
+                  try {
+                    const { open } = await import('@tauri-apps/plugin-shell');
+                    await open('https://www.anthropic.com/claude-code');
+                  } catch {
+                    window.open('https://www.anthropic.com/claude-code', '_blank', 'noopener,noreferrer');
+                  }
+                }}
+                className="flex items-center space-x-1 text-xs text-primary hover:underline cursor-pointer"
               >
                 <span>Install Claude Code</span>
                 <ExternalLink className="h-3 w-3" />

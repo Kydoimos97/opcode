@@ -13,6 +13,8 @@ export interface Tab {
   claudeFileId?: string; // for claude-file tabs
   initialProjectPath?: string; // for chat tabs
   projectPath?: string; // for agent-execution tabs
+  claudeSessionId?: string; // JSONL session UUID for file polling
+  claudeProjectId?: string; // ~/.claude/projects/<id> folder name for file polling
   status: 'active' | 'idle' | 'running' | 'complete' | 'error';
   hasUnsavedChanges: boolean;
   order: number;

@@ -3,7 +3,7 @@ import { groupMessagesIntoTurns } from './useGroupedMessages';
 import type { ClaudeStreamMessage } from '../components/AgentExecution';
 
 describe('groupMessagesIntoTurns', () => {
-  it('groups a basic turn: user -> (assistant with tool_use) -> (user tool_result) -> (assistant text)', () => {
+  it('groups a basic turn: user -> assistant -> user tool_result -> result', () => {
     const messages: ClaudeStreamMessage[] = [
       {
         type: 'user',
@@ -24,28 +24,25 @@ describe('groupMessagesIntoTurns', () => {
         },
       },
       {
-        type: 'assistant',
-        message: {
-          content: [{ type: 'text', text: 'final response' }],
-        },
+        type: 'result',
+        is_error: false,
       },
     ];
 
-    const { turns, standaloneMessages } = groupMessagesIntoTurns(messages);
+    const turns = groupMessagesIntoTurns(messages);
 
     expect(turns).toHaveLength(1);
-    expect(standaloneMessages).toHaveLength(0);
 
     const turn = turns[0];
-    expect(turn.userMessage.type).toBe('user');
+    expect(turn.userMessage?.type).toBe('user');
     expect(turn.workItems).toHaveLength(2);
     expect(turn.workItems[0].type).toBe('assistant');
     expect(turn.workItems[1].type).toBe('user');
-    expect(turn.assistantResponse?.type).toBe('assistant');
-    expect(turn.isComplete).toBe(false);
+    expect(turn.result?.type).toBe('result');
+    expect(turn.isComplete).toBe(true);
   });
 
-  it('handles streaming incomplete state: user -> (assistant with tool_use) -> (no result yet)', () => {
+  it('handles incomplete turn: user -> assistant (streaming, no result yet)', () => {
     const messages: ClaudeStreamMessage[] = [
       {
         type: 'user',
@@ -61,15 +58,14 @@ describe('groupMessagesIntoTurns', () => {
       },
     ];
 
-    const { turns, standaloneMessages } = groupMessagesIntoTurns(messages);
+    const turns = groupMessagesIntoTurns(messages);
 
     expect(turns).toHaveLength(1);
-    expect(standaloneMessages).toHaveLength(0);
 
     const turn = turns[0];
-    expect(turn.userMessage.type).toBe('user');
+    expect(turn.userMessage?.type).toBe('user');
     expect(turn.workItems).toHaveLength(1);
-    expect(turn.assistantResponse).toBeUndefined();
+    expect(turn.result).toBeNull();
     expect(turn.isComplete).toBe(false);
   });
 
@@ -88,6 +84,10 @@ describe('groupMessagesIntoTurns', () => {
         },
       },
       {
+        type: 'result',
+        is_error: false,
+      },
+      {
         type: 'user',
         message: {
           content: [{ type: 'text', text: 'second prompt' }],
@@ -99,58 +99,60 @@ describe('groupMessagesIntoTurns', () => {
           content: [{ type: 'text', text: 'second response' }],
         },
       },
+      {
+        type: 'result',
+        is_error: false,
+      },
     ];
 
-    const { turns, standaloneMessages } = groupMessagesIntoTurns(messages);
+    const turns = groupMessagesIntoTurns(messages);
 
     expect(turns).toHaveLength(2);
-    expect(standaloneMessages).toHaveLength(0);
 
-    expect(turns[0].userMessage.message?.content?.[0]?.text).toBe('first prompt');
-    expect(turns[0].assistantResponse?.message?.content?.[0]?.text).toBe(
-      'first response'
-    );
+    expect(turns[0].userMessage?.message?.content?.[0]?.text).toBe('first prompt');
+    expect(turns[0].workItems[0]?.message?.content?.[0]?.text).toBe('first response');
+    expect(turns[0].result?.type).toBe('result');
 
-    expect(turns[1].userMessage.message?.content?.[0]?.text).toBe('second prompt');
-    expect(turns[1].assistantResponse?.message?.content?.[0]?.text).toBe(
-      'second response'
-    );
+    expect(turns[1].userMessage?.message?.content?.[0]?.text).toBe('second prompt');
+    expect(turns[1].workItems[0]?.message?.content?.[0]?.text).toBe('second response');
+    expect(turns[1].result?.type).toBe('result');
   });
 
-  it('handles pure text response: user -> assistant text only', () => {
-    const messages: ClaudeStreamMessage[] = [
-      {
-        type: 'user',
-        message: {
-          content: [{ type: 'text', text: 'user prompt' }],
-        },
-      },
-      {
-        type: 'assistant',
-        message: {
-          content: [{ type: 'text', text: 'response' }],
-        },
-      },
-    ];
-
-    const { turns, standaloneMessages } = groupMessagesIntoTurns(messages);
-
-    expect(turns).toHaveLength(1);
-    expect(standaloneMessages).toHaveLength(0);
-
-    const turn = turns[0];
-    expect(turn.workItems).toHaveLength(0);
-    expect(turn.assistantResponse?.type).toBe('assistant');
-  });
-
-  it('puts system messages into standaloneMessages', () => {
+  it('handles system init message as standalone', () => {
     const messages: ClaudeStreamMessage[] = [
       {
         type: 'system',
+        subtype: 'init',
+        session_id: 'test-session',
+        model: 'claude-3-5-sonnet',
+        cwd: '/tmp',
+        tools: [],
+      },
+      {
+        type: 'user',
         message: {
-          content: [{ type: 'text', text: 'system init' }],
+          content: [{ type: 'text', text: 'user prompt' }],
         },
       },
+      {
+        type: 'result',
+        is_error: false,
+      },
+    ];
+
+    const turns = groupMessagesIntoTurns(messages);
+
+    expect(turns).toHaveLength(2);
+    expect(turns[0].userMessage).toBeNull();
+    expect(turns[0].workItems).toHaveLength(1);
+    expect(turns[0].workItems[0].type).toBe('system');
+    expect(turns[0].isComplete).toBe(true);
+
+    expect(turns[1].userMessage?.type).toBe('user');
+  });
+
+  it('handles pure tool_result user messages as workItems', () => {
+    const messages: ClaudeStreamMessage[] = [
       {
         type: 'user',
         message: {
@@ -160,50 +162,38 @@ describe('groupMessagesIntoTurns', () => {
       {
         type: 'assistant',
         message: {
-          content: [{ type: 'text', text: 'response' }],
-        },
-      },
-    ];
-
-    const { turns, standaloneMessages } = groupMessagesIntoTurns(messages);
-
-    expect(turns).toHaveLength(1);
-    expect(standaloneMessages).toHaveLength(1);
-    expect(standaloneMessages[0].type).toBe('system');
-  });
-
-  it('ignores isMeta user messages as turn starters', () => {
-    const messages: ClaudeStreamMessage[] = [
-      {
-        type: 'user',
-        isMeta: true,
-        message: {
-          content: [{ type: 'text', text: 'meta message' }],
+          content: [{ type: 'tool_use', id: 'call_1', name: 'bash', input: { command: 'ls' } }],
         },
       },
       {
         type: 'user',
         message: {
-          content: [{ type: 'text', text: 'real prompt' }],
+          content: [{ type: 'tool_result', tool_use_id: 'call_1', content: 'file1\nfile2' }],
         },
       },
       {
         type: 'assistant',
         message: {
-          content: [{ type: 'text', text: 'response' }],
+          content: [{ type: 'text', text: 'I see two files' }],
         },
+      },
+      {
+        type: 'result',
+        is_error: false,
       },
     ];
 
-    const { turns, standaloneMessages } = groupMessagesIntoTurns(messages);
+    const turns = groupMessagesIntoTurns(messages);
 
     expect(turns).toHaveLength(1);
-    expect(standaloneMessages).toHaveLength(1);
-    expect(standaloneMessages[0].isMeta).toBe(true);
-    expect(turns[0].userMessage.message?.content?.[0]?.text).toBe('real prompt');
+    expect(turns[0].userMessage?.message?.content?.[0]?.text).toBe('user prompt');
+    expect(turns[0].workItems).toHaveLength(3);
+    expect(turns[0].workItems[0].type).toBe('assistant');
+    expect(turns[0].workItems[1].type).toBe('user');
+    expect(turns[0].workItems[2].type).toBe('assistant');
   });
 
-  it('puts pure tool_result user messages into workItems', () => {
+  it('ignores pure tool_result user messages (does not start new turn)', () => {
     const messages: ClaudeStreamMessage[] = [
       {
         type: 'user',
@@ -214,7 +204,7 @@ describe('groupMessagesIntoTurns', () => {
       {
         type: 'assistant',
         message: {
-          content: [{ type: 'tool_use', id: 'call_1', name: 'test', input: {} }],
+          content: [{ type: 'tool_use', id: 'call_1', name: 'bash', input: { command: 'ls' } }],
         },
       },
       {
@@ -229,199 +219,39 @@ describe('groupMessagesIntoTurns', () => {
           content: [{ type: 'text', text: 'second prompt' }],
         },
       },
+      {
+        type: 'result',
+        is_error: false,
+      },
     ];
 
-    const { turns, standaloneMessages } = groupMessagesIntoTurns(messages);
+    const turns = groupMessagesIntoTurns(messages);
 
     expect(turns).toHaveLength(2);
-    expect(standaloneMessages).toHaveLength(0);
-
-    const firstTurn = turns[0];
-    expect(firstTurn.workItems).toHaveLength(2);
-    expect(firstTurn.workItems[1].type).toBe('user');
-    expect(
-      firstTurn.workItems[1].message?.content?.[0]?.type
-    ).toBe('tool_result');
+    expect(turns[0].userMessage?.message?.content?.[0]?.text).toBe('first prompt');
+    expect(turns[0].workItems[1]?.type).toBe('user');
+    expect(turns[1].userMessage?.message?.content?.[0]?.text).toBe('second prompt');
   });
 
-  it('returns empty arrays for empty input', () => {
-    const { turns, standaloneMessages } = groupMessagesIntoTurns([]);
-
-    expect(turns).toHaveLength(0);
-    expect(standaloneMessages).toHaveLength(0);
-  });
-
-  it('handles assistant with thinking alongside text as the response', () => {
+  it('handles empty workItems', () => {
     const messages: ClaudeStreamMessage[] = [
       {
         type: 'user',
         message: {
           content: [{ type: 'text', text: 'user prompt' }],
-        },
-      },
-      {
-        type: 'assistant',
-        message: {
-          content: [
-            { type: 'thinking', thinking: 'internal thought' },
-            { type: 'text', text: 'response' },
-          ],
-        },
-      },
-    ];
-
-    const { turns, standaloneMessages } = groupMessagesIntoTurns(messages);
-
-    expect(turns).toHaveLength(1);
-    expect(standaloneMessages).toHaveLength(0);
-
-    const turn = turns[0];
-    expect(turn.workItems).toHaveLength(0);
-    expect(turn.assistantResponse?.type).toBe('assistant');
-  });
-
-  it('handles tool_use alongside text as workItem, not response', () => {
-    const messages: ClaudeStreamMessage[] = [
-      {
-        type: 'user',
-        message: {
-          content: [{ type: 'text', text: 'user prompt' }],
-        },
-      },
-      {
-        type: 'assistant',
-        message: {
-          content: [
-            { type: 'text', text: 'calling tool' },
-            { type: 'tool_use', id: 'call_1', name: 'test', input: {} },
-          ],
-        },
-      },
-    ];
-
-    const { turns, standaloneMessages } = groupMessagesIntoTurns(messages);
-
-    expect(turns).toHaveLength(1);
-    expect(standaloneMessages).toHaveLength(0);
-
-    const turn = turns[0];
-    expect(turn.workItems).toHaveLength(1);
-    expect(turn.assistantResponse).toBeUndefined();
-  });
-
-  it('marks turn as complete when result message is seen', () => {
-    const messages: ClaudeStreamMessage[] = [
-      {
-        type: 'user',
-        message: {
-          content: [{ type: 'text', text: 'user prompt' }],
-        },
-      },
-      {
-        type: 'assistant',
-        message: {
-          content: [{ type: 'text', text: 'response' }],
         },
       },
       {
         type: 'result',
-        message: {
-          content: [{ type: 'text', text: 'result' }],
-        },
+        is_error: false,
       },
     ];
 
-    const { turns, standaloneMessages } = groupMessagesIntoTurns(messages);
+    const turns = groupMessagesIntoTurns(messages);
 
     expect(turns).toHaveLength(1);
-    expect(standaloneMessages).toHaveLength(1);
-
-    const turn = turns[0];
-    expect(turn.isComplete).toBe(true);
-  });
-
-  it('generates stable turn IDs based on userMessage index', () => {
-    const messages: ClaudeStreamMessage[] = [
-      {
-        type: 'user',
-        message: {
-          content: [{ type: 'text', text: 'first prompt' }],
-        },
-      },
-      {
-        type: 'assistant',
-        message: {
-          content: [{ type: 'text', text: 'first response' }],
-        },
-      },
-      {
-        type: 'user',
-        message: {
-          content: [{ type: 'text', text: 'second prompt' }],
-        },
-      },
-      {
-        type: 'assistant',
-        message: {
-          content: [{ type: 'text', text: 'second response' }],
-        },
-      },
-    ];
-
-    const { turns } = groupMessagesIntoTurns(messages);
-
-    expect(turns[0].id).toBe('0');
-    expect(turns[1].id).toBe('2');
-  });
-
-  it('handles result message type in standaloneMessages', () => {
-    const messages: ClaudeStreamMessage[] = [
-      {
-        type: 'user',
-        message: {
-          content: [{ type: 'text', text: 'user prompt' }],
-        },
-      },
-      {
-        type: 'assistant',
-        message: {
-          content: [{ type: 'text', text: 'response' }],
-        },
-      },
-      {
-        type: 'result',
-        message: {
-          content: [{ type: 'text', text: 'result metadata' }],
-        },
-      },
-    ];
-
-    const { turns, standaloneMessages } = groupMessagesIntoTurns(messages);
-
-    expect(turns).toHaveLength(1);
-    expect(standaloneMessages).toHaveLength(1);
-    expect(standaloneMessages[0].type).toBe('result');
-  });
-
-  it('handles mixed content in messages without content array', () => {
-    const messages: ClaudeStreamMessage[] = [
-      {
-        type: 'user',
-        content: [{ type: 'text', text: 'user prompt' }],
-      } as ClaudeStreamMessage,
-      {
-        type: 'assistant',
-        content: [{ type: 'text', text: 'response' }],
-      } as ClaudeStreamMessage,
-    ];
-
-    const { turns, standaloneMessages } = groupMessagesIntoTurns(messages);
-
-    expect(turns).toHaveLength(1);
-    expect(standaloneMessages).toHaveLength(0);
-
-    const turn = turns[0];
-    expect(turn.workItems).toHaveLength(0);
-    expect(turn.assistantResponse?.type).toBe('assistant');
+    expect(turns[0].userMessage?.type).toBe('user');
+    expect(turns[0].workItems).toHaveLength(0);
+    expect(turns[0].result?.type).toBe('result');
   });
 });

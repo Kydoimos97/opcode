@@ -3,111 +3,135 @@ import type { ClaudeStreamMessage } from '../components/AgentExecution';
 
 export interface Turn {
   id: string;
-  userMessage: ClaudeStreamMessage;
+  userMessage: ClaudeStreamMessage | null;
   workItems: ClaudeStreamMessage[];
-  assistantResponse?: ClaudeStreamMessage;
+  result: ClaudeStreamMessage | null;
   isComplete: boolean;
 }
 
-function isPureToolResult(message: ClaudeStreamMessage): boolean {
-  const content = message.message?.content ?? (message as any).content;
-  if (!Array.isArray(content)) return false;
-  return content.length > 0 && content.every((c: any) => c.type === 'tool_result');
-}
-
-function hasPureTextContent(message: ClaudeStreamMessage): boolean {
-  const content = message.message?.content ?? (message as any).content;
-  if (!Array.isArray(content)) return false;
-  const hasText = content.some((c: any) => c.type === 'text');
-  const hasToolUse = content.some((c: any) => c.type === 'tool_use');
-  return hasText && !hasToolUse;
-}
-
-function isTurnStartingUserMessage(message: ClaudeStreamMessage): boolean {
-  if (message.type !== 'user') return false;
-  if ((message as any).isMeta === true) return false;
-  if (isPureToolResult(message)) return false;
-  return true;
-}
-
-export function groupMessagesIntoTurns(
-  messages: ClaudeStreamMessage[]
-): { turns: Turn[]; standaloneMessages: ClaudeStreamMessage[] } {
+/**
+ * Groups messages into logical "turns" where each turn represents:
+ * - A user message (real user input, not just tool results)
+ * - Work items (assistant messages, tool results, thinking)
+ * - A result message (completion or error)
+ */
+export function groupMessagesIntoTurns(messages: ClaudeStreamMessage[]): Turn[] {
   const turns: Turn[] = [];
-  const standaloneMessages: ClaudeStreamMessage[] = [];
-  let currentTurn: Omit<Turn, 'id'> | null = null;
-  let userMessageIndex = -1;
+  let currentTurn: Turn | null = null;
+  let turnIndex = 0;
 
   for (let i = 0; i < messages.length; i++) {
     const message = messages[i];
 
-    if (message.type === 'system' || (message as any).isMeta === true) {
-      standaloneMessages.push(message);
+    // Handle system init messages as a standalone turn
+    if (message.type === 'system' && message.subtype === 'init') {
+      if (currentTurn) {
+        turns.push(currentTurn);
+        currentTurn = null;
+      }
+      turns.push({
+        id: `turn-sys-init-${turnIndex}`,
+        userMessage: null,
+        workItems: [message],
+        result: null,
+        isComplete: true,
+      });
+      turnIndex++;
       continue;
     }
 
+    // Check if this is a real user message (has non-tool_result content)
+    if (message.type === 'user') {
+      const hasRealContent = hasUserContent(message);
+
+      if (hasRealContent) {
+        // Push previous turn if exists
+        if (currentTurn) {
+          turns.push(currentTurn);
+        }
+        // Start new turn with this user message
+        currentTurn = {
+          id: `turn-${turnIndex}`,
+          userMessage: message,
+          workItems: [],
+          result: null,
+          isComplete: false,
+        };
+        turnIndex++;
+        continue;
+      }
+    }
+
+    // Result message completes the current turn
     if (message.type === 'result') {
-      standaloneMessages.push(message);
-      if (currentTurn) {
+      if (!currentTurn) {
+        // Orphaned result, create a turn for it
+        currentTurn = {
+          id: `turn-${turnIndex}`,
+          userMessage: null,
+          workItems: [],
+          result: message,
+          isComplete: true,
+        };
+        turnIndex++;
+      } else {
+        currentTurn.result = message;
         currentTurn.isComplete = true;
+        turns.push(currentTurn);
+        currentTurn = null;
       }
       continue;
     }
 
-    if (isTurnStartingUserMessage(message)) {
-      if (currentTurn) {
-        turns.push({
-          id: String(userMessageIndex),
-          ...currentTurn,
-        });
-      }
-      userMessageIndex = i;
+    // All other messages (assistant, tool-result user, system non-init) are workItems
+    if (!currentTurn) {
+      // Create a pre-turn for orphaned work items (shouldn't happen in normal flow)
       currentTurn = {
-        userMessage: message,
-        workItems: [],
+        id: `turn-${turnIndex}`,
+        userMessage: null,
+        workItems: [message],
+        result: null,
         isComplete: false,
       };
-      continue;
+      turnIndex++;
+    } else {
+      currentTurn.workItems.push(message);
     }
-
-    if (currentTurn === null) {
-      standaloneMessages.push(message);
-      continue;
-    }
-
-    if (message.type === 'user') {
-      if (isPureToolResult(message)) {
-        currentTurn.workItems.push(message);
-      } else {
-        standaloneMessages.push(message);
-      }
-      continue;
-    }
-
-    if (message.type === 'assistant') {
-      if (hasPureTextContent(message)) {
-        currentTurn.assistantResponse = message;
-      } else {
-        currentTurn.workItems.push(message);
-      }
-      continue;
-    }
-
-    currentTurn.workItems.push(message);
   }
 
+  // Push final turn if exists
   if (currentTurn) {
-    turns.push({
-      id: String(userMessageIndex),
-      ...currentTurn,
-    });
+    turns.push(currentTurn);
   }
 
-  return { turns, standaloneMessages };
+  return turns;
 }
 
-export function useGroupedMessages(
-  messages: ClaudeStreamMessage[]
-): { turns: Turn[]; standaloneMessages: ClaudeStreamMessage[] } {
+/**
+ * Check if a user message has real content (not just tool results)
+ */
+function hasUserContent(message: ClaudeStreamMessage): boolean {
+  const msg = message.message || message;
+
+  // Handle simple string content
+  if (typeof msg.content === 'string') {
+    return msg.content.trim().length > 0;
+  }
+
+  // Handle array of content blocks
+  if (Array.isArray(msg.content)) {
+    for (const content of msg.content) {
+      if (content.type !== 'tool_result') {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  // No content or non-array, non-string content
+  return false;
+}
+
+export function useGroupedMessages(messages: ClaudeStreamMessage[]): Turn[] {
   return useMemo(() => groupMessagesIntoTurns(messages), [messages]);
 }

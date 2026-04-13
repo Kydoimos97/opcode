@@ -1598,9 +1598,12 @@ pub async fn get_claude_binary_path(db: State<'_, AgentDb>) -> Result<Option<Str
 pub async fn set_claude_binary_path(db: State<'_, AgentDb>, path: String) -> Result<(), String> {
     let conn = db.0.lock().map_err(|e| e.to_string())?;
 
-    // Validate that the path exists and is executable
+    // Validate that the path exists and is executable.
+    // Skip existence check for bare binary names (e.g. "claude" or "claude.exe") that
+    // the OS resolves via PATH — they have no directory components.
     let path_buf = std::path::PathBuf::from(&path);
-    if !path_buf.exists() {
+    let has_directory_component = path_buf.parent().map(|p| p != std::path::Path::new("")).unwrap_or(false);
+    if has_directory_component && !path_buf.exists() {
         return Err(format!("File does not exist: {}", path));
     }
 

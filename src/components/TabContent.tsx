@@ -5,6 +5,7 @@ import { useScreenTracking } from '@/hooks/useAnalytics';
 import { Tab } from '@/contexts/TabContext';
 import { Loader2, Plus, ArrowLeft } from 'lucide-react';
 import { api, type Project, type Session, type ClaudeMdFile } from '@/lib/api';
+import { ccodeSettings } from '@/lib/ccodeSettings';
 import { ProjectList } from '@/components/ProjectList';
 import { SessionList } from '@/components/SessionList';
 import { Button } from '@/components/ui/button';
@@ -30,13 +31,17 @@ interface TabPanelProps {
   isActive: boolean;
 }
 
+
 const TabPanel: React.FC<TabPanelProps> = ({ tab, isActive }) => {
   const { updateTab } = useTabState();
   const [projects, setProjects] = React.useState<Project[]>([]);
   const [selectedProject, setSelectedProject] = React.useState<Project | null>(null);
   const [sessions, setSessions] = React.useState<Session[]>([]);
   const [loading, setLoading] = React.useState(false);
-  
+  const [projectDisplayName, setProjectDisplayName] = React.useState('');
+  const [isEditingProjectName, setIsEditingProjectName] = React.useState(false);
+  const [projectNameEdit, setProjectNameEdit] = React.useState('');
+
   // Track screen when tab becomes active
   useScreenTracking(isActive ? tab.type : undefined, isActive ? tab.id : undefined);
   const [error, setError] = React.useState<string | null>(null);
@@ -47,6 +52,16 @@ const TabPanel: React.FC<TabPanelProps> = ({ tab, isActive }) => {
       loadProjects();
     }
   }, [isActive, tab.type]);
+
+  // Sync display name when selected project changes
+  useEffect(() => {
+    if (!selectedProject) return;
+    const fallback = selectedProject.path.split(/[/\\]/).pop() || selectedProject.path;
+    setProjectDisplayName(fallback);
+    ccodeSettings.getProject(selectedProject.path).then(meta => {
+      if (meta.name) setProjectDisplayName(meta.name);
+    });
+  }, [selectedProject?.id]);
   
   const loadProjects = async () => {
     try {
@@ -142,7 +157,7 @@ const TabPanel: React.FC<TabPanelProps> = ({ tab, isActive }) => {
               {/* Content based on selection */}
               {selectedProject ? (
                 <div className="h-full overflow-y-auto">
-                  <div className="max-w-6xl mx-auto p-6">
+                  <div className="mx-auto p-6">
                     <div className="mb-6">
                       <div className="flex items-center justify-between">
                         <div className="flex items-center gap-3">
@@ -168,10 +183,44 @@ const TabPanel: React.FC<TabPanelProps> = ({ tab, isActive }) => {
                             </Button>
                           </motion.div>
                           <div>
-                            <h1 className="text-3xl font-bold tracking-tight">
-                              {selectedProject.path.split('/').pop()}
-                            </h1>
-                            <p className="mt-1 text-sm text-muted-foreground">
+                            {isEditingProjectName ? (
+                              <input
+                                autoFocus
+                                value={projectNameEdit}
+                                onChange={e => setProjectNameEdit(e.target.value)}
+                                onKeyDown={e => {
+                                  if (e.key === 'Enter') {
+                                    const trimmed = projectNameEdit.trim();
+                                    const fallback = selectedProject.path.split(/[/\\]/).pop() || selectedProject.path;
+                                    ccodeSettings.setProject(selectedProject.path, { name: trimmed || undefined });
+                                    setProjectDisplayName(trimmed || fallback);
+                                    setIsEditingProjectName(false);
+                                  }
+                                  if (e.key === 'Escape') setIsEditingProjectName(false);
+                                }}
+                                onBlur={() => {
+                                  const trimmed = projectNameEdit.trim();
+                                  const fallback = selectedProject.path.split(/[/\\]/).pop() || selectedProject.path;
+                                  ccodeSettings.setProject(selectedProject.path, { name: trimmed || undefined });
+                                  setProjectDisplayName(trimmed || fallback);
+                                  setIsEditingProjectName(false);
+                                }}
+                                className="text-3xl font-bold tracking-tight bg-transparent border-b-2 border-primary outline-none w-80"
+                              />
+                            ) : (
+                              <h1
+                                className="text-3xl font-bold tracking-tight cursor-pointer hover:text-foreground/80 transition-colors group flex items-center gap-2"
+                                onClick={() => { setProjectNameEdit(projectDisplayName); setIsEditingProjectName(true); }}
+                                title="Click to rename"
+                              >
+                                {projectDisplayName}
+                                <span className="text-base text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity font-normal">rename</span>
+                              </h1>
+                            )}
+                            <p className="mt-1 text-sm text-muted-foreground font-mono">
+                              {selectedProject.path}
+                            </p>
+                            <p className="text-sm text-muted-foreground">
                               {`${sessions.length} session${sessions.length !== 1 ? 's' : ''}`}
                             </p>
                           </div>
@@ -242,6 +291,26 @@ const TabPanel: React.FC<TabPanelProps> = ({ tab, isActive }) => {
                   onProjectClick={handleProjectClick}
                   onOpenProject={handleOpenProject}
                   loading={loading}
+                  onSessionClick={(project, session) => {
+                    updateTab(tab.id, {
+                      type: 'chat',
+                      title: session.first_message
+                        ? session.first_message.slice(0, 40)
+                        : (project.path.split(/[/\\]/).pop() || 'Session'),
+                      sessionId: session.id,
+                      sessionData: session,
+                      initialProjectPath: session.project_path,
+                    });
+                  }}
+                  onNewSession={(project) => {
+                    updateTab(tab.id, {
+                      type: 'chat',
+                      title: project.path.split(/[/\\]/).pop() || 'New Session',
+                      sessionId: undefined,
+                      sessionData: undefined,
+                      initialProjectPath: project.path,
+                    });
+                  }}
                 />
               )}
           </div>
