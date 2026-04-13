@@ -2,7 +2,6 @@ import React, { useState } from 'react';
 import { motion } from 'framer-motion';
 import {
   ArrowLeft,
-  Terminal,
   FolderOpen,
   Copy,
   GitBranch,
@@ -12,6 +11,7 @@ import {
   Pencil,
   RefreshCw,
   ChevronsUpDown,
+  FileText,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Popover } from '@/components/ui/popover';
@@ -20,6 +20,7 @@ import { Badge } from '@/components/ui/badge';
 import { TooltipSimple } from '@/components/ui/tooltip-modern';
 import { cn } from '@/lib/utils';
 import { useProjectDisplayName } from '@/hooks/useProjectDisplayName';
+import { useProjectColor } from '@/hooks/useProjectColor';
 
 interface SessionHeaderProps {
   projectPath: string;
@@ -67,8 +68,18 @@ export const SessionHeader: React.FC<SessionHeaderProps> = React.memo(({
   setCopyPopoverOpen
 }) => {
   const { displayName, setDisplayName } = useProjectDisplayName(projectPath);
+  const { color: projectColor } = useProjectColor(projectPath);
   const [isEditing, setIsEditing] = useState(false);
   const [editValue, setEditValue] = useState('');
+  const [idCopied, setIdCopied] = useState(false);
+
+  const copySessionId = () => {
+    if (!claudeSessionId) return;
+    navigator.clipboard.writeText(claudeSessionId).then(() => {
+      setIdCopied(true);
+      setTimeout(() => setIdCopied(false), 1500);
+    });
+  };
 
   const autoTitle = (() => {
     if (gitInfo?.is_git_repo) {
@@ -101,7 +112,10 @@ export const SessionHeader: React.FC<SessionHeaderProps> = React.memo(({
           </Button>
           
           <div className="group flex items-center gap-2">
-            <Terminal className="h-5 w-5 text-primary" />
+            <div
+              className="w-3 h-3 rounded-full flex-shrink-0"
+              style={{ backgroundColor: projectColor }}
+            />
             {isEditing ? (
               <input
                 autoFocus
@@ -182,16 +196,28 @@ export const SessionHeader: React.FC<SessionHeaderProps> = React.memo(({
           )}
           {claudeSessionId && (
             <div className="flex items-center gap-2">
-              <TooltipSimple content="Open session file" side="bottom">
+              <TooltipSimple content={idCopied ? "Copied!" : "Copy session ID"} side="bottom">
                 <Badge
                   variant="outline"
-                  className={cn("text-xs", onOpenSessionFile && "cursor-pointer hover:bg-accent transition-colors")}
-                  onClick={onOpenSessionFile}
+                  className="text-xs cursor-pointer hover:bg-accent transition-colors select-none"
+                  onClick={copySessionId}
                 >
                   <Hash className="h-3 w-3 mr-1" />
                   {claudeSessionId.slice(0, 8)}
                 </Badge>
               </TooltipSimple>
+              {onOpenSessionFile && (
+                <TooltipSimple content="Open session JSONL file" side="bottom">
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    onClick={onOpenSessionFile}
+                    className="h-8 w-8"
+                  >
+                    <FileText className="h-4 w-4" />
+                  </Button>
+                </TooltipSimple>
+              )}
               {totalTokens > 0 && (
                 <Badge variant="secondary" className="text-xs">
                   {totalTokens.toLocaleString()} tokens

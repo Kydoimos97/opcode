@@ -56,6 +56,8 @@ pub struct Session {
     pub todo_data: Option<serde_json::Value>,
     /// Unix timestamp when the session file was created
     pub created_at: u64,
+    /// Unix timestamp when the session file was last modified (reflects last activity)
+    pub modified_at: u64,
     /// First user message content (if available)
     pub first_message: Option<String>,
     /// Timestamp of the first user message (if available)
@@ -585,6 +587,13 @@ pub async fn get_project_sessions(project_id: String) -> Result<Vec<Session>, St
                     .unwrap_or_default()
                     .as_secs();
 
+                let modified_at = metadata
+                    .modified()
+                    .unwrap_or(SystemTime::UNIX_EPOCH)
+                    .duration_since(SystemTime::UNIX_EPOCH)
+                    .unwrap_or_default()
+                    .as_secs();
+
                 // Extract first user message and timestamp
                 let (first_message, message_timestamp) = extract_first_user_message(&path);
 
@@ -604,6 +613,7 @@ pub async fn get_project_sessions(project_id: String) -> Result<Vec<Session>, St
                     project_path: project_path.clone(),
                     todo_data,
                     created_at,
+                    modified_at,
                     first_message,
                     message_timestamp,
                 });
@@ -611,8 +621,8 @@ pub async fn get_project_sessions(project_id: String) -> Result<Vec<Session>, St
         }
     }
 
-    // Sort sessions by creation time (newest first)
-    sessions.sort_by(|a, b| b.created_at.cmp(&a.created_at));
+    // Sort sessions by last modification time (most recently active first)
+    sessions.sort_by(|a, b| b.modified_at.cmp(&a.modified_at));
 
     log::info!(
         "Found {} sessions for project {}",

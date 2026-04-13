@@ -46,11 +46,12 @@ const TabPanel: React.FC<TabPanelProps> = ({ tab, isActive }) => {
   useScreenTracking(isActive ? tab.type : undefined, isActive ? tab.id : undefined);
   const [error, setError] = React.useState<string | null>(null);
   
-  // Load projects when tab becomes active and is of type 'projects'
+  // Load projects when tab becomes active and refresh every 30s while active
   useEffect(() => {
-    if (isActive && tab.type === 'projects') {
-      loadProjects();
-    }
+    if (!isActive || tab.type !== 'projects') return;
+    loadProjects();
+    const interval = setInterval(loadProjects, 30_000);
+    return () => clearInterval(interval);
   }, [isActive, tab.type]);
 
   // Sync display name when selected project changes
@@ -81,15 +82,15 @@ const TabPanel: React.FC<TabPanelProps> = ({ tab, isActive }) => {
     try {
       setLoading(true);
       setError(null);
-      const sessionList = await api.getProjectSessions(project.id);
+      const [sessionList, meta] = await Promise.all([
+        api.getProjectSessions(project.id),
+        ccodeSettings.getProject(project.path),
+      ]);
       setSessions(sessionList);
       setSelectedProject(project);
-      
-      // Update tab title to show project name
-      const projectName = project.path.split('/').pop() || 'Project';
-      updateTab(tab.id, {
-        title: projectName
-      });
+
+      const fallback = project.path.split(/[/\\]/).pop() || 'Project';
+      updateTab(tab.id, { title: meta.name || fallback });
     } catch (err) {
       console.error("Failed to load sessions:", err);
       setError("Failed to load sessions for this project.");
@@ -486,27 +487,19 @@ export const TabContent: React.FC = () => {
   
   // Listen for events to open sessions in tabs
   useEffect(() => {
-    const handleOpenSessionInTab = (event: CustomEvent) => {
+    const handleOpenSessionInTab = async (event: CustomEvent) => {
       const { session } = event.detail;
-      
-      // Check if tab already exists for this session
+      const fallback = session.project_path.split(/[/\\]/).pop() || 'Session';
+      const meta = await ccodeSettings.getProject(session.project_path);
+      const projectName = meta.name || fallback;
+
       const existingTab = findTabBySessionId(session.id);
       if (existingTab) {
-        // Update existing tab with session data and switch to it
-        updateTab(existingTab.id, {
-          sessionData: session,
-          title: session.project_path.split('/').pop() || 'Session'
-        });
+        updateTab(existingTab.id, { sessionData: session, title: projectName });
         window.dispatchEvent(new CustomEvent('switch-to-tab', { detail: { tabId: existingTab.id } }));
       } else {
-        // Create new tab for this session
-        const projectName = session.project_path.split('/').pop() || 'Session';
         const newTabId = createChatTab(session.id, projectName, session.project_path);
-        // Update the new tab with session data
-        updateTab(newTabId, {
-          sessionData: session,
-          initialProjectPath: session.project_path
-        });
+        updateTab(newTabId, { sessionData: session, initialProjectPath: session.project_path });
       }
     };
 
@@ -533,55 +526,48 @@ export const TabContent: React.FC = () => {
       closeTab(tabId);
     };
 
-    const handleClaudeSessionSelected = (event: CustomEvent) => {
+    const handleClaudeSessionSelected = async (event: CustomEvent) => {
       const { session } = event.detail;
-      // Check if there's an existing tab for this session
+      const fallback = session.project_path.split(/[/\\]/).pop() || 'Session';
+      const meta = await ccodeSettings.getProject(session.project_path);
+      const projectName = meta.name || fallback;
+
       const existingTab = findTabBySessionId(session.id);
       if (existingTab) {
-        // If tab exists, just switch to it
-        updateTab(existingTab.id, {
-          sessionData: session,
-          title: session.project_path.split('/').pop() || 'Session',
-        });
+        updateTab(existingTab.id, { sessionData: session, title: projectName });
         window.dispatchEvent(new CustomEvent('switch-to-tab', { detail: { tabId: existingTab.id } }));
       } else {
-        // If we're in a projects tab, update it to show the session
-        // Otherwise create a new tab (for compatibility with other parts of the app)
         const currentTab = tabs.find(t => t.id === activeTabId);
         if (currentTab && currentTab.type === 'projects') {
           updateTab(currentTab.id, {
             type: 'chat',
-            title: session.project_path.split('/').pop() || 'Session',
+            title: projectName,
             sessionId: session.id,
             sessionData: session,
             initialProjectPath: session.project_path
           });
         } else {
-          const projectName = session.project_path.split('/').pop() || 'Session';
           const newTabId = createChatTab(session.id, projectName, session.project_path);
-          updateTab(newTabId, {
-            sessionData: session,
-            initialProjectPath: session.project_path,
-          });
+          updateTab(newTabId, { sessionData: session, initialProjectPath: session.project_path });
         }
       }
     };
 
-    window.addEventListener('open-session-in-tab', handleOpenSessionInTab as EventListener);
+    window.addEventListener('open-session-in-tab', handleOpenSessionInTab as unknown as EventListener);
     window.addEventListener('open-claude-file', handleOpenClaudeFile as EventListener);
     window.addEventListener('open-agent-execution', handleOpenAgentExecution as EventListener);
     window.addEventListener('open-create-agent-tab', handleOpenCreateAgentTab);
     window.addEventListener('open-import-agent-tab', handleOpenImportAgentTab);
     window.addEventListener('close-tab', handleCloseTab as EventListener);
-    window.addEventListener('claude-session-selected', handleClaudeSessionSelected as EventListener);
+    window.addEventListener('claude-session-selected', handleClaudeSessionSelected as unknown as EventListener);
     return () => {
-      window.removeEventListener('open-session-in-tab', handleOpenSessionInTab as EventListener);
+      window.removeEventListener('open-session-in-tab', handleOpenSessionInTab as unknown as EventListener);
       window.removeEventListener('open-claude-file', handleOpenClaudeFile as EventListener);
       window.removeEventListener('open-agent-execution', handleOpenAgentExecution as EventListener);
       window.removeEventListener('open-create-agent-tab', handleOpenCreateAgentTab);
       window.removeEventListener('open-import-agent-tab', handleOpenImportAgentTab);
       window.removeEventListener('close-tab', handleCloseTab as EventListener);
-      window.removeEventListener('claude-session-selected', handleClaudeSessionSelected as EventListener);
+      window.removeEventListener('claude-session-selected', handleClaudeSessionSelected as unknown as EventListener);
     };
   }, [createChatTab, findTabBySessionId, createClaudeFileTab, createAgentExecutionTab, createCreateAgentTab, createImportAgentTab, closeTab, updateTab]);
   

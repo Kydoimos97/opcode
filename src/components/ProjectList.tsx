@@ -173,7 +173,7 @@ const SessionRow: React.FC<SessionRowProps> = ({ session, onSessionClick }) => {
               {displayLabel}
             </div>
             <div className="text-xs text-muted-foreground mt-0.5 flex items-center gap-2">
-              <span>{relativeTime(session.created_at)}</span>
+              <span>{relativeTime(session.modified_at ?? session.created_at)}</span>
               <span className="font-mono opacity-40">{session.id.slice(0, 8)}</span>
             </div>
           </div>
@@ -234,7 +234,7 @@ const ConsolidatedProjectRow: React.FC<ConsolidatedProjectRowProps> = ({
       );
       const merged = all
         .flat()
-        .sort((a, b) => b.created_at - a.created_at);
+        .sort((a, b) => (b.modified_at ?? b.created_at) - (a.modified_at ?? a.created_at));
       setSessions(merged);
     } finally {
       setLoadingSessions(false);
@@ -248,7 +248,7 @@ const ConsolidatedProjectRow: React.FC<ConsolidatedProjectRowProps> = ({
 
   const cutoff = Date.now() / 1000 - RECENT_DAYS * 86400;
   const recentSessions = sessions
-    ? sessions.filter(s => s.created_at > cutoff).slice(0, MAX_SESSIONS_SHOWN)
+    ? sessions.filter(s => (s.modified_at ?? s.created_at) > cutoff).slice(0, MAX_SESSIONS_SHOWN)
     : [];
   const hiddenCount = totalSessions - recentSessions.length;
 
