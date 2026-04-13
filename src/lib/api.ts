@@ -2021,11 +2021,11 @@ export const api = {
 
   /**
    * Reads the commands.conf file
-   * @returns Promise resolving to the file content
+   * @returns Promise resolving to object with content and exists flag
    */
-  async readCommandsConf(): Promise<string> {
+  async readCommandsConf(): Promise<{ content: string; exists: boolean }> {
     try {
-      return await apiCall<string>("read_commands_conf");
+      return await apiCall<{ content: string; exists: boolean }>("read_commands_conf");
     } catch (error) {
       console.error("Failed to read commands.conf:", error);
       throw error;
@@ -2057,6 +2057,18 @@ export const api = {
     } catch (error) {
       console.error("Failed to set c-guard enabled:", error);
       throw error;
+    }
+  },
+
+  /**
+   * Checks if c-guard is installed and wired into PreToolUse hooks
+   * @returns Promise resolving to install status object
+   */
+  async checkCguardInstalled(): Promise<{ script_exists: boolean; hook_wired: boolean; installed: boolean }> {
+    try {
+      return await apiCall<{ script_exists: boolean; hook_wired: boolean; installed: boolean }>("check_cguard_installed");
+    } catch {
+      return { script_exists: false, hook_wired: false, installed: false };
     }
   },
 

@@ -2909,17 +2909,18 @@ pub async fn get_global_settings() -> Result<serde_json::Value, String> {
 
 /// Reads ~/.claude/hooks/resources/commands.conf
 #[tauri::command]
-pub async fn read_commands_conf() -> Result<String, String> {
+pub async fn read_commands_conf() -> Result<serde_json::Value, String> {
     let home = dirs::home_dir()
         .ok_or_else(|| "Could not find home directory".to_string())?;
     let conf_path = home.join(".claude").join("hooks").join("resources").join("commands.conf");
 
     if !conf_path.exists() {
-        return Ok(String::new());
+        return Ok(serde_json::json!({ "content": "", "exists": false }));
     }
 
-    fs::read_to_string(&conf_path)
-        .map_err(|e| format!("Failed to read commands.conf: {}", e))
+    let content = fs::read_to_string(&conf_path)
+        .map_err(|e| format!("Failed to read commands.conf: {}", e))?;
+    Ok(serde_json::json!({ "content": content, "exists": true }))
 }
 
 /// Writes to ~/.claude/hooks/resources/commands.conf and verifies with command-guard.py
@@ -2959,6 +2960,50 @@ pub async fn write_and_verify_commands_conf(content: String) -> Result<String, S
         }
         Err(_) => Ok("Verification skipped: command-guard.py not found".to_string()),
     }
+}
+
+/// Checks if c-guard is installed and wired into PreToolUse hooks
+#[tauri::command]
+pub async fn check_cguard_installed() -> Result<serde_json::Value, String> {
+    let home = dirs::home_dir()
+        .ok_or_else(|| "Could not find home directory".to_string())?;
+
+    let script_path = home.join(".claude").join("hooks").join("command-guard.py");
+    let script_exists = script_path.exists();
+
+    let settings_path = home.join(".claude").join("settings.json");
+    let hook_wired = if settings_path.exists() {
+        let content = fs::read_to_string(&settings_path).unwrap_or_default();
+        let settings: serde_json::Value = serde_json::from_str(&content).unwrap_or_default();
+
+        settings["hooks"]["PreToolUse"]
+            .as_array()
+            .map(|arr| {
+                arr.iter().any(|entry| {
+                    entry
+                        .get("hooks")
+                        .and_then(|h| h.as_array())
+                        .map(|h| {
+                            h.iter().any(|hook| {
+                                hook.get("command")
+                                    .and_then(|c| c.as_str())
+                                    .map(|s| s.contains("hook-dispatcher") || s.contains("command-guard"))
+                                    .unwrap_or(false)
+                            })
+                        })
+                        .unwrap_or(false)
+                })
+            })
+            .unwrap_or(false)
+    } else {
+        false
+    };
+
+    Ok(serde_json::json!({
+        "script_exists": script_exists,
+        "hook_wired": hook_wired,
+        "installed": script_exists && hook_wired,
+    }))
 }
 
 /// Enables or disables command guard by modifying ~/.claude/settings.json

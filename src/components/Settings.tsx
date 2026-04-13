@@ -79,7 +79,21 @@ const NAV_ITEMS = [
 ] as const;
 type SectionId = typeof NAV_ITEMS[number]['id'];
 
+const DEFAULT_COMMANDS_CONF_TEMPLATE = `# c-guard commands configuration
+# Lines starting with # are comments
+# Format: ALLOW <pattern> or DENY <pattern>
+# Patterns support wildcards: * matches anything
 
+# Allow common development tools
+ALLOW git *
+ALLOW npm *
+ALLOW pnpm *
+ALLOW cargo *
+
+# Deny destructive operations
+DENY rm -rf /
+DENY format *
+`;
 
 /**
  * Comprehensive Settings UI for managing Claude Code settings
@@ -132,8 +146,10 @@ export const Settings: React.FC<SettingsProps> = ({
   // c-guard state
   const [cguardEnabled, setCguardEnabled] = useState(false);
   const [commandsConfContent, setCommandsConfContent] = useState("");
+  const [commandsConfExists, setCommandsConfExists] = useState(false);
   const [commandsConfLoading, setCommandsConfLoading] = useState(false);
   const [commandsConfVerifyOutput, setCommandsConfVerifyOutput] = useState("");
+  const [cguardInstalled, setCguardInstalled] = useState<{ script_exists: boolean; hook_wired: boolean; installed: boolean } | null>(null);
   const [cguardAuditInput, setCguardAuditInput] = useState("");
   const [cguardAuditOutput, setCguardAuditOutput] = useState("");
   const [cguardAuditLoading, setCguardAuditLoading] = useState(false);
@@ -200,6 +216,8 @@ export const Settings: React.FC<SettingsProps> = ({
       const ccodeSettings = await api.readCcodeSettings().catch(() => ({} as Record<string, string>));
       const pref: string | null = ccodeSettings['startup_intro_enabled'] ?? null;
       setStartupIntroEnabled(pref === null ? true : pref === 'true');
+      const cguardStatus = await api.checkCguardInstalled();
+      setCguardInstalled(cguardStatus);
     })();
   }, []);
 
@@ -266,12 +284,18 @@ export const Settings: React.FC<SettingsProps> = ({
   const loadCommandsConf = async () => {
     try {
       setCommandsConfLoading(true);
-      const content = await api.readCommandsConf();
-      setCommandsConfContent(content);
+      const result = await api.readCommandsConf();
+      setCommandsConfExists(result.exists);
+      if (result.exists) {
+        setCommandsConfContent(result.content);
+      } else {
+        setCommandsConfContent(DEFAULT_COMMANDS_CONF_TEMPLATE);
+      }
       setCommandsConfVerifyOutput("");
     } catch (err) {
       console.error("Failed to load commands.conf:", err);
-      setCommandsConfContent("");
+      setCommandsConfContent(DEFAULT_COMMANDS_CONF_TEMPLATE);
+      setCommandsConfExists(false);
     } finally {
       setCommandsConfLoading(false);
     }
@@ -1688,6 +1712,26 @@ export const Settings: React.FC<SettingsProps> = ({
                     />
                   </div>
                 </div>
+                {cguardInstalled !== null && (
+                  <div className="mt-3 flex items-center gap-2 text-sm">
+                    {cguardInstalled.installed ? (
+                      <>
+                        <span className="h-2 w-2 rounded-full bg-green-500" />
+                        <span className="text-muted-foreground">c-guard is installed and active</span>
+                      </>
+                    ) : cguardInstalled.script_exists && !cguardInstalled.hook_wired ? (
+                      <>
+                        <span className="h-2 w-2 rounded-full bg-amber-400" />
+                        <span className="text-muted-foreground">Script found but hook not wired — enable the toggle to activate</span>
+                      </>
+                    ) : (
+                      <>
+                        <span className="h-2 w-2 rounded-full bg-red-500" />
+                        <span className="text-muted-foreground">command-guard.py not found at ~/.claude/hooks/</span>
+                      </>
+                    )}
+                  </div>
+                )}
               </Card>
 
               {/* commands.conf Editor */}
@@ -1705,6 +1749,21 @@ export const Settings: React.FC<SettingsProps> = ({
                   </div>
                 ) : (
                   <>
+                    {!commandsConfExists && (
+                      <div className="rounded-md border border-dashed border-border p-4 mb-4 text-sm text-muted-foreground">
+                        commands.conf does not exist yet. Edit the template below and click "Save & Create" to create it.
+                      </div>
+                    )}
+                    {commandsConfContent && (
+                      <p className="text-xs text-muted-foreground mb-2">
+                        {(() => {
+                          const lines = commandsConfContent.split('\n').filter(l => l.trim() && !l.trim().startsWith('#'));
+                          const allow = lines.filter(l => l.trim().toUpperCase().startsWith('ALLOW')).length;
+                          const deny = lines.filter(l => l.trim().toUpperCase().startsWith('DENY')).length;
+                          return `${allow} allow rule${allow !== 1 ? 's' : ''}, ${deny} deny rule${deny !== 1 ? 's' : ''}`;
+                        })()}
+                      </p>
+                    )}
                     <textarea
                       value={commandsConfContent}
                       onChange={(e) => setCommandsConfContent(e.target.value)}
@@ -1726,7 +1785,7 @@ export const Settings: React.FC<SettingsProps> = ({
                           ) : (
                             <>
                               <Save className="h-4 w-4 mr-2" />
-                              Save & Verify
+                              {commandsConfExists ? "Save & Verify" : "Save & Create"}
                             </>
                           )}
                         </Button>
