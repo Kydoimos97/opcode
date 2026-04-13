@@ -8,6 +8,7 @@ import {
   AlertCircle,
   RefreshCw,
   ShieldAlert,
+  BookOpen,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -123,6 +124,7 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
   const [extractedSessionInfo, setExtractedSessionInfo] = useState<{ sessionId: string; projectId: string } | null>(null);
   const [claudeSessionId, setClaudeSessionId] = useState<string | null>(null);
   const [showTimeline, setShowTimeline] = useState(false);
+  const [instructionsDismissed, setInstructionsDismissed] = useState(false);
   const [timelineVersion, setTimelineVersion] = useState(0);
   const [showSettings, setShowSettings] = useState(false);
   const [showForkDialog, setShowForkDialog] = useState(false);
@@ -1605,6 +1607,29 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
                 {hookState.permissionRequest.suggestions.length > 0 && (
                   <span className="opacity-60">{hookState.permissionRequest.suggestions[0].mode}</span>
                 )}
+              </motion.div>
+            )}
+            {hookState.instructionsLoaded.length > 0 && !instructionsDismissed && (
+              <motion.div
+                initial={{ opacity: 0, y: 4 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: 4 }}
+                transition={{ duration: 0.15 }}
+                className="flex items-center gap-2 px-4 py-1 text-xs text-muted-foreground bg-muted/30 border-t border-border/40"
+              >
+                <BookOpen className="h-3 w-3 flex-shrink-0 text-primary/60" />
+                <span>
+                  Memory:{' '}
+                  {hookState.instructionsLoaded
+                    .map(f => f.filePath.replace(/\\/g, '/').split('/').pop() ?? f.filePath)
+                    .join(' · ')}
+                </span>
+                <button
+                  onClick={() => setInstructionsDismissed(true)}
+                  className="ml-auto opacity-50 hover:opacity-100 transition-opacity"
+                >
+                  <X className="h-3 w-3" />
+                </button>
               </motion.div>
             )}
           </AnimatePresence>
