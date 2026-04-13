@@ -443,63 +443,68 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
     }
   }, [claudeSessionId, session?.id, effectiveSession?.project_id, activeTab?.id]);
 
-  // Poll the JSONL session file for external changes (e.g., session driven from a terminal)
-  // Only runs when not actively streaming via Tauri events
+  // React to watcher-fired session-file-changed events for this session
   useEffect(() => {
     const sessionId = claudeSessionId || session?.id;
     const projectId = effectiveSession?.project_id;
-    if (!sessionId || !projectId || isLoading) return;
+    if (!sessionId || !projectId) return;
 
-    const interval = setInterval(async () => {
-      if (!isMountedRef.current || isLoading) return;
-      try {
-        const tailResult = await api.readSessionTail(sessionId, projectId, byteOffsetRef.current);
-        if (!isMountedRef.current) return;
+    let unlisten: (() => void) | null = null;
 
-        // new_offset === 0 means file was truncated — fall back to full reload
-        if (tailResult.newOffset === 0 && byteOffsetRef.current > 0) {
-          byteOffsetRef.current = 0;
-          fileLineCountRef.current = 0;
-          await loadSessionHistory();
-          return;
-        }
+    import('@tauri-apps/api/event').then(({ listen: tauriListenFn }) => {
+      tauriListenFn<{ session_id: string; project_id: string }>(
+        'session-file-changed',
+        async (event) => {
+          if (event.payload.session_id !== sessionId || event.payload.project_id !== projectId) return;
+          if (!isMountedRef.current) return;
+          try {
+            const tailResult = await api.readSessionTail(sessionId, projectId, byteOffsetRef.current);
+            if (!isMountedRef.current) return;
 
-        if (tailResult.lines.length === 0) return;
-
-        byteOffsetRef.current = tailResult.newOffset;
-        fileLineCountRef.current += tailResult.lines.length;
-
-        const newMessages: ClaudeStreamMessage[] = tailResult.lines
-          .map((line: string) => {
-            try {
-              const entry = JSON.parse(line);
-              return { ...entry, type: entry.type || 'assistant' } as ClaudeStreamMessage;
-            } catch {
-              return null;
+            if (tailResult.newOffset === 0 && byteOffsetRef.current > 0) {
+              byteOffsetRef.current = 0;
+              fileLineCountRef.current = 0;
+              await loadSessionHistory();
+              return;
             }
-          })
-          .filter((m): m is ClaudeStreamMessage => m !== null);
 
-        if (newMessages.length > 0) {
-          setMessages(prev => [...prev, ...newMessages]);
+            if (tailResult.lines.length === 0) return;
 
-          // Derive tab status from the last meaningful entry
-          const lastEntry = newMessages[newMessages.length - 1] as any;
-          if (lastEntry && activeTab) {
-            if (lastEntry.type === 'result') {
-              updateTab(activeTab.id, { status: lastEntry.is_error ? 'error' : 'complete' });
-            } else if (lastEntry.type === 'assistant' || lastEntry.type === 'tool_use') {
-              updateTab(activeTab.id, { status: 'running' });
+            byteOffsetRef.current = tailResult.newOffset;
+            fileLineCountRef.current += tailResult.lines.length;
+
+            const newMessages: ClaudeStreamMessage[] = tailResult.lines
+              .map((line: string) => {
+                try {
+                  const entry = JSON.parse(line);
+                  return { ...entry, type: entry.type || 'assistant' } as ClaudeStreamMessage;
+                } catch {
+                  return null;
+                }
+              })
+              .filter((m): m is ClaudeStreamMessage => m !== null);
+
+            if (newMessages.length > 0) {
+              setMessages(prev => [...prev, ...newMessages]);
+
+              const lastEntry = newMessages[newMessages.length - 1] as any;
+              if (lastEntry && activeTab) {
+                if (lastEntry.type === 'result') {
+                  updateTab(activeTab.id, { status: lastEntry.is_error ? 'error' : 'complete' });
+                } else if (lastEntry.type === 'assistant' || lastEntry.type === 'tool_use') {
+                  updateTab(activeTab.id, { status: 'running' });
+                }
+              }
             }
+          } catch {
+            // Silently ignore read errors
           }
         }
-      } catch {
-        // Silently ignore polling errors (file may not exist yet)
-      }
-    }, 2000);
+      ).then(fn => { unlisten = fn; });
+    });
 
-    return () => clearInterval(interval);
-  }, [claudeSessionId, session?.id, effectiveSession?.project_id, isLoading, activeTab?.id]);
+    return () => { unlisten?.(); };
+  }, [claudeSessionId, session?.id, effectiveSession?.project_id, activeTab?.id]);
 
   const handleRefresh = async () => {
     if (!session || isLoading) return;

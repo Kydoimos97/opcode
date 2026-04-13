@@ -1,5 +1,4 @@
 import { AnimatePresence, motion } from "framer-motion";
-import opcodeLogo from "../assets/logo.png";
 import type { CSSProperties } from "react";
 
 /**
@@ -52,35 +51,41 @@ export function StartupIntro({ visible, progress = 0, stepLabel }: { visible: bo
             className="relative flex flex-col items-center justify-center gap-1"
           >
 
-            {/* opcode logo slides left; brand text reveals to the right */}
-            <div className="relative flex items-center justify-center">
-              {/* Logo wrapper that gently slides left */}
+            {/* Icon + brand text row */}
+            <div className="relative flex items-center justify-center gap-4">
+              {/* Breathing C-Code icon */}
               <motion.div
-                className="relative z-10"
-                initial={{ opacity: 0, scale: 1, x: 0 }}
-                animate={{ opacity: 1, scale: 1, x: -14 }}
-                transition={{ duration: 0.35, ease: "easeOut", delay: 0.2 }}
+                className="relative z-10 flex-shrink-0"
+                initial={{ opacity: 0, scale: 0.85 }}
+                animate={{ opacity: 1, scale: 1 }}
+                transition={{ duration: 0.35, ease: "easeOut" }}
               >
+                {/* Outer glow */}
                 <motion.div
-                  className="absolute inset-0 rounded-full bg-primary/15 blur-2xl"
-                  initial={{ opacity: 0 }}
-                  animate={{ opacity: [0, 1, 0.9] }}
-                  transition={{ duration: 0.9, ease: "easeOut" }}
+                  className="absolute inset-0 rounded-2xl bg-primary/20 blur-xl"
+                  animate={{ opacity: [0.5, 1, 0.5], scale: [1, 1.12, 1] }}
+                  transition={{ duration: 2.4, ease: "easeInOut", repeat: Infinity }}
                 />
-                <motion.img
-                  src={opcodeLogo}
-                  alt="C-Code"
-                  className="h-20 w-20 rounded-lg shadow-sm"
-                  transition={{ repeat: Infinity, repeatType: "loop", ease: "linear", duration: 0.5 }}
-                />
+                {/* Icon body */}
+                <motion.div
+                  className="relative h-20 w-20 rounded-2xl bg-primary flex items-center justify-center shadow-lg"
+                  animate={{ scale: [1, 1.04, 1] }}
+                  transition={{ duration: 2.4, ease: "easeInOut", repeat: Infinity }}
+                >
+                  <span
+                    className="text-primary-foreground font-black select-none"
+                    style={{ fontSize: "2rem", letterSpacing: "-0.04em", lineHeight: 1 }}
+                  >
+                    CC
+                  </span>
+                </motion.div>
               </motion.div>
 
-              {/* Brand text reveals left-to-right in the freed space */}
+              {/* Brand text */}
               <motion.div
-                initial={{ x: -35, opacity: 0, clipPath: "inset(0 100% 0 0)" }}
-                animate={{ x: 2, opacity: 1, clipPath: "inset(0 0% 0 0)" }}
-                transition={{ duration: 0.6, ease: "easeOut", delay: 0.1 }}
-                style={{ willChange: "transform, opacity, clip-path" }}
+                initial={{ x: -10, opacity: 0 }}
+                animate={{ x: 0, opacity: 1 }}
+                transition={{ duration: 0.45, ease: "easeOut", delay: 0.15 }}
               >
                 <BrandText />
               </motion.div>
