@@ -114,7 +114,7 @@ const THINKING_MODES: ThinkingModeConfig[] = [
     level: 0,
     icon: <Sparkles className="h-3.5 w-3.5" />,
     color: "text-muted-foreground",
-    shortName: "A"
+    shortName: "Auto"
   },
   {
     id: "think",
@@ -124,7 +124,7 @@ const THINKING_MODES: ThinkingModeConfig[] = [
     phrase: "think",
     icon: <Lightbulb className="h-3.5 w-3.5" />,
     color: "text-primary",
-    shortName: "T"
+    shortName: "1"
   },
   {
     id: "think_hard",
@@ -134,7 +134,7 @@ const THINKING_MODES: ThinkingModeConfig[] = [
     phrase: "think hard",
     icon: <Brain className="h-3.5 w-3.5" />,
     color: "text-primary",
-    shortName: "T+"
+    shortName: "2"
   },
   {
     id: "think_harder",
@@ -144,7 +144,7 @@ const THINKING_MODES: ThinkingModeConfig[] = [
     phrase: "think harder",
     icon: <Cpu className="h-3.5 w-3.5" />,
     color: "text-primary",
-    shortName: "T++"
+    shortName: "3"
   },
   {
     id: "ultrathink",
@@ -154,7 +154,7 @@ const THINKING_MODES: ThinkingModeConfig[] = [
     phrase: "ultrathink",
     icon: <Rocket className="h-3.5 w-3.5" />,
     color: "text-primary",
-    shortName: "Ultra"
+    shortName: "4"
   }
 ];
 
