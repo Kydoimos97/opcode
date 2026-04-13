@@ -399,30 +399,39 @@ const AssistantMessage: React.FC<AssistantMessageProps> = ({
   const hasTextOrThinking = renderableBlocks.some(b => b.type === "text" || b.type === "thinking");
   const isToolOnly = !hasTextOrThinking;
 
+  // Tool-only messages render inline without a card wrapper.
+  // Only messages with text/thinking content (and final responses) get the full card.
+  if (isToolOnly) {
+    return (
+      <div className={cn("space-y-1.5 py-0.5", className)}>
+        {renderableBlocks.map((block: any, idx: number) => {
+          if (block.type === "tool_use") {
+            return <ToolUseBlock key={idx} content={block} toolResult={getToolResult(block.id)} />;
+          }
+          return null;
+        })}
+      </div>
+    );
+  }
+
   const getCardStyle = () => {
     if (variant === 'final') {
       return {
         borderColor: 'var(--chat-final-border)',
         backgroundColor: 'var(--chat-final-bg)',
       };
-    } else if (isToolOnly) {
-      return {
-        borderColor: 'var(--chat-tool-border)',
-        backgroundColor: 'var(--chat-tool-bg)',
-      };
-    } else {
-      return {
-        borderColor: 'var(--chat-agent-border)',
-        backgroundColor: 'var(--chat-agent-bg)',
-      };
     }
+    return {
+      borderColor: 'var(--chat-agent-border)',
+      backgroundColor: 'var(--chat-agent-bg)',
+    };
   };
 
   return (
     <Card className={cn("border", className)} style={getCardStyle()}>
       <CardContent className="p-4">
         <div className="flex items-start gap-3">
-          <Bot className={cn("h-5 w-5 mt-0.5", isToolOnly ? "text-muted-foreground" : "text-accent")} />
+          <Bot className="h-5 w-5 mt-0.5 text-accent" />
           <div className="flex-1 space-y-2 min-w-0">
             {renderableBlocks.map((block: any, idx: number) => {
               if (block.type === "text") {

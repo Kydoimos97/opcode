@@ -71,6 +71,38 @@ import {
   ContextMenuSeparator,
 } from "@/components/ui/context-menu";
 
+/** Renders a file path as a clickable link that opens the file/folder in the OS */
+const FilePathLink: React.FC<{ path: string; className?: string }> = ({ path, className }) => {
+  const handleClick = async (e: React.MouseEvent) => {
+    e.stopPropagation();
+    try {
+      await open(path);
+    } catch {
+      // Fallback: open parent directory
+      const parent = path.replace(/[/\\][^/\\]+$/, '');
+      try { await open(parent || path); } catch { /* ignore */ }
+    }
+  };
+
+  // Show just the filename but keep full path in tooltip
+  const displayName = path.replace(/\\/g, '/').split('/').pop() || path;
+  const dir = path.replace(/\\/g, '/').split('/').slice(0, -1).join('/');
+
+  return (
+    <button
+      onClick={handleClick}
+      title={path}
+      className={cn(
+        "font-mono text-xs text-foreground/80 hover:text-accent underline-offset-2 hover:underline cursor-pointer text-left truncate max-w-xs",
+        className
+      )}
+    >
+      <span className="text-muted-foreground/50">{dir ? dir + '/' : ''}</span>
+      <span>{displayName}</span>
+    </button>
+  );
+};
+
 /**
  * Widget for TodoWrite tool - displays a beautiful TODO list
  */
@@ -376,25 +408,21 @@ export const ReadWidget: React.FC<{ filePath: string; result?: any }> = ({ fileP
       <div className="space-y-2">
         <div className="flex items-center gap-2 p-3 rounded-lg bg-muted/50">
           <FileText className="h-4 w-4 text-primary" />
-          <span className="text-sm">File content:</span>
-          <code className="text-sm font-mono bg-background px-2 py-0.5 rounded flex-1 truncate">
-            {filePath}
-          </code>
+          <span className="text-sm shrink-0">File content:</span>
+          <FilePathLink path={filePath} className="flex-1" />
         </div>
         {resultContent && <ReadResultWidget content={resultContent} filePath={filePath} />}
       </div>
     );
   }
-  
+
   return (
     <div className="flex items-center gap-2 p-3 rounded-lg bg-muted/50">
       <FileText className="h-4 w-4 text-primary" />
-      <span className="text-sm">Reading file:</span>
-      <code className="text-sm font-mono bg-background px-2 py-0.5 rounded flex-1 truncate">
-        {filePath}
-      </code>
+      <span className="text-sm shrink-0">Reading file:</span>
+      <FilePathLink path={filePath} className="flex-1" />
       {!result && (
-        <div className="ml-auto flex items-center gap-1 text-xs text-muted-foreground">
+        <div className="ml-auto flex items-center gap-1 text-xs text-muted-foreground shrink-0">
           <div className="h-2 w-2 bg-blue-500 rounded-full animate-pulse" />
           <span>Loading...</span>
         </div>
@@ -892,10 +920,8 @@ export const WriteWidget: React.FC<{ filePath: string; content: string; result?:
     <div className="space-y-2">
       <div className="flex items-center gap-2 p-3 rounded-lg bg-muted/50">
         <FileEdit className="h-4 w-4 text-primary" />
-        <span className="text-sm">Writing to file:</span>
-        <code className="text-sm font-mono bg-background px-2 py-0.5 rounded flex-1 truncate">
-          {filePath}
-        </code>
+        <span className="text-sm shrink-0">Writing to file:</span>
+        <FilePathLink path={filePath} className="flex-1" />
       </div>
       <CodePreview codeContent={displayContent} truncated={true} />
       <MaximizedView />
@@ -1178,10 +1204,8 @@ export const EditWidget: React.FC<{
     <div className="space-y-2">
       <div className="flex items-center gap-2 mb-2">
         <FileEdit className="h-4 w-4 text-primary" />
-        <span className="text-sm font-medium">Applying Edit to:</span>
-        <code className="text-sm font-mono bg-background px-2 py-0.5 rounded flex-1 truncate">
-          {file_path}
-        </code>
+        <span className="text-sm font-medium shrink-0">Applying Edit to:</span>
+        <FilePathLink path={file_path} className="flex-1" />
       </div>
 
       <div className="rounded-lg border bg-background overflow-hidden text-xs font-mono">
@@ -1661,7 +1685,7 @@ export const MultiEditWidget: React.FC<{
       <div className="ml-6 space-y-2">
         <div className="flex items-center gap-2">
           <FileText className="h-3 w-3 text-blue-500" />
-          <code className="text-xs font-mono text-blue-500">{file_path}</code>
+          <FilePathLink path={file_path} className="flex-1" />
         </div>
         
         <div className="space-y-1">
