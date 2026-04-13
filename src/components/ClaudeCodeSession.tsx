@@ -132,6 +132,7 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
   const [forkCheckpointId, setForkCheckpointId] = useState<string | null>(null);
   const [forkSessionName, setForkSessionName] = useState("");
   const [gitInfo, setGitInfo] = useState<GitInfo | null>(null);
+  const [sessionStatus, setSessionStatus] = useState<Awaited<ReturnType<typeof api.readSessionStatus>> | null>(null);
 
   // Queued prompts state
   const [queuedPrompts, setQueuedPrompts] = useState<Array<{ id: string; prompt: string; model: "sonnet" | "opus" | "haiku" }>>([]);
@@ -236,6 +237,12 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
       updateTabTitle(activeTab.id, tabTitle);
     }
   }, [gitInfo, activeTab, updateTabTitle, projectPath]);
+
+  // Load session status from file when session ID is available
+  useEffect(() => {
+    if (!session?.id) return;
+    api.readSessionStatus(session.id).then(s => setSessionStatus(s)).catch(() => {});
+  }, [session?.id]);
 
   // Get effective session info (from prop or extracted) - use useMemo to ensure it updates
   const effectiveSession = useMemo(() => {
@@ -1544,6 +1551,7 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
           <SessionStatusBar
             sessionId={claudeSessionId ?? session?.id ?? null}
             inputTokens={latestInputTokens}
+            sessionStatus={sessionStatus}
           />
           <AnimatePresence>
             {hookState.subagentActive && (

@@ -8,6 +8,31 @@ interface SessionStatusBarProps {
   sessionId: string | null;
   className?: string;
   inputTokens?: number;
+  sessionStatus?: {
+    session_id?: string;
+    cwd?: string;
+    model?: { id: string; display_name: string };
+    session_name?: string;
+    agent?: { name: string };
+    agent_type?: string;
+    version?: string;
+    cost?: {
+      total_cost_usd: number;
+      total_duration_ms: number;
+      total_lines_added: number;
+      total_lines_removed: number;
+    };
+    context_window?: {
+      used_percentage: number;
+      remaining_percentage: number;
+      context_window_size: number;
+      current_usage?: { input_tokens: number; output_tokens: number; cache_read_input_tokens?: number };
+    };
+    rate_limits?: {
+      five_hour?: { used_percentage: number; resets_at: number };
+      seven_day?: { used_percentage: number; resets_at: number };
+    };
+  } | null;
 }
 
 function getModelShort(modelId: string): string {
@@ -55,6 +80,7 @@ export const SessionStatusBar: React.FC<SessionStatusBarProps> = ({
   sessionId,
   className,
   inputTokens,
+  sessionStatus,
 }) => {
   const [statusData, setStatusData] = useState<Record<string, any> | null>(null);
   const [cguardActive, setCguardActive] = useState(false);
@@ -87,13 +113,14 @@ export const SessionStatusBar: React.FC<SessionStatusBarProps> = ({
     };
   }, [sessionId]);
 
-  if (!statusData) return null;
+  const effectiveStatusData = sessionStatus || statusData;
+  if (!effectiveStatusData) return null;
 
-  const model = statusData.model;
-  const cost = statusData.cost;
-  const ctx = statusData.context_window;
-  const rateLimits = statusData.rate_limits;
-  const agentName: string = statusData.agent?.name ?? "main";
+  const model = effectiveStatusData.model;
+  const cost = effectiveStatusData.cost;
+  const ctx = effectiveStatusData.context_window;
+  const rateLimits = effectiveStatusData.rate_limits;
+  const agentName: string = effectiveStatusData.agent?.name ?? "main";
 
   const modelShort = model?.id
     ? getModelShort(model.id)

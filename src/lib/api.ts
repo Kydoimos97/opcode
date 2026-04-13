@@ -2207,10 +2207,37 @@ export const api = {
     }
   },
 
-  async readSessionStatus(sessionId: string): Promise<Record<string, any> | null> {
+  async readSessionStatus(sessionId: string): Promise<{
+    session_id?: string;
+    cwd?: string;
+    model?: { id: string; display_name: string };
+    session_name?: string;
+    agent?: { name: string };
+    agent_type?: string;
+    version?: string;
+    cost?: {
+      total_cost_usd: number;
+      total_duration_ms: number;
+      total_lines_added: number;
+      total_lines_removed: number;
+    };
+    context_window?: {
+      used_percentage: number;
+      remaining_percentage: number;
+      context_window_size: number;
+      current_usage?: { input_tokens: number; output_tokens: number; cache_read_input_tokens?: number };
+    };
+    rate_limits?: {
+      five_hour?: { used_percentage: number; resets_at: number };
+      seven_day?: { used_percentage: number; resets_at: number };
+    };
+  } | null> {
     try {
       const result = await apiCall<Record<string, any> | null>("read_session_status", { sessionId });
-      return result ?? null;
+      if (result === null || (typeof result === 'object' && Object.keys(result).length === 0)) {
+        return null;
+      }
+      return result;
     } catch {
       return null;
     }

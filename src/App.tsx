@@ -149,8 +149,11 @@ function AppContent() {
 
         // Step 4 — Configure sidebar (45 → 57%)
         await runStep('Configuring sidebar and watcher...', 500, async () => {
-          // Sidebar state is loaded by TabContext on mount; nothing extra needed here
-          await sleep(50);
+          // Auto-install hook bridge if missing
+          const bridgeCount = await api.checkHookBridgeInstalled().catch(() => 0);
+          if (bridgeCount < 14) {
+            await api.installHookBridge().catch(() => {});
+          }
         });
         setSplashProgress(57);
 
