@@ -1185,6 +1185,34 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
         </motion.div>
       )}
 
+      {/* PostCompact summary block — shown when hook fires but JSONL hasn't reflected it yet */}
+      {hookState.lastCompactSummary && (() => {
+        const alreadyInJSONL = messages.some(msg => {
+          const c: unknown = msg.message?.content;
+          if (typeof c === "string") return c.startsWith("This session is being continued");
+          if (Array.isArray(c)) return c.some((b: any) => typeof b?.text === "string" && b.text.startsWith("This session is being continued"));
+          return false;
+        });
+        if (alreadyInJSONL) return null;
+        return (
+          <motion.div
+            key="compact-summary"
+            initial={{ opacity: 0, y: 8 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.2 }}
+            className="rounded-lg border border-amber-500/30 bg-amber-500/5 p-3 text-xs mx-4 mb-4"
+          >
+            <div className="flex items-center gap-2 text-amber-600 dark:text-amber-400 font-medium mb-2">
+              <RefreshCw className="h-3.5 w-3.5 flex-shrink-0" />
+              Context compacted
+            </div>
+            <p className="text-muted-foreground leading-relaxed whitespace-pre-wrap">
+              {hookState.lastCompactSummary.replace(/<[^>]+>/g, '').trim()}
+            </p>
+          </motion.div>
+        );
+      })()}
+
       {/* Error indicator */}
       {error && (
         <motion.div
