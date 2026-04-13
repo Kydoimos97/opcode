@@ -490,9 +490,12 @@ export const MCPServerList: React.FC<MCPServerListProps> = ({
             <Network className="h-12 w-12 text-primary" />
           </div>
           <p className="text-muted-foreground mb-2 font-medium">No MCP servers configured</p>
-          <p className="text-sm text-muted-foreground">
+          <p className="text-sm text-muted-foreground mb-3">
             Add a server to get started with Model Context Protocol
           </p>
+          <code className="text-xs font-mono bg-muted px-2 py-1 rounded text-muted-foreground">
+            claude mcp add &lt;name&gt; &lt;command&gt;
+          </code>
         </div>
       ) : (
         <div className="space-y-6">

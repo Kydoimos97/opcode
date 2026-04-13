@@ -377,8 +377,14 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onToggle }) => {
 
         {chatTabs.length === 0 ? (
           isOpen && (
-            <div className="p-4 text-xs text-muted-foreground text-center">
-              No chat sessions
+            <div className="p-6 flex flex-col items-center gap-3 text-center">
+              <p className="text-xs text-muted-foreground">No sessions yet</p>
+              <button
+                onClick={() => createChatTab()}
+                className="text-xs px-3 py-1.5 rounded-md bg-primary text-primary-foreground hover:bg-primary/90 transition-colors"
+              >
+                Start a new chat
+              </button>
             </div>
           )
         ) : (
