@@ -46,7 +46,9 @@ pub fn init_session_watcher(app: AppHandle) -> SessionWatcherState {
     }
 
     let app_clone = app.clone();
-    let result = new_debouncer(Duration::from_millis(300), None, move |result: Result<Vec<DebouncedEvent>, Vec<notify::Error>>| {
+    // 1000ms debounce prevents message-queue flooding when Claude writes
+    // many lines in rapid succession (avoids Windows 0x80070718 overflow)
+    let result = new_debouncer(Duration::from_millis(1000), None, move |result: Result<Vec<DebouncedEvent>, Vec<notify::Error>>| {
         let events = match result {
             Ok(e) => e,
             Err(errs) => {

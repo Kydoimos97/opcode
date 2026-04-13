@@ -146,7 +146,7 @@ fn main() {
                         };
 
                         let _ = app_handle.emit("system-resources", &payload);
-                        tokio::time::sleep(Duration::from_secs(5)).await;
+                        tokio::time::sleep(Duration::from_secs(10)).await;
                     }
                 });
             }

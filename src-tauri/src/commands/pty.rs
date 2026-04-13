@@ -70,12 +70,28 @@ pub fn spawn_pty(path: String, app: tauri::AppHandle) -> Result<String, String> 
     std::thread::spawn(move || {
         let mut reader = reader;
         let mut buf = [0u8; 4096];
+        let mut accumulator: Vec<u8> = Vec::with_capacity(16384);
+        let mut last_emit = std::time::Instant::now();
+        // Batch PTY output chunks every 16ms to avoid flooding the Windows
+        // message queue (PostMessage 0x80070718 overflow) during fast output
         loop {
             match reader.read(&mut buf) {
-                Ok(0) | Err(_) => break,
+                Ok(0) | Err(_) => {
+                    // Flush any remaining bytes before exiting
+                    if !accumulator.is_empty() {
+                        let encoded = general_purpose::STANDARD.encode(&accumulator);
+                        let _ = app_clone.emit(&format!("pty-output:{}", reader_pty_id), encoded);
+                    }
+                    break;
+                }
                 Ok(n) => {
-                    let encoded = general_purpose::STANDARD.encode(&buf[..n]);
-                    let _ = app_clone.emit(&format!("pty-output:{}", reader_pty_id), encoded);
+                    accumulator.extend_from_slice(&buf[..n]);
+                    if last_emit.elapsed().as_millis() >= 16 || accumulator.len() >= 32768 {
+                        let encoded = general_purpose::STANDARD.encode(&accumulator);
+                        let _ = app_clone.emit(&format!("pty-output:{}", reader_pty_id), encoded);
+                        accumulator.clear();
+                        last_emit = std::time::Instant::now();
+                    }
                 }
             }
         }
