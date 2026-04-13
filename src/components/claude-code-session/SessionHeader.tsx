@@ -39,6 +39,7 @@ interface SessionHeaderProps {
   onProjectSettings?: () => void;
   onSlashCommandsSettings?: () => void;
   onOpenFolder?: () => void;
+  onOpenSessionFolder?: () => void;
   onRefresh?: () => void;
   onCollapseAll?: () => void;
   onOpenSessionFile?: () => void;
@@ -62,6 +63,7 @@ export const SessionHeader: React.FC<SessionHeaderProps> = React.memo(({
   onProjectSettings,
   onSlashCommandsSettings,
   onOpenFolder,
+  onOpenSessionFolder,
   onRefresh,
   onCollapseAll,
   onOpenSessionFile,
@@ -215,6 +217,18 @@ export const SessionHeader: React.FC<SessionHeaderProps> = React.memo(({
                     className="h-8 w-8"
                   >
                     <FileText className="h-4 w-4" />
+                  </Button>
+                </TooltipSimple>
+              )}
+              {onOpenSessionFolder && (
+                <TooltipSimple content="Open session folder" side="bottom">
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    onClick={onOpenSessionFolder}
+                    className="h-8 w-8"
+                  >
+                    <FolderOpen className="h-4 w-4" />
                   </Button>
                 </TooltipSimple>
               )}

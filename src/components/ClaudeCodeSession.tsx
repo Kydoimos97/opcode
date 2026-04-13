@@ -1309,6 +1309,15 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
               console.error('Failed to open session file:', e);
             }
           } : undefined}
+          onOpenSessionFolder={claudeSessionId && effectiveSession?.project_id && tauriOpen ? async () => {
+            try {
+              const filePath = await api.getSessionFilePath(claudeSessionId, effectiveSession.project_id);
+              const folderPath = filePath.replace(/[/\\][^/\\]+$/, '');
+              await tauriOpen(folderPath);
+            } catch (e) {
+              console.error('Failed to open session folder:', e);
+            }
+          } : undefined}
           setCopyPopoverOpen={setCopyPopoverOpen}
         />
         <div className="flex-1 min-h-0 flex flex-col">
