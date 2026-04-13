@@ -158,6 +158,7 @@ interface WorkBlockProps {
   isStreaming: boolean;
   isComplete: boolean;
   collapseSignal?: number;
+  expandSignal?: number;
 }
 
 const WorkBlock: React.FC<WorkBlockProps> = ({
@@ -167,12 +168,17 @@ const WorkBlock: React.FC<WorkBlockProps> = ({
   isStreaming,
   isComplete,
   collapseSignal,
+  expandSignal,
 }) => {
   const [isExpanded, setIsExpanded] = useState(true);
 
   useEffect(() => {
     if ((collapseSignal ?? 0) > 0) setIsExpanded(false);
   }, [collapseSignal]);
+
+  useEffect(() => {
+    if ((expandSignal ?? 0) > 0) setIsExpanded(true);
+  }, [expandSignal]);
 
   const isWorking = !isComplete && isStreaming && workItems.length === 0;
 
@@ -211,9 +217,10 @@ interface TurnBlockProps {
   streamMessages: ClaudeStreamMessage[];
   isStreaming: boolean;
   collapseSignal?: number;
+  expandSignal?: number;
 }
 
-const TurnBlockComponent: React.FC<TurnBlockProps> = ({ turn, streamMessages, isStreaming, collapseSignal }) => {
+const TurnBlockComponent: React.FC<TurnBlockProps> = ({ turn, streamMessages, isStreaming, collapseSignal, expandSignal }) => {
   // When not streaming and there is no explicit result message, promote the last
   // text-bearing assistant work item to an implicit final response rendered
   // outside (and after) the collapsible work block.
@@ -241,6 +248,7 @@ const TurnBlockComponent: React.FC<TurnBlockProps> = ({ turn, streamMessages, is
         isStreaming={isStreaming}
         isComplete={turn.isComplete}
         collapseSignal={collapseSignal}
+        expandSignal={expandSignal}
       />
 
       {implicitFinalResponse && (

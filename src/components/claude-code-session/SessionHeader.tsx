@@ -28,14 +28,13 @@ interface SessionHeaderProps {
   totalTokens: number;
   isStreaming: boolean;
   hasMessages: boolean;
-  showTimeline: boolean;
+  allCollapsed?: boolean;
   copyPopoverOpen: boolean;
-  gitInfo?: { repo_name: string; branch: string; is_git_repo: boolean } | null;
+  gitInfo?: { repo_name: string; branch: string; is_git_repo: boolean; remote_url?: string } | null;
   onBack: () => void;
   onSelectPath: () => void;
   onCopyAsJsonl: () => void;
   onCopyAsMarkdown: () => void;
-  onToggleTimeline: () => void;
   onProjectSettings?: () => void;
   onSlashCommandsSettings?: () => void;
   onOpenFolder?: () => void;
@@ -52,14 +51,13 @@ export const SessionHeader: React.FC<SessionHeaderProps> = React.memo(({
   totalTokens,
   isStreaming,
   hasMessages,
-  showTimeline,
+  allCollapsed,
   copyPopoverOpen,
   gitInfo,
   onBack,
   onSelectPath,
   onCopyAsJsonl,
   onCopyAsMarkdown,
-  onToggleTimeline,
   onProjectSettings,
   onSlashCommandsSettings,
   onOpenFolder,
@@ -274,29 +272,39 @@ export const SessionHeader: React.FC<SessionHeaderProps> = React.memo(({
           )}
 
           {hasMessages && onCollapseAll && (
-            <TooltipSimple content="Collapse all steps" side="bottom">
+            <TooltipSimple content={allCollapsed ? "Expand all steps" : "Collapse all steps"} side="bottom">
               <Button
                 variant="ghost"
                 size="icon"
                 onClick={onCollapseAll}
-                className="h-8 w-8"
+                className={cn("h-8 w-8 transition-colors", allCollapsed && "bg-accent text-accent-foreground")}
               >
                 <ChevronsUpDown className="h-4 w-4" />
               </Button>
             </TooltipSimple>
           )}
 
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={onToggleTimeline}
-            className={cn(
-              "h-8 w-8 transition-colors",
-              showTimeline && "bg-accent text-accent-foreground"
-            )}
-          >
-            <GitBranch className="h-4 w-4" />
-          </Button>
+          {gitInfo?.is_git_repo && gitInfo.remote_url && (
+            <TooltipSimple content="Open remote repository" side="bottom">
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-8 w-8"
+                onClick={() => {
+                  let url = gitInfo.remote_url!;
+                  // Convert SSH remote to HTTPS
+                  if (url.startsWith('git@')) {
+                    url = url.replace(/^git@([^:]+):/, 'https://$1/').replace(/\.git$/, '');
+                  } else {
+                    url = url.replace(/\.git$/, '');
+                  }
+                  window.open(url, '_blank');
+                }}
+              >
+                <GitBranch className="h-4 w-4" />
+              </Button>
+            </TooltipSimple>
+          )}
 
           <DropdownMenu>
             <DropdownMenuTrigger asChild>

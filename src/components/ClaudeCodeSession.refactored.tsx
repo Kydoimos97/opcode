@@ -45,7 +45,7 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
   const [isFirstPrompt, setIsFirstPrompt] = useState(!session);
   const [totalTokens, setTotalTokens] = useState(0);
   const [claudeSessionId, setClaudeSessionId] = useState<string | null>(null);
-  const [showTimeline, setShowTimeline] = useState(false);
+  const [showTimeline, _setShowTimeline] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
   const [showForkDialog, setShowForkDialog] = useState(false);
   const [showSlashCommandsSettings, setShowSlashCommandsSettings] = useState(false);
@@ -260,13 +260,11 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
           totalTokens={totalTokens}
           isStreaming={isStreaming}
           hasMessages={messages.length > 0}
-          showTimeline={showTimeline}
           copyPopoverOpen={copyPopoverOpen}
           onBack={onBack}
           onSelectPath={handleSelectPath}
           onCopyAsJsonl={handleCopyAsJsonl}
           onCopyAsMarkdown={handleCopyAsMarkdown}
-          onToggleTimeline={() => setShowTimeline(!showTimeline)}
           onProjectSettings={onProjectSettings ? () => onProjectSettings(projectPath) : undefined}
           onSlashCommandsSettings={() => setShowSlashCommandsSettings(true)}
           setCopyPopoverOpen={setCopyPopoverOpen}

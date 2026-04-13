@@ -2409,6 +2409,7 @@ pub struct GitInfo {
     pub repo_name: String,
     pub branch: String,
     pub is_git_repo: bool,
+    pub remote_url: Option<String>,
 }
 
 #[tauri::command]
@@ -2431,6 +2432,7 @@ pub fn get_git_info(path: String) -> Result<GitInfo, String> {
                     repo_name: folder_name,
                     branch: String::new(),
                     is_git_repo: false,
+                    remote_url: None,
                 });
             }
 
@@ -2454,10 +2456,19 @@ pub fn get_git_info(path: String) -> Result<GitInfo, String> {
                 _ => String::new(),
             };
 
+            let remote_url = Command::new("git")
+                .args(&["-C", &path, "remote", "get-url", "origin"])
+                .output()
+                .ok()
+                .and_then(|o| if o.status.success() {
+                    Some(String::from_utf8_lossy(&o.stdout).trim().to_string())
+                } else { None });
+
             Ok(GitInfo {
                 repo_name,
                 branch,
                 is_git_repo: true,
+                remote_url,
             })
         }
         Err(_) => {
@@ -2470,6 +2481,7 @@ pub fn get_git_info(path: String) -> Result<GitInfo, String> {
                 repo_name: folder_name,
                 branch: String::new(),
                 is_git_repo: false,
+                remote_url: None,
             })
         }
     }

@@ -151,8 +151,10 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
   // Add collapsed state for queued prompts
   const [queuedPromptsCollapsed, setQueuedPromptsCollapsed] = useState(false);
 
-  // Collapse all signal for work blocks
+  // Collapse / expand all signal for work blocks
   const [collapseSignal, setCollapseSignal] = useState(0);
+  const [expandSignal, setExpandSignal] = useState(0);
+  const [allCollapsed, setAllCollapsed] = useState(false);
 
   // Session state tracking
   const [sessionState, setSessionState] = useState<SessionState>("idle");
@@ -1222,6 +1224,7 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
                   streamMessages={displayableMessages}
                   isStreaming={isLoading}
                   collapseSignal={collapseSignal}
+                  expandSignal={expandSignal}
                 />
               </motion.div>
             );
@@ -1290,17 +1293,23 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
           totalTokens={totalTokens}
           isStreaming={isLoading}
           hasMessages={messages.length > 0}
-          showTimeline={showTimeline}
+          allCollapsed={allCollapsed}
           copyPopoverOpen={copyPopoverOpen}
           gitInfo={gitInfo}
           onBack={() => {}}
           onSelectPath={() => {}}
           onCopyAsJsonl={() => {}}
           onCopyAsMarkdown={() => {}}
-          onToggleTimeline={() => setShowTimeline(!showTimeline)}
           onOpenFolder={projectPath && tauriOpen ? () => tauriOpen(projectPath) : undefined}
           onRefresh={session ? handleRefresh : undefined}
-          onCollapseAll={() => setCollapseSignal(s => s + 1)}
+          onCollapseAll={() => {
+            if (allCollapsed) {
+              setExpandSignal(s => s + 1);
+            } else {
+              setCollapseSignal(s => s + 1);
+            }
+            setAllCollapsed(v => !v);
+          }}
           onOpenSessionFile={claudeSessionId && effectiveSession?.project_id && tauriOpen ? async () => {
             try {
               const filePath = await api.getSessionFilePath(claudeSessionId, effectiveSession.project_id);

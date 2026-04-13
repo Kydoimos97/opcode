@@ -471,6 +471,7 @@ export interface GitInfo {
   repo_name: string;
   branch: string;
   is_git_repo: boolean;
+  remote_url?: string;
 }
 
 /**
