@@ -1,11 +1,14 @@
 import React, { useState, useEffect } from "react";
 import MDEditor from "@uiw/react-md-editor";
+import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
 import { motion } from "framer-motion";
 import { Save, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Toast, ToastContainer } from "@/components/ui/toast";
 import { api } from "@/lib/api";
 import { cn } from "@/lib/utils";
+import { getClaudeSyntaxTheme } from "@/lib/claudeSyntaxTheme";
+import { useTheme } from "@/hooks";
 
 interface MarkdownEditorProps {
   /**
@@ -27,6 +30,8 @@ interface MarkdownEditorProps {
 export const MarkdownEditor: React.FC<MarkdownEditorProps> = ({
   className,
 }) => {
+  const { theme } = useTheme();
+  const syntaxTheme = getClaudeSyntaxTheme(theme);
   const [content, setContent] = useState<string>("");
   const [originalContent, setOriginalContent] = useState<string>("");
   const [loading, setLoading] = useState(true);
@@ -129,9 +134,28 @@ export const MarkdownEditor: React.FC<MarkdownEditorProps> = ({
               <MDEditor
                 value={content}
                 onChange={(val) => setContent(val || "")}
-                preview="edit"
+                preview="live"
                 height="100%"
                 visibleDragbar={false}
+                previewOptions={{
+                  components: {
+                    code({ children, className: codeClass, ...rest }: any) {
+                      const match = /language-(\w+)/.exec(codeClass || '');
+                      return match ? (
+                        <SyntaxHighlighter
+                          style={syntaxTheme}
+                          language={match[1]}
+                          PreTag="div"
+                          {...rest}
+                        >
+                          {String(children).replace(/\n$/, '')}
+                        </SyntaxHighlighter>
+                      ) : (
+                        <code className={codeClass} {...rest}>{children}</code>
+                      );
+                    },
+                  },
+                }}
               />
             </div>
           )}

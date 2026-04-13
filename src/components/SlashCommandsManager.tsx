@@ -21,13 +21,16 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import MDEditor from "@uiw/react-md-editor";
+import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
 import { api, type SlashCommand } from "@/lib/api";
 import { cn } from "@/lib/utils";
+import { getClaudeSyntaxTheme } from "@/lib/claudeSyntaxTheme";
+import { useTheme } from "@/hooks";
 import { COMMON_TOOL_MATCHERS } from "@/types/hooks";
 
 interface SlashCommandsManagerProps {
@@ -93,6 +96,8 @@ export const SlashCommandsManager: React.FC<SlashCommandsManagerProps> = ({
   className,
   scopeFilter = 'all',
 }) => {
+  const { theme } = useTheme();
+  const syntaxTheme = getClaudeSyntaxTheme(theme);
   const [commands, setCommands] = useState<SlashCommand[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -606,16 +611,36 @@ export const SlashCommandsManager: React.FC<SlashCommandsManagerProps> = ({
             </div>
 
             {/* Content */}
-            <div className="space-y-2">
+            <div className="space-y-2" data-color-mode="dark">
               <Label>Command Content*</Label>
-              <Textarea
-                placeholder="Enter the prompt content. Use $ARGUMENTS for dynamic values."
+              <MDEditor
                 value={commandForm.content}
-                onChange={(e) => setCommandForm(prev => ({ ...prev, content: e.target.value }))}
-                className="min-h-[150px] font-mono text-sm"
+                onChange={(val) => setCommandForm(prev => ({ ...prev, content: val || '' }))}
+                preview="live"
+                height={220}
+                visibleDragbar={false}
+                previewOptions={{
+                  components: {
+                    code({ children, className: codeClass, ...rest }: any) {
+                      const match = /language-(\w+)/.exec(codeClass || '');
+                      return match ? (
+                        <SyntaxHighlighter
+                          style={syntaxTheme}
+                          language={match[1]}
+                          PreTag="div"
+                          {...rest}
+                        >
+                          {String(children).replace(/\n$/, '')}
+                        </SyntaxHighlighter>
+                      ) : (
+                        <code className={codeClass} {...rest}>{children}</code>
+                      );
+                    },
+                  },
+                }}
               />
               <p className="text-xs text-muted-foreground">
-                Use <code>$ARGUMENTS</code> for user input, <code>@filename</code> for files, 
+                Use <code>$ARGUMENTS</code> for user input, <code>@filename</code> for files,
                 and <code>!`command`</code> for bash commands
               </p>
             </div>
