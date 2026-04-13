@@ -2,8 +2,8 @@ import { apiCall } from './apiAdapter';
 import type { HooksConfiguration } from '@/types/hooks';
 
 /** Process type for tracking in ProcessRegistry */
-export type ProcessType = 
-  | { AgentRun: { agent_id: number; agent_name: string } }
+export type ProcessType =
+  | { AgentRun: { agent_id: string; agent_name: string } }
   | { ClaudeSession: { session_id: string } };
 
 /** Information about a running process */
@@ -119,7 +119,7 @@ export interface ClaudeInstallation {
 
 // Agent API types
 export interface Agent {
-  id?: number;
+  id: string;
   name: string;
   icon: string;
   system_prompt: string;
@@ -153,7 +153,7 @@ export interface GitHubAgentFile {
 
 export interface AgentRun {
   id?: number;
-  agent_id: number;
+  agent_id: string;
   agent_name: string;
   agent_icon: string;
   task: string;
@@ -176,7 +176,7 @@ export interface AgentRunMetrics {
 
 export interface AgentRunWithMetrics {
   id?: number;
-  agent_id: number;
+  agent_id: string;
   agent_name: string;
   agent_icon: string;
   task: string;
@@ -811,8 +811,8 @@ export const api = {
    * @returns Promise resolving to the updated agent
    */
   async updateAgent(
-    id: number, 
-    name: string, 
+    id: string,
+    name: string,
     icon: string, 
     system_prompt: string, 
     default_task?: string, 
@@ -840,7 +840,7 @@ export const api = {
    * @param id - The agent ID to delete
    * @returns Promise resolving when the agent is deleted
    */
-  async deleteAgent(id: number): Promise<void> {
+  async deleteAgent(id: string): Promise<void> {
     try {
       return await apiCall('delete_agent', { id });
     } catch (error) {
@@ -854,7 +854,7 @@ export const api = {
    * @param id - The agent ID
    * @returns Promise resolving to the agent
    */
-  async getAgent(id: number): Promise<Agent> {
+  async getAgent(id: string): Promise<Agent> {
     try {
       return await apiCall<Agent>('get_agent', { id });
     } catch (error) {
@@ -868,7 +868,7 @@ export const api = {
    * @param id - The agent ID to export
    * @returns Promise resolving to the JSON string
    */
-  async exportAgent(id: number): Promise<string> {
+  async exportAgent(id: string): Promise<string> {
     try {
       return await apiCall<string>('export_agent', { id });
     } catch (error) {
@@ -913,7 +913,7 @@ export const api = {
    * @param model - Optional model override
    * @returns Promise resolving to the run ID when execution starts
    */
-  async executeAgent(agentId: number, projectPath: string, task: string, model?: string): Promise<number> {
+  async executeAgent(agentId: string, projectPath: string, task: string, model?: string): Promise<number> {
     try {
       return await apiCall<number>('execute_agent', { agentId, projectPath, task, model });
     } catch (error) {
@@ -928,7 +928,7 @@ export const api = {
    * @param agentId - Optional agent ID to filter runs
    * @returns Promise resolving to an array of agent runs
    */
-  async listAgentRuns(agentId?: number): Promise<AgentRunWithMetrics[]> {
+  async listAgentRuns(agentId?: string): Promise<AgentRunWithMetrics[]> {
     try {
       return await apiCall<AgentRunWithMetrics[]>('list_agent_runs', { agentId });
     } catch (error) {
@@ -943,7 +943,7 @@ export const api = {
    * @param agentId - Optional agent ID to filter runs
    * @returns Promise resolving to an array of agent runs with metrics
    */
-  async listAgentRunsWithMetrics(agentId?: number): Promise<AgentRunWithMetrics[]> {
+  async listAgentRunsWithMetrics(agentId?: string): Promise<AgentRunWithMetrics[]> {
     try {
       return await apiCall<AgentRunWithMetrics[]>('list_agent_runs_with_metrics', { agentId });
     } catch (error) {
@@ -1666,200 +1666,6 @@ export const api = {
       return await apiCall<ClaudeInstallation[]>("list_claude_installations");
     } catch (error) {
       console.error("Failed to list Claude installations:", error);
-      throw error;
-    }
-  },
-
-  // Storage API methods
-
-  /**
-   * Lists all tables in the SQLite database
-   * @returns Promise resolving to an array of table information
-   */
-  async storageListTables(): Promise<any[]> {
-    try {
-      return await apiCall<any[]>("storage_list_tables");
-    } catch (error) {
-      console.error("Failed to list tables:", error);
-      throw error;
-    }
-  },
-
-  /**
-   * Reads table data with pagination
-   * @param tableName - Name of the table to read
-   * @param page - Page number (1-indexed)
-   * @param pageSize - Number of rows per page
-   * @param searchQuery - Optional search query
-   * @returns Promise resolving to table data with pagination info
-   */
-  async storageReadTable(
-    tableName: string,
-    page: number,
-    pageSize: number,
-    searchQuery?: string
-  ): Promise<any> {
-    try {
-      return await apiCall<any>("storage_read_table", {
-        tableName,
-        page,
-        pageSize,
-        searchQuery,
-      });
-    } catch (error) {
-      console.error("Failed to read table:", error);
-      throw error;
-    }
-  },
-
-  /**
-   * Updates a row in a table
-   * @param tableName - Name of the table
-   * @param primaryKeyValues - Map of primary key column names to values
-   * @param updates - Map of column names to new values
-   * @returns Promise resolving when the row is updated
-   */
-  async storageUpdateRow(
-    tableName: string,
-    primaryKeyValues: Record<string, any>,
-    updates: Record<string, any>
-  ): Promise<void> {
-    try {
-      return await apiCall<void>("storage_update_row", {
-        tableName,
-        primaryKeyValues,
-        updates,
-      });
-    } catch (error) {
-      console.error("Failed to update row:", error);
-      throw error;
-    }
-  },
-
-  /**
-   * Deletes a row from a table
-   * @param tableName - Name of the table
-   * @param primaryKeyValues - Map of primary key column names to values
-   * @returns Promise resolving when the row is deleted
-   */
-  async storageDeleteRow(
-    tableName: string,
-    primaryKeyValues: Record<string, any>
-  ): Promise<void> {
-    try {
-      return await apiCall<void>("storage_delete_row", {
-        tableName,
-        primaryKeyValues,
-      });
-    } catch (error) {
-      console.error("Failed to delete row:", error);
-      throw error;
-    }
-  },
-
-  /**
-   * Inserts a new row into a table
-   * @param tableName - Name of the table
-   * @param values - Map of column names to values
-   * @returns Promise resolving to the last insert row ID
-   */
-  async storageInsertRow(
-    tableName: string,
-    values: Record<string, any>
-  ): Promise<number> {
-    try {
-      return await apiCall<number>("storage_insert_row", {
-        tableName,
-        values,
-      });
-    } catch (error) {
-      console.error("Failed to insert row:", error);
-      throw error;
-    }
-  },
-
-  /**
-   * Executes a raw SQL query
-   * @param query - SQL query string
-   * @returns Promise resolving to query result
-   */
-  async storageExecuteSql(query: string): Promise<any> {
-    try {
-      return await apiCall<any>("storage_execute_sql", { query });
-    } catch (error) {
-      console.error("Failed to execute SQL:", error);
-      throw error;
-    }
-  },
-
-  /**
-   * Resets the entire database
-   * @returns Promise resolving when the database is reset
-   */
-  async storageResetDatabase(): Promise<void> {
-    try {
-      return await apiCall<void>("storage_reset_database");
-    } catch (error) {
-      console.error("Failed to reset database:", error);
-      throw error;
-    }
-  },
-
-  // Theme settings helpers
-
-  /**
-   * Gets a setting from the app_settings table
-   * @param key - The setting key to retrieve
-   * @returns Promise resolving to the setting value or null if not found
-   */
-  async getSetting(key: string): Promise<string | null> {
-    try {
-      // Fast path: check localStorage mirror to avoid startup flicker
-      if (typeof window !== 'undefined' && 'localStorage' in window) {
-        const cached = window.localStorage.getItem(`app_setting:${key}`);
-        if (cached !== null) {
-          return cached;
-        }
-      }
-      // Use storageReadTable to safely query the app_settings table
-      const result = await this.storageReadTable('app_settings', 1, 1000);
-      const setting = result?.data?.find((row: any) => row.key === key);
-      return setting?.value || null;
-    } catch (error) {
-      console.error(`Failed to get setting ${key}:`, error);
-      return null;
-    }
-  },
-
-  /**
-   * Saves a setting to the app_settings table (insert or update)
-   * @param key - The setting key
-   * @param value - The setting value
-   * @returns Promise resolving when the setting is saved
-   */
-  async saveSetting(key: string, value: string): Promise<void> {
-    try {
-      // Mirror to localStorage for instant availability on next startup
-      if (typeof window !== 'undefined' && 'localStorage' in window) {
-        try {
-          window.localStorage.setItem(`app_setting:${key}`, value);
-        } catch (_ignore) {
-          // best-effort; continue to persist in DB
-        }
-      }
-      // Try to update first
-      try {
-        await this.storageUpdateRow(
-          'app_settings',
-          { key },
-          { value }
-        );
-      } catch (updateError) {
-        // If update fails (row doesn't exist), insert new row
-        await this.storageInsertRow('app_settings', { key, value });
-      }
-    } catch (error) {
-      console.error(`Failed to save setting ${key}:`, error);
       throw error;
     }
   },

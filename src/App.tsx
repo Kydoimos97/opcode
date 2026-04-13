@@ -477,7 +477,8 @@ function App() {
     let timer: number | undefined;
     (async () => {
       try {
-        const pref = await api.getSetting('startup_intro_enabled');
+        const ccodeSettings = await api.readCcodeSettings().catch(() => ({} as Record<string, string>));
+        const pref: string | null = ccodeSettings['startup_intro_enabled'] ?? null;
         const enabled = pref === null ? true : pref === 'true';
         if (enabled) {
           // keep intro visible and hide after duration

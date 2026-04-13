@@ -13,7 +13,6 @@ import {
   Layout,
   SlidersHorizontal,
   Zap,
-  Database,
   Network,
   Package,
   Eye,
@@ -36,7 +35,6 @@ import {
 } from "@/lib/api";
 import { cn } from "@/lib/utils";
 import { ClaudeVersionSelector } from "./ClaudeVersionSelector";
-import { StorageTab } from "./StorageTab";
 import { HooksEditor } from "./HooksEditor";
 import { SlashCommandsManager } from "./SlashCommandsManager";
 import { ProxySettings } from "./ProxySettings";
@@ -74,7 +72,6 @@ const NAV_ITEMS = [
   { id: 'advanced', label: 'Advanced', icon: SlidersHorizontal },
   { id: 'hooks', label: 'Hooks', icon: Zap },
   { id: 'commands', label: 'Commands', icon: Command },
-  { id: 'storage', label: 'Storage', icon: Database },
   { id: 'proxy', label: 'Proxy', icon: Network },
   { id: 'skills', label: 'Skills', icon: Package },
   { id: 'hooks-display', label: 'Hooks Display', icon: Eye },
@@ -200,7 +197,8 @@ export const Settings: React.FC<SettingsProps> = ({
     loadClaudeBinaryPath();
     setTabPersistenceEnabled(TabPersistenceService.isEnabled());
     (async () => {
-      const pref = await api.getSetting('startup_intro_enabled');
+      const ccodeSettings = await api.readCcodeSettings().catch(() => ({} as Record<string, string>));
+      const pref: string | null = ccodeSettings['startup_intro_enabled'] ?? null;
       setStartupIntroEnabled(pref === null ? true : pref === 'true');
     })();
   }, []);
@@ -764,7 +762,8 @@ export const Settings: React.FC<SettingsProps> = ({
                         onCheckedChange={async (checked) => {
                           setStartupIntroEnabled(checked);
                           try {
-                            await api.saveSetting('startup_intro_enabled', checked ? 'true' : 'false');
+                            const current = await api.readCcodeSettings().catch(() => ({} as Record<string, string>));
+                            await api.writeCcodeSettings({ ...current, startup_intro_enabled: checked ? 'true' : 'false' });
                             setToast({
                               message: checked
                                 ? 'Welcome intro enabled'
@@ -1569,11 +1568,6 @@ export const Settings: React.FC<SettingsProps> = ({
               </div>
               )}
 
-              {activeSection === 'storage' && (
-              <div>
-              <StorageTab />
-              </div>
-              )}
 
               {activeSection === 'proxy' && (
               <div>
