@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from "react";
-import { Terminal, User, Bot, AlertCircle, CheckCircle2 } from "lucide-react";
+import { Terminal, User, Bot, AlertCircle, CheckCircle2, RefreshCw, GitPullRequest, PenLine, PenOff } from "lucide-react";
+import { open } from "@tauri-apps/plugin-shell";
 import { Card, CardContent } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
 import ReactMarkdown from "react-markdown";
@@ -492,6 +493,72 @@ const UserStringContent: React.FC<UserStringContentProps> = ({ content, onLinkDe
   return <div className="text-sm">{content}</div>;
 };
 
+const COMPACTION_PREFIX = "This session is being continued from a previous conversation that ran out of context.";
+
+const ContextCompactedMessage: React.FC<{ text: string; className?: string }> = ({ text, className }) => {
+  const [expanded, setExpanded] = useState(false);
+  const summaryStart = text.indexOf("Summary:");
+  const body = summaryStart >= 0 ? text.slice(summaryStart + 8).trim() : text;
+  const truncated = body.length > 400;
+  const preview = truncated ? body.slice(0, 400) : body;
+
+  return (
+    <div className={cn("rounded-lg border border-amber-500/30 bg-amber-500/5 p-3 text-xs", className)}>
+      <div className="flex items-center gap-2 text-amber-600 dark:text-amber-400 font-medium mb-2">
+        <RefreshCw className="h-3.5 w-3.5 flex-shrink-0" />
+        Context compacted — conversation continued from summary
+      </div>
+      <div className="text-muted-foreground leading-relaxed whitespace-pre-wrap">
+        {expanded ? body : preview}
+        {truncated && (
+          <button
+            onClick={() => setExpanded(v => !v)}
+            className="ml-1.5 text-accent underline underline-offset-2"
+          >
+            {expanded ? "collapse" : "show more"}
+          </button>
+        )}
+      </div>
+    </div>
+  );
+};
+
+const PrLinkMessage: React.FC<{ message: any; className?: string }> = ({ message, className }) => {
+  const handleOpen = async (e: React.MouseEvent) => {
+    e.preventDefault();
+    try {
+      await open(message.prUrl);
+    } catch {
+      /* ignore */
+    }
+  };
+
+  return (
+    <div className={cn("rounded-lg border border-green-500/30 bg-green-500/5 p-3", className)}>
+      <div className="flex items-center gap-2 text-green-600 dark:text-green-400 text-xs font-medium">
+        <GitPullRequest className="h-3.5 w-3.5 flex-shrink-0" />
+        Pull request created
+        <button
+          onClick={handleOpen}
+          className="ml-1 underline underline-offset-2 hover:opacity-80 cursor-pointer font-mono"
+        >
+          {message.prRepository}#{message.prNumber}
+        </button>
+      </div>
+    </div>
+  );
+};
+
+const PlanModeMessage: React.FC<{ entering: boolean; className?: string }> = ({ entering, className }) => (
+  <div className={cn("flex items-center gap-2 py-0.5 text-xs text-muted-foreground/70", className)}>
+    {entering
+      ? <PenLine className="h-3 w-3 text-blue-400" />
+      : <PenOff className="h-3 w-3 text-muted-foreground/50" />
+    }
+    {entering ? "Entered plan mode" : "Exited plan mode"}
+  </div>
+);
+
 interface UserMessageProps {
   message: ClaudeStreamMessage;
   className?: string;
@@ -509,6 +576,15 @@ const UserMessage: React.FC<UserMessageProps> = ({
     typeof msg.content === "string" || (msg.content && !Array.isArray(msg.content));
   const arrayBlocks: any[] = Array.isArray(msg.content) ? msg.content : [];
   const contentStr = isStringContent ? String(msg.content ?? "") : "";
+
+  // Compaction summary — detect by prefix and render as a special card
+  if (contentStr.startsWith(COMPACTION_PREFIX)) {
+    return <ContextCompactedMessage text={contentStr} className={className} />;
+  }
+  const firstTextBlock = arrayBlocks.find(b => b.type === "text");
+  if (firstTextBlock && typeof firstTextBlock.text === "string" && firstTextBlock.text.startsWith(COMPACTION_PREFIX)) {
+    return <ContextCompactedMessage text={firstTextBlock.text} className={className} />;
+  }
 
   // Determine whether anything will actually render before mounting the card
   const hasRenderableString = isStringContent && contentStr.trim() !== "";
@@ -706,6 +782,20 @@ const StreamMessageComponent: React.FC<StreamMessageProps> = ({
           syntaxTheme={syntaxTheme}
         />
       );
+    }
+
+    if ((message as any).type === "pr-link") {
+      return <PrLinkMessage message={message} className={className} />;
+    }
+
+    if ((message as any).type === "attachment") {
+      const att = (message as any).attachment;
+      if (att?.type === "plan_mode") {
+        return <PlanModeMessage entering={true} className={className} />;
+      }
+      if (att?.type === "plan_mode_exit") {
+        return <PlanModeMessage entering={false} className={className} />;
+      }
     }
 
     return null;
