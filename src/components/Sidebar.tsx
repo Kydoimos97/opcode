@@ -68,6 +68,8 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onToggle }) => {
   const worktreeCache = useRef<Map<string, WorktreeInfo[]>>(new Map());
   const displayNameCache = useRef<Map<string, string | null>>(new Map());
   const [hoveredSessionId, setHoveredSessionId] = useState<string | null>(null);
+  const [lastMessageVersion, setLastMessageVersion] = useState(0);
+  const lastMessageCache = useRef<Map<string, string>>(new Map());
 
   const chatTabs = useMemo(
     () => tabs.filter((tab) => tab.type === 'chat'),
@@ -170,6 +172,13 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onToggle }) => {
             newStatus = 'running';
           } else {
             newStatus = 'idle';
+          }
+          if (status.last_user_message) {
+            const prev = lastMessageCache.current.get(tab.id);
+            if (prev !== status.last_user_message) {
+              lastMessageCache.current.set(tab.id, status.last_user_message);
+              setLastMessageVersion((v) => v + 1);
+            }
           }
           // Only update if changed to avoid unnecessary re-renders
           if (tab.status !== newStatus) {
@@ -349,12 +358,19 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onToggle }) => {
                                   <button
                                     onClick={() => setActiveTab(tab.id)}
                                     className={cn(
-                                      'w-full px-4 py-2 text-left text-xs flex items-center gap-2 truncate transition-colors pl-12 hover:bg-muted/80',
+                                      'w-full px-4 py-2 text-left text-xs flex items-center gap-2 overflow-hidden transition-colors pl-12 hover:bg-muted/80',
                                       activeTabId === tab.id ? 'bg-muted text-foreground' : 'text-foreground/70'
                                     )}
                                   >
                                     <div className={cn('w-2 h-2 rounded-full flex-shrink-0', getStatusDotColor(tab.status))} />
-                                    <span className="truncate flex-1">{tab.title}</span>
+                                    <div className="flex-1 min-w-0">
+                                      <div className="truncate">{tab.title}</div>
+                                      {lastMessageCache.current.get(tab.id) && (
+                                        <div className="truncate text-muted-foreground/60 mt-0.5" style={{ fontSize: '10px' }}>
+                                          {lastMessageCache.current.get(tab.id)}
+                                        </div>
+                                      )}
+                                    </div>
                                     {hoveredSessionId === tab.id && (
                                       <button
                                         onClick={(e) => { e.stopPropagation(); closeTab(tab.id); }}
@@ -379,12 +395,19 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onToggle }) => {
                               <button
                                 onClick={() => setActiveTab(tab.id)}
                                 className={cn(
-                                  'w-full px-4 py-2 text-left text-xs flex items-center gap-2 truncate transition-colors pl-8 hover:bg-muted/80',
+                                  'w-full px-4 py-2 text-left text-xs flex items-center gap-2 overflow-hidden transition-colors pl-8 hover:bg-muted/80',
                                   activeTabId === tab.id ? 'bg-muted text-foreground' : 'text-foreground/70'
                                 )}
                               >
                                 <div className={cn('w-2 h-2 rounded-full flex-shrink-0', getStatusDotColor(tab.status))} />
-                                <span className="truncate flex-1">{tab.title}</span>
+                                <div className="flex-1 min-w-0">
+                                  <div className="truncate">{tab.title}</div>
+                                  {lastMessageCache.current.get(tab.id) && (
+                                    <div className="truncate text-muted-foreground/60 mt-0.5" style={{ fontSize: '10px' }}>
+                                      {lastMessageCache.current.get(tab.id)}
+                                    </div>
+                                  )}
+                                </div>
                                 {hoveredSessionId === tab.id && (
                                   <button
                                     onClick={(e) => { e.stopPropagation(); closeTab(tab.id); }}

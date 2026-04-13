@@ -500,6 +500,7 @@ export interface SessionFileStatus {
   lines_total: number;
   modified_secs_ago: number;
   awaiting_approval: boolean;
+  last_user_message: string | null;
 }
 
 export interface ClaudeEntry {

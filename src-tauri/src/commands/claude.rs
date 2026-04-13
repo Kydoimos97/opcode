@@ -1005,6 +1005,8 @@ pub struct SessionFileStatus {
     pub modified_secs_ago: u64,
     /// Whether a PermissionRequest/approval prompt is pending
     pub awaiting_approval: bool,
+    /// The text of the last user message, truncated to 120 chars
+    pub last_user_message: Option<String>,
 }
 
 /// Reads new lines from a JSONL session file starting at `from_line`.
@@ -1076,6 +1078,7 @@ pub async fn get_session_file_status(
             lines_total: 0,
             modified_secs_ago: u64::MAX,
             awaiting_approval: false,
+            last_user_message: None,
         });
     }
 
@@ -1097,6 +1100,7 @@ pub async fn get_session_file_status(
     let mut last_type: Option<String> = None;
     let mut is_error = false;
     let mut awaiting_approval = false;
+    let mut last_user_message: Option<String> = None;
 
     for line in reader.lines() {
         if let Ok(line) = line {
@@ -1116,6 +1120,44 @@ pub async fn get_session_file_status(
                                 awaiting_approval = true;
                             }
                         }
+                    } else if t == "user" {
+                        // Extract text from the last user message for sidebar subtitle
+                        let text = json
+                            .get("message")
+                            .and_then(|m| m.get("content"))
+                            .and_then(|c| {
+                                if let Some(s) = c.as_str() {
+                                    return Some(s.to_string());
+                                }
+                                if let Some(arr) = c.as_array() {
+                                    return arr.iter()
+                                        .filter_map(|item| {
+                                            if item.get("type").and_then(|v| v.as_str()) == Some("text") {
+                                                item.get("text").and_then(|v| v.as_str()).map(|s| s.to_string())
+                                            } else {
+                                                None
+                                            }
+                                        })
+                                        .next();
+                                }
+                                None
+                            });
+                        if let Some(mut text) = text {
+                            // Strip leading context-compaction prefix if present
+                            if let Some(pos) = text.find('\n') {
+                                if text.starts_with('<') {
+                                    text = text[pos + 1..].to_string();
+                                }
+                            }
+                            let trimmed = text.trim().to_string();
+                            if !trimmed.is_empty() {
+                                last_user_message = Some(if trimmed.len() > 120 {
+                                    format!("{}…", &trimmed[..120])
+                                } else {
+                                    trimmed
+                                });
+                            }
+                        }
                     }
                 }
             }
@@ -1128,6 +1170,7 @@ pub async fn get_session_file_status(
         lines_total,
         modified_secs_ago,
         awaiting_approval,
+        last_user_message,
     })
 }
 
