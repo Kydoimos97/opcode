@@ -161,6 +161,7 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
   const unlistenRefs = useRef<UnlistenFn[]>([]);
   const hasActiveSessionRef = useRef(false);
   const fileLineCountRef = useRef<number>(0);
+  const byteOffsetRef = useRef<number>(0);
   const floatingPromptRef = useRef<FloatingPromptInputRef>(null);
   const queuedPromptsRef = useRef<Array<{ id: string; prompt: string; model: "sonnet" | "opus" | "haiku" }>>([]);
   const isMountedRef = useRef(true);
@@ -421,23 +422,44 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
     const interval = setInterval(async () => {
       if (!isMountedRef.current || isLoading) return;
       try {
-        const newLines = await api.pollSessionFile(sessionId, projectId, fileLineCountRef.current);
-        if (!isMountedRef.current || newLines.length === 0) return;
+        const tailResult = await api.readSessionTail(sessionId, projectId, byteOffsetRef.current);
+        if (!isMountedRef.current) return;
 
-        fileLineCountRef.current += newLines.length;
-        const newMessages: ClaudeStreamMessage[] = newLines.map((entry: any) => ({
-          ...entry,
-          type: entry.type || 'assistant',
-        }));
-        setMessages(prev => [...prev, ...newMessages]);
+        // new_offset === 0 means file was truncated — fall back to full reload
+        if (tailResult.newOffset === 0 && byteOffsetRef.current > 0) {
+          byteOffsetRef.current = 0;
+          fileLineCountRef.current = 0;
+          await loadSessionHistory();
+          return;
+        }
 
-        // Derive tab status from the last meaningful entry
-        const lastEntry = newLines[newLines.length - 1] as any;
-        if (lastEntry && activeTab) {
-          if (lastEntry.type === 'result') {
-            updateTab(activeTab.id, { status: lastEntry.is_error ? 'error' : 'complete' });
-          } else if (lastEntry.type === 'assistant' || lastEntry.type === 'tool_use') {
-            updateTab(activeTab.id, { status: 'running' });
+        if (tailResult.lines.length === 0) return;
+
+        byteOffsetRef.current = tailResult.newOffset;
+        fileLineCountRef.current += tailResult.lines.length;
+
+        const newMessages: ClaudeStreamMessage[] = tailResult.lines
+          .map((line: string) => {
+            try {
+              const entry = JSON.parse(line);
+              return { ...entry, type: entry.type || 'assistant' } as ClaudeStreamMessage;
+            } catch {
+              return null;
+            }
+          })
+          .filter((m): m is ClaudeStreamMessage => m !== null);
+
+        if (newMessages.length > 0) {
+          setMessages(prev => [...prev, ...newMessages]);
+
+          // Derive tab status from the last meaningful entry
+          const lastEntry = newMessages[newMessages.length - 1] as any;
+          if (lastEntry && activeTab) {
+            if (lastEntry.type === 'result') {
+              updateTab(activeTab.id, { status: lastEntry.is_error ? 'error' : 'complete' });
+            } else if (lastEntry.type === 'assistant' || lastEntry.type === 'tool_use') {
+              updateTab(activeTab.id, { status: 'running' });
+            }
           }
         }
       } catch {
@@ -452,6 +474,7 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
     if (!session || isLoading) return;
     setMessages([]);
     fileLineCountRef.current = 0;
+    byteOffsetRef.current = 0;
     await loadSessionHistory();
   };
 
@@ -490,6 +513,7 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
       setMessages(loadedMessages);
       setRawJsonlOutput(history.map(h => JSON.stringify(h)));
       fileLineCountRef.current = history.length;
+      byteOffsetRef.current = 0;
 
       // After loading history, we're continuing a conversation
       setIsFirstPrompt(false);

@@ -1830,6 +1830,21 @@ export const api = {
   },
 
   /**
+   * Reads new lines from a JSONL session file starting at a byte offset.
+   * Returns raw JSONL lines and the new byte offset after reading.
+   */
+  async readSessionTail(sessionId: string, projectId: string, byteOffset: number): Promise<{
+    lines: string[];
+    newOffset: number;
+  }> {
+    return apiCall<{ lines: string[]; newOffset: number }>("read_session_tail", {
+      session_id: sessionId,
+      project_id: projectId,
+      byte_offset: byteOffset,
+    });
+  },
+
+  /**
    * Returns the absolute filesystem path of a session JSONL file.
    */
   async getSessionFilePath(sessionId: string, projectId: string): Promise<string> {

@@ -1046,6 +1046,85 @@ pub async fn poll_session_file(
     Ok(messages)
 }
 
+/// Result of reading new lines from a session tail.
+#[derive(serde::Serialize, serde::Deserialize)]
+pub struct SessionTailResult {
+    /// Raw JSONL line strings
+    pub lines: Vec<String>,
+    /// New byte offset after reading (file size)
+    pub new_offset: u64,
+}
+
+/// Reads new lines from a session JSONL file starting at `byte_offset`.
+/// Returns raw JSONL line strings and the new byte offset after reading.
+/// If `new_offset < byte_offset` (file truncated/rotated), returns empty lines
+/// with `new_offset = 0` so the caller can fall back to a full reload.
+/// Opens with FILE_SHARE_READ | FILE_SHARE_WRITE on Windows to allow concurrent writes.
+#[tauri::command]
+pub async fn read_session_tail(
+    session_id: String,
+    project_id: String,
+    byte_offset: u64,
+) -> Result<SessionTailResult, String> {
+    let claude_dir = get_claude_dir().map_err(|e| e.to_string())?;
+    let session_path = claude_dir
+        .join("projects")
+        .join(&project_id)
+        .join(format!("{}.jsonl", session_id));
+
+    if !session_path.exists() {
+        return Ok(SessionTailResult { lines: vec![], new_offset: byte_offset });
+    }
+
+    // Open with file sharing on Windows so Claude can write concurrently
+    #[cfg(target_os = "windows")]
+    let file = {
+        use std::os::windows::fs::OpenOptionsExt;
+        std::fs::OpenOptions::new()
+            .read(true)
+            .share_mode(0x00000001 | 0x00000002) // FILE_SHARE_READ | FILE_SHARE_WRITE
+            .open(&session_path)
+            .map_err(|e| format!("Failed to open session file: {}", e))?
+    };
+    #[cfg(not(target_os = "windows"))]
+    let file = std::fs::File::open(&session_path)
+        .map_err(|e| format!("Failed to open session file: {}", e))?;
+
+    // Get current file size
+    let file_size = file.metadata()
+        .map(|m| m.len())
+        .unwrap_or(0);
+
+    // File was truncated — signal caller to do a full reload
+    if file_size < byte_offset {
+        return Ok(SessionTailResult { lines: vec![], new_offset: 0 });
+    }
+
+    // Nothing new
+    if file_size == byte_offset {
+        return Ok(SessionTailResult { lines: vec![], new_offset: byte_offset });
+    }
+
+    // Seek to byte_offset and read new content
+    use std::io::{Read, Seek, SeekFrom};
+    let mut file = file;
+    file.seek(SeekFrom::Start(byte_offset))
+        .map_err(|e| format!("Failed to seek: {}", e))?;
+
+    let mut buf = String::new();
+    file.read_to_string(&mut buf)
+        .map_err(|e| format!("Failed to read: {}", e))?;
+
+    let lines: Vec<String> = buf
+        .lines()
+        .filter(|l| !l.trim().is_empty())
+        .map(|l| l.to_string())
+        .collect();
+
+    // New offset = file_size (we've read everything up to now)
+    Ok(SessionTailResult { lines, new_offset: file_size })
+}
+
 /// Returns the absolute path of a session JSONL file.
 #[tauri::command]
 pub async fn get_session_file_path(session_id: String, project_id: String) -> Result<String, String> {

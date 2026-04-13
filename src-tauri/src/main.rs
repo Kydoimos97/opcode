@@ -34,7 +34,7 @@ use commands::claude::{
     track_session_messages, update_checkpoint_settings, update_hooks_config, validate_hook_command,
     write_and_verify_commands_conf, write_native_agent, ClaudeProcessState,
     list_claude_directory, read_claude_file, list_session_logs,
-    poll_session_file, get_session_file_status, get_session_file_path,
+    poll_session_file, read_session_tail, get_session_file_status, get_session_file_path,
     read_ccode_settings, write_ccode_settings, read_session_status, open_path,
 };
 use commands::fonts::list_system_fonts;
@@ -302,6 +302,7 @@ fn main() {
             list_session_logs,
             // Session file polling
             poll_session_file,
+            read_session_tail,
             get_session_file_status,
             get_session_file_path,
             read_ccode_settings,
