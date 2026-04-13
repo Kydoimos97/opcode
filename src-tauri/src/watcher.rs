@@ -57,15 +57,20 @@ pub fn init_session_watcher(app: AppHandle) -> SessionWatcherState {
             }
         };
 
+        println!("[watcher] Debouncer fired: {} events", events.len());
+
         for event in events {
             match event.kind {
                 EventKind::Modify(_) | EventKind::Create(_) => {
                     for path in &event.paths {
                         if let Some((session_id, project_id)) = parse_session_path(path) {
+                            println!("[watcher] File changed: {} in project {} — emitting", session_id, project_id);
                             let _ = app_clone.emit("session-file-changed", serde_json::json!({
                                 "session_id": session_id,
                                 "project_id": project_id,
                             }));
+                        } else {
+                            println!("[watcher] Ignored change: {}", path.display());
                         }
                     }
                 }

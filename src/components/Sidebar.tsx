@@ -178,7 +178,10 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onToggle }) => {
       listen<{ session_id: string; project_id: string }>('session-file-changed', async (event) => {
         const { session_id, project_id } = event.payload;
         const matchingTab = tabs.find(
-          t => t.type === 'chat' && t.claudeSessionId === session_id && t.claudeProjectId === project_id
+          t => t.type === 'chat' && (
+            (t.claudeSessionId === session_id && t.claudeProjectId === project_id) ||
+            (t.sessionId === session_id && t.sessionData?.project_id === project_id)
+          )
         );
         if (!matchingTab) return;
         try {
@@ -215,10 +218,16 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onToggle }) => {
   // 60s safety poll — catches watcher gaps and startup state
   useEffect(() => {
     const pollAll = async () => {
-      const targets = tabs.filter(t => t.type === 'chat' && t.claudeSessionId && t.claudeProjectId);
+      const targets = tabs.filter(t => t.type === 'chat' && (
+        (t.claudeSessionId && t.claudeProjectId) ||
+        (t.sessionId && t.sessionData?.project_id)
+      ));
       for (const tab of targets) {
+        const sessionId = tab.claudeSessionId || tab.sessionId!;
+        const projectId = tab.claudeProjectId || tab.sessionData?.project_id;
+        if (!sessionId || !projectId) continue;
         try {
-          const status: SessionFileStatus = await api.getSessionFileStatus(tab.claudeSessionId!, tab.claudeProjectId!);
+          const status: SessionFileStatus = await api.getSessionFileStatus(sessionId, projectId);
           let newStatus: Tab['status'];
           if (status.last_type === 'result') {
             newStatus = status.is_error ? 'error' : 'complete';
