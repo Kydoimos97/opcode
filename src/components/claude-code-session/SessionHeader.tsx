@@ -13,6 +13,10 @@ import {
   ChevronsDownUp,
   FileText,
   Zap,
+  Search,
+  ChevronUp,
+  ChevronDown,
+  X,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Popover } from '@/components/ui/popover';
@@ -54,6 +58,14 @@ interface SessionHeaderProps {
   onOpenSessionFile?: () => void;
   onShowTimeline?: () => void;
   setCopyPopoverOpen: (open: boolean) => void;
+  searchOpen?: boolean;
+  searchQuery?: string;
+  searchMatchCount?: number;
+  searchMatchIndex?: number;
+  onSearchToggle?: () => void;
+  onSearchQueryChange?: (query: string) => void;
+  onSearchNext?: () => void;
+  onSearchPrev?: () => void;
 }
 
 export const SessionHeader: React.FC<SessionHeaderProps> = React.memo(({
@@ -80,6 +92,14 @@ export const SessionHeader: React.FC<SessionHeaderProps> = React.memo(({
   onOpenSessionFile,
   onShowTimeline,
   setCopyPopoverOpen,
+  searchOpen,
+  searchQuery,
+  searchMatchCount,
+  searchMatchIndex,
+  onSearchToggle,
+  onSearchQueryChange,
+  onSearchNext,
+  onSearchPrev,
 }) => {
   const { displayName, setDisplayName } = useProjectDisplayName(projectPath);
   const { color: projectColor } = useProjectColor(projectPath);
@@ -161,6 +181,19 @@ export const SessionHeader: React.FC<SessionHeaderProps> = React.memo(({
 
         {/* Right — actions */}
         <div className="flex items-center gap-1 shrink-0">
+
+          {onSearchToggle && (
+            <TooltipSimple content="Search messages" side="bottom">
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={onSearchToggle}
+                className={cn('h-8 w-8 transition-colors', searchOpen && 'bg-accent text-accent-foreground')}
+              >
+                <Search className="h-4 w-4" />
+              </Button>
+            </TooltipSimple>
+          )}
 
           {onRefresh && !isStreaming && (
             <TooltipSimple content="Reload session" side="bottom">
@@ -325,6 +358,43 @@ export const SessionHeader: React.FC<SessionHeaderProps> = React.memo(({
         </div>
 
       </div>
+
+      {searchOpen && onSearchQueryChange && (
+        <div className="flex items-center gap-2 pt-2 pb-1">
+          <div className="relative flex-1">
+            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground pointer-events-none" />
+            <input
+              autoFocus
+              type="text"
+              value={searchQuery ?? ''}
+              onChange={(e) => onSearchQueryChange(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') e.shiftKey ? onSearchPrev?.() : onSearchNext?.();
+                if (e.key === 'Escape') onSearchToggle?.();
+              }}
+              placeholder="Search messages..."
+              className="w-full h-7 pl-8 pr-3 text-xs bg-muted/50 border border-border/50 rounded-md outline-none focus:border-primary/50 transition-colors"
+            />
+          </div>
+          {(searchMatchCount ?? 0) > 0 && (
+            <span className="text-xs text-muted-foreground shrink-0">
+              {(searchMatchIndex ?? 0) + 1} / {searchMatchCount}
+            </span>
+          )}
+          {(searchMatchCount ?? 0) === 0 && (searchQuery?.length ?? 0) > 0 && (
+            <span className="text-xs text-muted-foreground shrink-0">No results</span>
+          )}
+          <Button variant="ghost" size="icon" className="h-6 w-6 shrink-0" onClick={onSearchPrev} disabled={!searchMatchCount}>
+            <ChevronUp className="h-3.5 w-3.5" />
+          </Button>
+          <Button variant="ghost" size="icon" className="h-6 w-6 shrink-0" onClick={onSearchNext} disabled={!searchMatchCount}>
+            <ChevronDown className="h-3.5 w-3.5" />
+          </Button>
+          <Button variant="ghost" size="icon" className="h-6 w-6 shrink-0" onClick={onSearchToggle}>
+            <X className="h-3.5 w-3.5" />
+          </Button>
+        </div>
+      )}
     </div>
   );
 });

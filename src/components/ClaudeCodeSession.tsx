@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useMemo } from "react";
+import React, { useState, useEffect, useRef, useMemo, useLayoutEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   Copy,
@@ -50,6 +50,7 @@ import { useVirtualizer } from "@tanstack/react-virtual";
 import { useTabState } from "@/hooks/useTabState";
 import { SessionPersistenceService } from "@/services/sessionPersistence";
 import { useGroupedMessages } from "@/hooks/useGroupedMessages";
+import { useMessagePartition } from "@/hooks/useMessagePartition";
 import { TurnBlock } from "./TurnBlock";
 
 export type SessionState =
@@ -145,6 +146,12 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
 
   // Session state tracking
   const [sessionState, setSessionState] = useState<SessionState>("idle");
+
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [searchMatchIndex, setSearchMatchIndex] = useState(0);
+  const [historyExpanded, setHistoryExpanded] = useState(false);
+  const [showLoadHistory, setShowLoadHistory] = useState(false);
 
   const parentRef = useRef<HTMLDivElement>(null);
   const unlistenRefs = useRef<UnlistenFn[]>([]);
@@ -279,7 +286,24 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
   }, [messages]);
 
   // Group messages into turns
-  const turns = useGroupedMessages(displayableMessages);
+  const allTurns = useGroupedMessages(displayableMessages);
+  const { visible: partitionedTurns, hiddenCount } = useMessagePartition(allTurns, 10, historyExpanded);
+  const turns = partitionedTurns;
+
+  const searchMatchTurnIndices = useMemo(() => {
+    if (!searchQuery.trim()) return [];
+    const q = searchQuery.toLowerCase();
+    const indices: number[] = [];
+    allTurns.forEach((turn, i) => {
+      const text = [
+        turn.userMessage ? JSON.stringify(turn.userMessage) : '',
+        ...turn.workItems.map(m => JSON.stringify(m)),
+        turn.result ? JSON.stringify(turn.result) : '',
+      ].join(' ').toLowerCase();
+      if (text.includes(q)) indices.push(i);
+    });
+    return indices;
+  }, [allTurns, searchQuery]);
 
   const rowVirtualizer = useVirtualizer({
     count: turns.length,
@@ -312,27 +336,54 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
     onStreamingChange?.(isLoading, claudeSessionId);
   }, [isLoading, claudeSessionId, onStreamingChange]);
 
-  // Auto-scroll to bottom when new messages arrive
+  // Reset historyExpanded when new messages arrive
   useEffect(() => {
     if (displayableMessages.length > 0) {
-      // Use a more precise scrolling method to ensure content is fully visible
-      setTimeout(() => {
-        const scrollElement = parentRef.current;
-        if (scrollElement) {
-          // First, scroll using virtualizer to get close to the bottom
-          rowVirtualizer.scrollToIndex(displayableMessages.length - 1, { align: 'end', behavior: 'auto' });
-
-          // Then use direct scroll to ensure we reach the absolute bottom
-          requestAnimationFrame(() => {
-            scrollElement.scrollTo({
-              top: scrollElement.scrollHeight,
-              behavior: 'smooth'
-            });
-          });
-        }
-      }, 50);
+      setHistoryExpanded(false);
     }
-  }, [displayableMessages.length, rowVirtualizer]);
+  }, [displayableMessages.length]);
+
+  // Reset searchMatchIndex when query changes
+  useEffect(() => {
+    setSearchMatchIndex(0);
+  }, [searchQuery]);
+
+  // Scroll to search match
+  useEffect(() => {
+    if (searchMatchTurnIndices.length === 0) return;
+    const absoluteTurnIndex = searchMatchTurnIndices[searchMatchIndex] ?? searchMatchTurnIndices[0];
+    // Find the index within visible partitionedTurns
+    const visibleIndex = partitionedTurns.findIndex((_, i) => hiddenCount + i === absoluteTurnIndex);
+    if (visibleIndex >= 0) {
+      rowVirtualizer.scrollToIndex(visibleIndex, { align: 'start', behavior: 'smooth' });
+    }
+  }, [searchMatchIndex, searchMatchTurnIndices]);
+
+  // Auto-scroll to bottom when new messages arrive
+  useLayoutEffect(() => {
+    if (displayableMessages.length > 0 && !searchQuery) {
+      const scrollElement = parentRef.current;
+      if (scrollElement) {
+        rowVirtualizer.scrollToIndex(turns.length - 1, { align: 'end', behavior: 'auto' });
+        requestAnimationFrame(() => {
+          if (parentRef.current) {
+            parentRef.current.scrollTop = parentRef.current.scrollHeight;
+          }
+        });
+      }
+    }
+  }, [displayableMessages.length]);
+
+  // Add scroll handler for "show load history"
+  useEffect(() => {
+    const el = parentRef.current;
+    if (!el) return;
+    const handleScroll = () => {
+      setShowLoadHistory(el.scrollTop < 200 && !historyExpanded && hiddenCount > 0);
+    };
+    el.addEventListener('scroll', handleScroll, { passive: true });
+    return () => el.removeEventListener('scroll', handleScroll);
+  }, [historyExpanded, hiddenCount]);
 
   // Store session IDs on the tab so the sidebar can poll status for non-active tabs
   useEffect(() => {
@@ -1005,11 +1056,11 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
   const messagesList = (
     <div
       ref={parentRef}
-      className="flex-1 overflow-y-auto relative pb-4"
+      className="flex-1 overflow-y-auto relative pb-4 scrollbar-hide"
       style={{
         contain: 'strict',
         scrollbarGutter: 'stable',
-        scrollbarWidth: 'thin',
+        scrollbarWidth: 'none',
       }}
     >
       <div
@@ -1019,9 +1070,22 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
           minHeight: '100px',
         }}
       >
+        {showLoadHistory && !historyExpanded && hiddenCount > 0 && (
+          <div className="sticky top-0 z-10 flex justify-center py-2">
+            <button
+              onClick={() => { setHistoryExpanded(true); setShowLoadHistory(false); }}
+              className="px-4 py-1.5 text-xs bg-muted border border-border/50 rounded-full hover:bg-accent transition-colors"
+            >
+              Load full history ({hiddenCount} turns hidden)
+            </button>
+          </div>
+        )}
         <AnimatePresence>
           {rowVirtualizer.getVirtualItems().map((virtualItem) => {
             const turn = turns[virtualItem.index];
+            const isSearchActive = searchQuery.trim().length > 0;
+            const absoluteIndex = hiddenCount + virtualItem.index;
+            const isMatch = isSearchActive ? searchMatchTurnIndices.includes(absoluteIndex) : true;
             return (
               <motion.div
                 key={virtualItem.key}
@@ -1034,6 +1098,7 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
                 className="absolute inset-x-4 pb-4"
                 style={{
                   top: virtualItem.start,
+                  opacity: isSearchActive && !isMatch ? 0.3 : 1,
                 }}
               >
                 <TurnBlock
@@ -1150,6 +1215,14 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
           } : undefined}
           onShowTimeline={effectiveSession ? () => setShowTimeline(true) : undefined}
           setCopyPopoverOpen={setCopyPopoverOpen}
+          searchOpen={searchOpen}
+          searchQuery={searchQuery}
+          searchMatchCount={searchMatchTurnIndices.length}
+          searchMatchIndex={searchMatchIndex}
+          onSearchToggle={() => { setSearchOpen(v => !v); if (searchOpen) setSearchQuery(''); }}
+          onSearchQueryChange={setSearchQuery}
+          onSearchNext={() => setSearchMatchIndex(i => (i + 1) % Math.max(searchMatchTurnIndices.length, 1))}
+          onSearchPrev={() => setSearchMatchIndex(i => (i - 1 + Math.max(searchMatchTurnIndices.length, 1)) % Math.max(searchMatchTurnIndices.length, 1))}
         />
         <div className="flex-1 min-h-0 flex flex-col">
 
