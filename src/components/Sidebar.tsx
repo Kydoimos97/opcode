@@ -20,6 +20,7 @@ import appLogo from '@/assets/logo.png';
 import { useTabContext, type Tab } from '@/contexts/TabContext';
 import { useTabState } from '@/hooks/useTabState';
 import { api, type GitInfo, type WorktreeInfo, type SessionFileStatus } from '@/lib/api';
+import { ccodeSettings } from '@/lib/ccodeSettings';
 import { cn } from '@/lib/utils';
 import { TooltipSimple } from '@/components/ui/tooltip-modern';
 
@@ -62,8 +63,10 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onToggle }) => {
   const [expandedRepos, setExpandedRepos] = useState<Set<string>>(new Set());
   const [gitInfoVersion, setGitInfoVersion] = useState(0);
   const [worktreeVersion, setWorktreeVersion] = useState(0);
+  const [displayNameVersion, setDisplayNameVersion] = useState(0);
   const gitInfoCache = useRef<Map<string, GitInfo>>(new Map());
   const worktreeCache = useRef<Map<string, WorktreeInfo[]>>(new Map());
+  const displayNameCache = useRef<Map<string, string | null>>(new Map());
   const [hoveredSessionId, setHoveredSessionId] = useState<string | null>(null);
 
   const chatTabs = useMemo(
@@ -79,7 +82,8 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onToggle }) => {
       if (!path) return;
 
       const cached = gitInfoCache.current.get(path);
-      const repoName = cached?.repo_name || path.split(/[\\/]/).pop() || 'Unknown';
+      const customName = displayNameCache.current.get(path);
+      const repoName = customName ?? cached?.repo_name ?? path.split(/[\\/]/).pop() ?? 'Unknown';
 
       if (!groups.has(repoName)) {
         groups.set(repoName, { repoName, worktrees: new Map(), ungroupedTabs: [] });
@@ -102,7 +106,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onToggle }) => {
 
     return Array.from(groups.values());
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [chatTabs, gitInfoVersion, worktreeVersion]);
+  }, [chatTabs, gitInfoVersion, worktreeVersion, displayNameVersion]);
 
   useEffect(() => {
     setExpandedRepos((prev) => {
@@ -111,6 +115,17 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onToggle }) => {
       return next;
     });
   }, [groupedTabs]);
+
+  const loadDisplayName = async (path: string) => {
+    if (displayNameCache.current.has(path)) return;
+    try {
+      const meta = await ccodeSettings.getProject(path);
+      displayNameCache.current.set(path, meta.name ?? null);
+      setDisplayNameVersion((v) => v + 1);
+    } catch {
+      displayNameCache.current.set(path, null);
+    }
+  };
 
   const loadGitInfo = async (path: string) => {
     if (gitInfoCache.current.has(path)) return;
@@ -174,6 +189,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onToggle }) => {
       if (tab.initialProjectPath) {
         loadGitInfo(tab.initialProjectPath);
         loadWorktrees(tab.initialProjectPath);
+        loadDisplayName(tab.initialProjectPath);
       }
     });
   }, [chatTabs]);
