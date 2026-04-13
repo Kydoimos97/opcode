@@ -165,6 +165,20 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
     return 0;
   }, [messages]);
 
+  const remoteControlActive = useMemo(() => {
+    return messages.some(msg => {
+      if (msg.type !== "user") return false;
+      const content: unknown = msg.message?.content;
+      if (typeof content === "string") return content.trim().startsWith("/remote-control");
+      if (Array.isArray(content)) {
+        return content.some((block: any) =>
+          typeof block?.text === "string" && block.text.trim().startsWith("/remote-control")
+        );
+      }
+      return false;
+    });
+  }, [messages]);
+
   const parentRef = useRef<HTMLDivElement>(null);
   const unlistenRefs = useRef<UnlistenFn[]>([]);
   const hasActiveSessionRef = useRef(false);
@@ -1266,6 +1280,7 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
             }
           } : undefined}
           activePlanPath={hookState.activePlanPath ?? undefined}
+          remoteControlActive={remoteControlActive}
           onShowTimeline={effectiveSession ? () => setShowTimeline(true) : undefined}
           setCopyPopoverOpen={setCopyPopoverOpen}
           searchOpen={searchOpen}

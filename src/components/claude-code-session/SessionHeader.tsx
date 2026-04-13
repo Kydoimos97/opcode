@@ -20,6 +20,7 @@ import {
   X,
   Terminal,
   BookOpen,
+  Radio,
 } from 'lucide-react';
 import { api } from '@/lib/api';
 import { Button } from '@/components/ui/button';
@@ -72,6 +73,7 @@ interface SessionHeaderProps {
   onSearchNext?: () => void;
   onSearchPrev?: () => void;
   activePlanPath?: string;
+  remoteControlActive?: boolean;
 }
 
 export const SessionHeader: React.FC<SessionHeaderProps> = React.memo(({
@@ -108,6 +110,7 @@ export const SessionHeader: React.FC<SessionHeaderProps> = React.memo(({
   onSearchNext,
   onSearchPrev,
   activePlanPath,
+  remoteControlActive,
 }) => {
   const { displayName, setDisplayName } = useProjectDisplayName(projectPath);
   const { color: projectColor } = useProjectColor(projectPath);
@@ -256,6 +259,18 @@ export const SessionHeader: React.FC<SessionHeaderProps> = React.memo(({
               >
                 <BookOpen className="h-3 w-3" />
                 {planName}
+              </Badge>
+            </TooltipSimple>
+          )}
+
+          {remoteControlActive && (
+            <TooltipSimple content="Remote control mode active" side="bottom">
+              <Badge
+                variant="outline"
+                className="text-xs select-none gap-1 border-emerald-500/30 text-emerald-500 bg-emerald-500/10"
+              >
+                <Radio className="h-3 w-3 animate-pulse" />
+                Remote active
               </Badge>
             </TooltipSimple>
           )}
