@@ -237,7 +237,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onToggle }) => {
             <TooltipSimple content="Collapse sidebar" side="right">
               <button
                 onClick={onToggle}
-                className="p-1 rounded hover:bg-accent hover:text-accent-foreground transition-colors tauri-no-drag"
+                className="p-1 rounded hover:bg-muted hover:text-foreground transition-colors tauri-no-drag"
               >
                 <PanelLeftClose size={14} />
               </button>
@@ -247,7 +247,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onToggle }) => {
           <TooltipSimple content="Expand sidebar" side="right">
             <button
               onClick={onToggle}
-              className="w-full flex items-center justify-center p-2 rounded hover:bg-accent hover:text-accent-foreground transition-colors tauri-no-drag"
+              className="w-full flex items-center justify-center p-2 rounded hover:bg-muted hover:text-foreground transition-colors tauri-no-drag"
             >
               <PanelLeft size={14} />
             </button>
@@ -298,7 +298,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onToggle }) => {
                 <>
                   <button
                     onClick={() => toggleRepoExpanded(group.repoName)}
-                    className="w-full px-4 py-2 text-left hover:bg-accent/50 transition-colors flex items-center gap-2 group"
+                    className="w-full px-4 py-2 text-left hover:bg-muted/80 transition-colors flex items-center gap-2 group"
                   >
                     {expandedRepos.has(group.repoName)
                       ? <ChevronDown size={14} className="flex-shrink-0" />
@@ -333,8 +333,8 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onToggle }) => {
                                   <button
                                     onClick={() => setActiveTab(tab.id)}
                                     className={cn(
-                                      'w-full px-4 py-2 text-left text-xs flex items-center gap-2 truncate transition-colors pl-12 hover:bg-accent/50',
-                                      activeTabId === tab.id ? 'bg-accent text-accent-foreground' : 'text-foreground/70'
+                                      'w-full px-4 py-2 text-left text-xs flex items-center gap-2 truncate transition-colors pl-12 hover:bg-muted/80',
+                                      activeTabId === tab.id ? 'bg-muted text-foreground' : 'text-foreground/70'
                                     )}
                                   >
                                     <div className={cn('w-2 h-2 rounded-full flex-shrink-0', getStatusDotColor(tab.status))} />
@@ -342,7 +342,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onToggle }) => {
                                     {hoveredSessionId === tab.id && (
                                       <button
                                         onClick={(e) => { e.stopPropagation(); closeTab(tab.id); }}
-                                        className="p-1 rounded hover:bg-accent/50 flex-shrink-0"
+                                        className="p-1 rounded hover:bg-muted/80 flex-shrink-0"
                                       >
                                         <X size={12} />
                                       </button>
@@ -363,8 +363,8 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onToggle }) => {
                               <button
                                 onClick={() => setActiveTab(tab.id)}
                                 className={cn(
-                                  'w-full px-4 py-2 text-left text-xs flex items-center gap-2 truncate transition-colors pl-8 hover:bg-accent/50',
-                                  activeTabId === tab.id ? 'bg-accent text-accent-foreground' : 'text-foreground/70'
+                                  'w-full px-4 py-2 text-left text-xs flex items-center gap-2 truncate transition-colors pl-8 hover:bg-muted/80',
+                                  activeTabId === tab.id ? 'bg-muted text-foreground' : 'text-foreground/70'
                                 )}
                               >
                                 <div className={cn('w-2 h-2 rounded-full flex-shrink-0', getStatusDotColor(tab.status))} />
@@ -372,7 +372,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onToggle }) => {
                                 {hoveredSessionId === tab.id && (
                                   <button
                                     onClick={(e) => { e.stopPropagation(); closeTab(tab.id); }}
-                                    className="p-1 rounded hover:bg-accent/50 flex-shrink-0"
+                                    className="p-1 rounded hover:bg-muted/80 flex-shrink-0"
                                   >
                                     <X size={12} />
                                   </button>
@@ -408,8 +408,8 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onToggle }) => {
               <button
                 onClick={() => handleUtilityClick(type)}
                 className={cn(
-                  'w-full px-4 py-2 text-left text-xs flex items-center gap-2 transition-colors tauri-no-drag hover:bg-accent/50',
-                  isUtilityActive(type) ? 'bg-accent text-accent-foreground' : 'text-foreground/70'
+                  'w-full px-4 py-2 text-left text-xs flex items-center gap-2 transition-colors tauri-no-drag hover:bg-muted/80',
+                  isUtilityActive(type) ? 'bg-muted text-foreground' : 'text-foreground/70'
                 )}
               >
                 <Icon size={14} className="flex-shrink-0" />
@@ -420,8 +420,8 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onToggle }) => {
                 <button
                   onClick={() => handleUtilityClick(type)}
                   className={cn(
-                    'w-full flex items-center justify-center p-2 transition-colors tauri-no-drag hover:bg-accent/50',
-                    isUtilityActive(type) ? 'bg-accent text-accent-foreground' : 'text-foreground/70'
+                    'w-full flex items-center justify-center p-2 transition-colors tauri-no-drag hover:bg-muted/80',
+                    isUtilityActive(type) ? 'bg-muted text-foreground' : 'text-foreground/70'
                   )}
                 >
                   <Icon size={14} />

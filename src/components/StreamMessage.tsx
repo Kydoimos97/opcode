@@ -422,7 +422,7 @@ const AssistantMessage: React.FC<AssistantMessageProps> = ({
     <Card className={cn("border", className)} style={getCardStyle()}>
       <CardContent className="p-4">
         <div className="flex items-start gap-3">
-          <Bot className={cn("h-5 w-5 mt-0.5", isToolOnly ? "text-muted-foreground" : "text-blue-500")} />
+          <Bot className={cn("h-5 w-5 mt-0.5", isToolOnly ? "text-muted-foreground" : "text-accent")} />
           <div className="flex-1 space-y-2 min-w-0">
             {renderableBlocks.map((block: any, idx: number) => {
               if (block.type === "text") {

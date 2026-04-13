@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   Plus,
@@ -82,66 +82,7 @@ const NAV_ITEMS = [
 ] as const;
 type SectionId = typeof NAV_ITEMS[number]['id'];
 
-function parseRgba(value: string): { hex: string; alpha: number } {
-  const m = value.match(/rgba?\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)(?:\s*,\s*([\d.]+))?\s*\)/);
-  if (m) {
-    const hex = '#' + [m[1], m[2], m[3]].map(n => parseInt(n).toString(16).padStart(2, '0')).join('');
-    return { hex, alpha: m[4] !== undefined ? parseFloat(m[4]) : 1 };
-  }
-  if (/^#[0-9a-f]{6}$/i.test(value)) return { hex: value, alpha: 1 };
-  return { hex: '#888888', alpha: 1 };
-}
 
-function hexToRgba(hex: string, alpha: number): string {
-  const r = parseInt(hex.slice(1, 3), 16);
-  const g = parseInt(hex.slice(3, 5), 16);
-  const b = parseInt(hex.slice(5, 7), 16);
-  return `rgba(${r}, ${g}, ${b}, ${alpha})`;
-}
-
-interface ChatColorFieldProps {
-  id: string;
-  label: string;
-  value: string;
-  onChange: (v: string) => void;
-}
-
-const ChatColorField: React.FC<ChatColorFieldProps> = ({ id, label, value, onChange }) => {
-  const { hex, alpha } = parseRgba(value);
-  const pickerRef = useRef<HTMLInputElement>(null);
-  return (
-    <div className="space-y-1.5">
-      <Label htmlFor={id} className="text-caption">{label}</Label>
-      <div className="flex items-center gap-2">
-        <div
-          className="w-8 h-8 rounded border border-border flex-shrink-0 cursor-pointer relative overflow-hidden"
-          style={{ backgroundColor: value }}
-          onClick={() => pickerRef.current?.click()}
-        >
-          <input
-            ref={pickerRef}
-            type="color"
-            value={hex}
-            onChange={(e) => onChange(hexToRgba(e.target.value, alpha))}
-            className="absolute inset-0 opacity-0 cursor-pointer w-full h-full p-0 m-0 border-0"
-            tabIndex={-1}
-          />
-        </div>
-        <input
-          type="number"
-          min="0"
-          max="1"
-          step="0.05"
-          value={alpha}
-          onChange={(e) => onChange(hexToRgba(hex, Math.min(1, Math.max(0, parseFloat(e.target.value) || 0))))}
-          className="w-14 text-xs px-2 py-1.5 rounded border border-border bg-background text-foreground"
-          title="Opacity (0-1)"
-        />
-        <Input id={id} type="text" value={value} onChange={(e) => onChange(e.target.value)} className="font-mono text-xs flex-1" />
-      </div>
-    </div>
-  );
-};
 
 /**
  * Comprehensive Settings UI for managing Claude Code settings
@@ -172,7 +113,7 @@ export const Settings: React.FC<SettingsProps> = ({
   const getUserHooks = React.useRef<(() => any) | null>(null);
   
   // Theme hook
-  const { theme, setTheme, customColors, setCustomColors, chatColors, setChatColors } = useTheme();
+  const { theme, setTheme, customColors, setCustomColors } = useTheme();
   
   // Proxy state
   const [proxySettingsChanged, setProxySettingsChanged] = useState(false);
@@ -1084,24 +1025,6 @@ export const Settings: React.FC<SettingsProps> = ({
                         </div>
 
                         <div className="space-y-2">
-                          <Label htmlFor="color-secondary" className="text-caption">Secondary</Label>
-                          <div className="flex gap-2">
-                            <Input
-                              id="color-secondary"
-                              type="text"
-                              value={customColors.secondary}
-                              onChange={(e) => setCustomColors({ secondary: e.target.value })}
-                              placeholder="oklch(0.15 0.01 240)"
-                              className="font-mono text-xs flex-1"
-                            />
-                            <div
-                              className="w-10 h-10 rounded border flex-shrink-0"
-                              style={{ backgroundColor: customColors.secondary }}
-                            />
-                          </div>
-                        </div>
-
-                        <div className="space-y-2">
                           <Label htmlFor="color-muted" className="text-caption">Muted</Label>
                           <div className="flex gap-2">
                             <Input
@@ -1133,24 +1056,6 @@ export const Settings: React.FC<SettingsProps> = ({
                             <div
                               className="w-10 h-10 rounded border flex-shrink-0"
                               style={{ backgroundColor: customColors.accent }}
-                            />
-                          </div>
-                        </div>
-
-                        <div className="space-y-2">
-                          <Label htmlFor="color-input" className="text-caption">Input</Label>
-                          <div className="flex gap-2">
-                            <Input
-                              id="color-input"
-                              type="text"
-                              value={customColors.input}
-                              onChange={(e) => setCustomColors({ input: e.target.value })}
-                              placeholder="oklch(0.13 0.01 240)"
-                              className="font-mono text-xs flex-1"
-                            />
-                            <div
-                              className="w-10 h-10 rounded border flex-shrink-0"
-                              style={{ backgroundColor: customColors.input }}
                             />
                           </div>
                         </div>
@@ -1197,42 +1102,6 @@ export const Settings: React.FC<SettingsProps> = ({
                         </div>
 
                         <div className="space-y-2">
-                          <Label htmlFor="color-cardForeground" className="text-caption">Card Foreground</Label>
-                          <div className="flex gap-2">
-                            <Input
-                              id="color-cardForeground"
-                              type="text"
-                              value={customColors.cardForeground}
-                              onChange={(e) => setCustomColors({ cardForeground: e.target.value })}
-                              placeholder="oklch(0.98 0.01 240)"
-                              className="font-mono text-xs flex-1"
-                            />
-                            <div
-                              className="w-10 h-10 rounded border flex-shrink-0"
-                              style={{ backgroundColor: customColors.cardForeground }}
-                            />
-                          </div>
-                        </div>
-
-                        <div className="space-y-2">
-                          <Label htmlFor="color-secondaryForeground" className="text-caption">Secondary Foreground</Label>
-                          <div className="flex gap-2">
-                            <Input
-                              id="color-secondaryForeground"
-                              type="text"
-                              value={customColors.secondaryForeground}
-                              onChange={(e) => setCustomColors({ secondaryForeground: e.target.value })}
-                              placeholder="oklch(0.98 0.01 240)"
-                              className="font-mono text-xs flex-1"
-                            />
-                            <div
-                              className="w-10 h-10 rounded border flex-shrink-0"
-                              style={{ backgroundColor: customColors.secondaryForeground }}
-                            />
-                          </div>
-                        </div>
-
-                        <div className="space-y-2">
                           <Label htmlFor="color-mutedForeground" className="text-caption">Muted Foreground</Label>
                           <div className="flex gap-2">
                             <Input
@@ -1246,60 +1115,6 @@ export const Settings: React.FC<SettingsProps> = ({
                             <div
                               className="w-10 h-10 rounded border flex-shrink-0"
                               style={{ backgroundColor: customColors.mutedForeground }}
-                            />
-                          </div>
-                        </div>
-
-                        <div className="space-y-2">
-                          <Label htmlFor="color-accentForeground" className="text-caption">Accent Foreground</Label>
-                          <div className="flex gap-2">
-                            <Input
-                              id="color-accentForeground"
-                              type="text"
-                              value={customColors.accentForeground}
-                              onChange={(e) => setCustomColors({ accentForeground: e.target.value })}
-                              placeholder="oklch(0.98 0.01 240)"
-                              className="font-mono text-xs flex-1"
-                            />
-                            <div
-                              className="w-10 h-10 rounded border flex-shrink-0"
-                              style={{ backgroundColor: customColors.accentForeground }}
-                            />
-                          </div>
-                        </div>
-
-                        <div className="space-y-2">
-                          <Label htmlFor="color-destructiveForeground" className="text-caption">Destructive Foreground</Label>
-                          <div className="flex gap-2">
-                            <Input
-                              id="color-destructiveForeground"
-                              type="text"
-                              value={customColors.destructiveForeground}
-                              onChange={(e) => setCustomColors({ destructiveForeground: e.target.value })}
-                              placeholder="oklch(0.98 0.01 240)"
-                              className="font-mono text-xs flex-1"
-                            />
-                            <div
-                              className="w-10 h-10 rounded border flex-shrink-0"
-                              style={{ backgroundColor: customColors.destructiveForeground }}
-                            />
-                          </div>
-                        </div>
-
-                        <div className="space-y-2">
-                          <Label htmlFor="color-primaryForeground" className="text-caption">Primary Foreground</Label>
-                          <div className="flex gap-2">
-                            <Input
-                              id="color-primaryForeground"
-                              type="text"
-                              value={customColors.primaryForeground}
-                              onChange={(e) => setCustomColors({ primaryForeground: e.target.value })}
-                              placeholder="oklch(0.98 0.01 240)"
-                              className="font-mono text-xs flex-1"
-                            />
-                            <div
-                              className="w-10 h-10 rounded border flex-shrink-0"
-                              style={{ backgroundColor: customColors.primaryForeground }}
                             />
                           </div>
                         </div>
@@ -1369,32 +1184,6 @@ export const Settings: React.FC<SettingsProps> = ({
               </Card>
               )}
 
-              <Card className="p-6 space-y-6">
-                <div>
-                  <h3 className="text-heading-4 mb-1">Chat Message Colors</h3>
-                  <p className="text-caption text-muted-foreground mb-4">
-                    Customize colors for each message type. Accepts any CSS color value.
-                  </p>
-                  <div className="grid grid-cols-2 gap-4">
-                    <ChatColorField id="chat-user-border" label="User bubble border" value={chatColors.userBorder} onChange={(v) => setChatColors({ userBorder: v })} />
-                    <ChatColorField id="chat-user-bg" label="User bubble background" value={chatColors.userBg} onChange={(v) => setChatColors({ userBg: v })} />
-                    <ChatColorField id="chat-work-border" label="Work block border" value={chatColors.workBorder} onChange={(v) => setChatColors({ workBorder: v })} />
-                    <ChatColorField id="chat-agent-border" label="Agent response border" value={chatColors.agentBorder} onChange={(v) => setChatColors({ agentBorder: v })} />
-                    <ChatColorField id="chat-agent-bg" label="Agent response background" value={chatColors.agentBg} onChange={(v) => setChatColors({ agentBg: v })} />
-                    <ChatColorField id="chat-tool-border" label="Tool call border" value={chatColors.toolBorder} onChange={(v) => setChatColors({ toolBorder: v })} />
-                    <ChatColorField id="chat-tool-bg" label="Tool call background" value={chatColors.toolBg} onChange={(v) => setChatColors({ toolBg: v })} />
-                    <ChatColorField id="chat-final-border" label="Final response border" value={chatColors.finalBorder} onChange={(v) => setChatColors({ finalBorder: v })} />
-                    <ChatColorField id="chat-final-bg" label="Final response background" value={chatColors.finalBg} onChange={(v) => setChatColors({ finalBg: v })} />
-                    <ChatColorField id="chat-interrupt-border" label="Interrupted border" value={chatColors.interruptBorder} onChange={(v) => setChatColors({ interruptBorder: v })} />
-                    <ChatColorField id="chat-interrupt-bg" label="Interrupted background" value={chatColors.interruptBg} onChange={(v) => setChatColors({ interruptBg: v })} />
-                    <ChatColorField id="chat-interrupt-fg" label="Interrupted text" value={chatColors.interruptFg} onChange={(v) => setChatColors({ interruptFg: v })} />
-                    <ChatColorField id="chat-result-ok-border" label="Success result border" value={chatColors.resultOkBorder} onChange={(v) => setChatColors({ resultOkBorder: v })} />
-                    <ChatColorField id="chat-result-ok-bg" label="Success result background" value={chatColors.resultOkBg} onChange={(v) => setChatColors({ resultOkBg: v })} />
-                    <ChatColorField id="chat-result-err-border" label="Error result border" value={chatColors.resultErrBorder} onChange={(v) => setChatColors({ resultErrBorder: v })} />
-                    <ChatColorField id="chat-result-err-bg" label="Error result background" value={chatColors.resultErrBg} onChange={(v) => setChatColors({ resultErrBg: v })} />
-                  </div>
-                </div>
-              </Card>
 
               <Card className="p-6 space-y-6">
                 <div>

@@ -573,7 +573,7 @@ export const TabContent: React.FC = () => {
   
   return (
     <div className="flex-1 h-full relative">
-      <AnimatePresence mode="wait">
+      <AnimatePresence>
         {tabs.map((tab) => (
           <TabPanel
             key={tab.id}

@@ -3349,6 +3349,19 @@ fn ccode_settings_path() -> Result<PathBuf, String> {
 }
 
 #[tauri::command]
+pub fn read_session_status(session_id: String) -> Result<serde_json::Value, String> {
+    let home = dirs::home_dir().ok_or_else(|| "Cannot find home directory".to_string())?;
+    let path = home.join(".ccode").join("status").join(format!("{}.json", session_id));
+    if !path.exists() {
+        return Ok(serde_json::Value::Null);
+    }
+    let contents = fs::read_to_string(&path)
+        .map_err(|e| format!("Failed to read session status: {}", e))?;
+    serde_json::from_str(&contents)
+        .map_err(|e| format!("Failed to parse session status: {}", e))
+}
+
+#[tauri::command]
 pub fn read_ccode_settings() -> Result<serde_json::Value, String> {
     let path = ccode_settings_path()?;
     if !path.exists() {
@@ -3370,5 +3383,31 @@ pub fn write_ccode_settings(settings: serde_json::Value) -> Result<(), String> {
         .map_err(|e| format!("Failed to write temp settings file: {}", e))?;
     fs::rename(&tmp, &path)
         .map_err(|e| format!("Failed to rename settings file: {}", e))?;
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn open_path(path: String) -> Result<(), String> {
+    #[cfg(target_os = "windows")]
+    {
+        std::process::Command::new("explorer")
+            .arg(&path)
+            .spawn()
+            .map_err(|e| format!("Failed to open path: {}", e))?;
+    }
+    #[cfg(target_os = "macos")]
+    {
+        std::process::Command::new("open")
+            .arg(&path)
+            .spawn()
+            .map_err(|e| format!("Failed to open path: {}", e))?;
+    }
+    #[cfg(target_os = "linux")]
+    {
+        std::process::Command::new("xdg-open")
+            .arg(&path)
+            .spawn()
+            .map_err(|e| format!("Failed to open path: {}", e))?;
+    }
     Ok(())
 }

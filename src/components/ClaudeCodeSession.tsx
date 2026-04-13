@@ -5,7 +5,6 @@ import {
   ChevronDown,
   ChevronUp,
   X,
-  FolderOpen,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -18,32 +17,21 @@ import { SessionStatusBar } from "./SessionStatusBar";
 
 // Conditional imports for Tauri APIs
 let tauriListen: any;
-let tauriOpen: any;
 type UnlistenFn = () => void;
 
 try {
   tauriListen = require("@tauri-apps/api/event").listen;
-  tauriOpen = require("@tauri-apps/plugin-shell").open;
 } catch (e) {
-  console.log('[ClaudeCodeSession] Tauri APIs not available, using web mode');
+  // Tauri APIs not available, web mode
 }
 
 // Web-compatible replacements
 const listen = tauriListen || ((eventName: string, callback: (event: any) => void) => {
-  console.log('[ClaudeCodeSession] Setting up DOM event listener for:', eventName);
-
-  // In web mode, listen for DOM events
   const domEventHandler = (event: any) => {
-    console.log('[ClaudeCodeSession] DOM event received:', eventName, event.detail);
-    // Simulate Tauri event structure
     callback({ payload: event.detail });
   };
-
   window.addEventListener(eventName, domEventHandler);
-
-  // Return unlisten function
   return Promise.resolve(() => {
-    console.log('[ClaudeCodeSession] Removing DOM event listener for:', eventName);
     window.removeEventListener(eventName, domEventHandler);
   });
 });
@@ -114,6 +102,7 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
   session,
   initialProjectPath = "",
   className,
+  onBack,
   onStreamingChange,
   onProjectPathChange,
 }) => {
@@ -124,7 +113,7 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
   const [rawJsonlOutput, setRawJsonlOutput] = useState<string[]>([]);
   const [copyPopoverOpen, setCopyPopoverOpen] = useState(false);
   const [isFirstPrompt, setIsFirstPrompt] = useState(!session);
-  const [totalTokens, setTotalTokens] = useState(0);
+  const [selectedModel, setSelectedModel] = useState<"sonnet" | "opus">("sonnet");
   const [extractedSessionInfo, setExtractedSessionInfo] = useState<{ sessionId: string; projectId: string } | null>(null);
   const [claudeSessionId, setClaudeSessionId] = useState<string | null>(null);
   const [showTimeline, setShowTimeline] = useState(false);
@@ -156,10 +145,6 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
   // Session state tracking
   const [sessionState, setSessionState] = useState<SessionState>("idle");
 
-  // Status bar state
-  const [diffStat, setDiffStat] = useState({ additions: 0, deletions: 0 });
-  const [sessionDurationMs, setSessionDurationMs] = useState(0);
-
   const parentRef = useRef<HTMLDivElement>(null);
   const unlistenRefs = useRef<UnlistenFn[]>([]);
   const hasActiveSessionRef = useRef(false);
@@ -168,26 +153,7 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
   const queuedPromptsRef = useRef<Array<{ id: string; prompt: string; model: "sonnet" | "opus" }>>([]);
   const isMountedRef = useRef(true);
   const isListeningRef = useRef(false);
-  const sessionStartTime = useRef<number>(Date.now());
   const isIMEComposingRef = useRef(false);
-  
-  // Session metrics state for enhanced analytics
-  const sessionMetrics = useRef({
-    firstMessageTime: null as number | null,
-    promptsSent: 0,
-    toolsExecuted: 0,
-    toolsFailed: 0,
-    filesCreated: 0,
-    filesModified: 0,
-    filesDeleted: 0,
-    codeBlocksGenerated: 0,
-    errorsEncountered: 0,
-    lastActivityTime: Date.now(),
-    toolExecutionTimes: [] as number[],
-    checkpointCount: 0,
-    wasResumed: !!session,
-    modelChanges: [] as Array<{ from: string; to: string; timestamp: number }>,
-  });
 
   // Tab state management
   const { activeTab, updateTabTitle, updateTab } = useTabState();
@@ -321,18 +287,6 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
     overscan: 3,
   });
 
-  // Debug logging
-  useEffect(() => {
-    console.log('[ClaudeCodeSession] State update:', {
-      projectPath,
-      session,
-      extractedSessionInfo,
-      effectiveSession,
-      messagesCount: messages.length,
-      isLoading
-    });
-  }, [projectPath, session, extractedSessionInfo, effectiveSession, messages.length, isLoading]);
-
   // Load session history if resuming
   useEffect(() => {
     if (session) {
@@ -378,20 +332,6 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
       }, 50);
     }
   }, [displayableMessages.length, rowVirtualizer]);
-
-  // Calculate total tokens from messages
-  useEffect(() => {
-    const tokens = messages.reduce((total, msg) => {
-      if (msg.message?.usage) {
-        return total + msg.message.usage.input_tokens + msg.message.usage.output_tokens;
-      }
-      if (msg.usage) {
-        return total + msg.usage.input_tokens + msg.usage.output_tokens;
-      }
-      return total;
-    }, 0);
-    setTotalTokens(tokens);
-  }, [messages]);
 
   // Store session IDs on the tab so the sidebar can poll status for non-active tabs
   useEffect(() => {
@@ -519,9 +459,6 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
         });
         
         if (activeSession) {
-          // Session is still active, reconnect to its stream
-          console.log('[ClaudeCodeSession] Found active session, reconnecting:', session.id);
-          // IMPORTANT: Set claudeSessionId before reconnecting
           setClaudeSessionId(session.id);
           
           // Don't add buffered messages here - they've already been loaded by loadSessionHistory
@@ -537,29 +474,16 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
   };
 
   const reconnectToSession = async (sessionId: string) => {
-    console.log('[ClaudeCodeSession] Reconnecting to session:', sessionId);
-    
-    // Prevent duplicate listeners
-    if (isListeningRef.current) {
-      console.log('[ClaudeCodeSession] Already listening to session, skipping reconnect');
-      return;
-    }
-    
-    // Clean up previous listeners
+    if (isListeningRef.current) return;
+
     unlistenRefs.current.forEach(unlisten => unlisten());
     unlistenRefs.current = [];
-    
-    // IMPORTANT: Set the session ID before setting up listeners
+
     setClaudeSessionId(sessionId);
-    
-    // Mark as listening
     isListeningRef.current = true;
-    
-    // Set up session-specific listeners
+
     const outputUnlisten = await listen(`claude-output:${sessionId}`, async (event: any) => {
       try {
-        console.log('[ClaudeCodeSession] Received claude-output on reconnect:', event.payload);
-        
         if (!isMountedRef.current) return;
         
         // Store raw JSONL
@@ -580,8 +504,7 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
       }
     });
 
-    const completeUnlisten = await listen(`claude-complete:${sessionId}`, async (event: any) => {
-      console.log('[ClaudeCodeSession] Received claude-complete on reconnect:', event.payload);
+    const completeUnlisten = await listen(`claude-complete:${sessionId}`, async () => {
       if (isMountedRef.current) {
         setIsLoading(false);
         hasActiveSessionRef.current = false;
@@ -600,8 +523,6 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
   // Project path selection handled by parent tab controls
 
   const handleSendPrompt = async (prompt: string, model: "sonnet" | "opus") => {
-    console.log('[ClaudeCodeSession] handleSendPrompt called with:', { prompt, model, projectPath, claudeSessionId, effectiveSession });
-    
     if (!projectPath) {
       setError("Please select a project directory first");
       return;
@@ -651,14 +572,10 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
         //     generic ones to prevent duplicate handling.
         // --------------------------------------------------------------------
 
-        console.log('[ClaudeCodeSession] Setting up generic event listeners first');
-
         let currentSessionId: string | null = claudeSessionId || effectiveSession?.id || null;
 
         // Helper to attach session-specific listeners **once we are sure**
         const attachSessionSpecificListeners = async (sid: string) => {
-          console.log('[ClaudeCodeSession] Attaching session-specific listeners for', sid);
-
           const specificOutputUnlisten = await listen(`claude-output:${sid}`, (evt: any) => {
             handleStreamMessage(evt.payload);
           });
@@ -669,7 +586,6 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
           });
 
           const specificCompleteUnlisten = await listen(`claude-complete:${sid}`, (evt: any) => {
-            console.log('[ClaudeCodeSession] Received claude-complete (scoped):', evt.payload);
             processComplete(evt.payload);
           });
 
@@ -687,7 +603,6 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
             const msg = JSON.parse(event.payload) as ClaudeStreamMessage;
             if (msg.type === 'system' && msg.subtype === 'init' && msg.session_id) {
               if (!currentSessionId || currentSessionId !== msg.session_id) {
-                console.log('[ClaudeCodeSession] Detected new session_id from generic listener:', msg.session_id);
                 currentSessionId = msg.session_id;
                 setClaudeSessionId(msg.session_id);
 
@@ -732,64 +647,9 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
               message = payload;
               rawPayload = JSON.stringify(payload);
             }
-            
-            console.log('[ClaudeCodeSession] handleStreamMessage - message type:', message.type);
 
             // Store raw JSONL
             setRawJsonlOutput((prev) => [...prev, rawPayload]);
-
-            // Track enhanced tool execution
-            if (message.type === 'assistant' && message.message?.content) {
-              const toolUses = message.message.content.filter((c: any) => c.type === 'tool_use');
-              toolUses.forEach((toolUse: any) => {
-                // Increment tools executed counter
-                sessionMetrics.current.toolsExecuted += 1;
-                sessionMetrics.current.lastActivityTime = Date.now();
-
-                // Track file operations
-                const toolName = toolUse.name?.toLowerCase() || '';
-                if (toolName.includes('create') || toolName.includes('write')) {
-                  sessionMetrics.current.filesCreated += 1;
-                } else if (toolName.includes('edit') || toolName.includes('multiedit') || toolName.includes('search_replace')) {
-                  sessionMetrics.current.filesModified += 1;
-                } else if (toolName.includes('delete')) {
-                  sessionMetrics.current.filesDeleted += 1;
-                }
-
-              });
-            }
-
-            // Track tool results
-            if (message.type === 'user' && message.message?.content) {
-              const toolResults = message.message.content.filter((c: any) => c.type === 'tool_result');
-              toolResults.forEach((result: any) => {
-                const isError = result.is_error || false;
-                // Note: We don't have execution time here, but we can track success/failure
-                if (isError) {
-                  sessionMetrics.current.toolsFailed += 1;
-                  sessionMetrics.current.errorsEncountered += 1;
-                }
-              });
-            }
-
-            // Track code blocks generated
-            if (message.type === 'assistant' && message.message?.content) {
-              const codeBlocks = message.message.content.filter((c: any) =>
-                c.type === 'text' && c.text?.includes('```')
-              );
-              if (codeBlocks.length > 0) {
-                // Count code blocks in text content
-                codeBlocks.forEach((block: any) => {
-                  const matches = (block.text.match(/```/g) || []).length;
-                  sessionMetrics.current.codeBlocksGenerated += Math.floor(matches / 2);
-                });
-              }
-            }
-
-            // Track errors in system messages
-            if (message.type === 'system' && (message.subtype === 'error' || message.error)) {
-              sessionMetrics.current.errorsEncountered += 1;
-            }
 
             setMessages((prev) => [...prev, message]);
           } catch (err) {
@@ -863,7 +723,6 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
         });
 
         const genericCompleteUnlisten = await listen('claude-complete', (evt: any) => {
-          console.log('[ClaudeCodeSession] Received claude-complete (generic):', evt.payload);
           processComplete(evt.payload);
         });
 
@@ -887,33 +746,11 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
           }
         };
         setMessages(prev => [...prev, userMessage]);
-        
-        // Update session metrics
-        sessionMetrics.current.promptsSent += 1;
-        sessionMetrics.current.lastActivityTime = Date.now();
-        if (!sessionMetrics.current.firstMessageTime) {
-          sessionMetrics.current.firstMessageTime = Date.now();
-        }
-        
-        // Track model changes
-        const lastModel = sessionMetrics.current.modelChanges.length > 0 
-          ? sessionMetrics.current.modelChanges[sessionMetrics.current.modelChanges.length - 1].to
-          : (sessionMetrics.current.wasResumed ? 'sonnet' : model); // Default to sonnet if resumed
-        
-        if (lastModel !== model) {
-          sessionMetrics.current.modelChanges.push({
-            from: lastModel,
-            to: model,
-            timestamp: Date.now()
-          });
-        }
 
         // Execute the appropriate command
         if (effectiveSession && !isFirstPrompt) {
-          console.log('[ClaudeCodeSession] Resuming session:', effectiveSession.id);
           await api.resumeClaudeCode(projectPath, effectiveSession.id, prompt, model);
         } else {
-          console.log('[ClaudeCodeSession] Starting new session');
           setIsFirstPrompt(false);
           await api.executeClaudeCode(projectPath, prompt, model);
         }
@@ -1010,11 +847,6 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
     // Ensure timeline reloads to highlight current checkpoint
     setTimelineVersion((v) => v + 1);
   };
-  
-  const handleCheckpointCreated = () => {
-    // Update checkpoint count in session metrics
-    sessionMetrics.current.checkpointCount += 1;
-  };
 
   const handleCancelExecution = async () => {
     if (!claudeSessionId || !isLoading) return;
@@ -1100,11 +932,7 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
         newSessionId,
         forkSessionName
       );
-      
-      // Open the new forked session
-      // You would need to implement navigation to the new session
-      console.log("Forked to new session:", newSessionId);
-      
+
       setShowForkDialog(false);
       setForkCheckpointId(null);
       setForkSessionName("");
@@ -1123,7 +951,6 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
   };
 
   const handlePreviewUrlChange = (url: string) => {
-    console.log('[ClaudeCodeSession] Preview URL changed to:', url);
     setPreviewUrl(url);
   };
 
@@ -1135,37 +962,11 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
     }
   };
 
-  // Duration timer — update every 10 seconds while session is active
-  useEffect(() => {
-    const interval = setInterval(() => {
-      setSessionDurationMs(Date.now() - sessionStartTime.current);
-    }, 10_000);
-    return () => clearInterval(interval);
-  }, []);
-
-  // Diff stat polling — fetch every 30s when projectPath is set
-  useEffect(() => {
-    if (!projectPath) return;
-    const fetchDiff = async () => {
-      try {
-        const stat = await api.getGitDiffStat(projectPath);
-        setDiffStat(stat);
-      } catch {
-        // ignore errors
-      }
-    };
-    fetchDiff();
-    const interval = setInterval(fetchDiff, 30_000);
-    return () => clearInterval(interval);
-  }, [projectPath]);
-
-
   // Cleanup event listeners and track mount state
   useEffect(() => {
     isMountedRef.current = true;
-    
+
     return () => {
-      console.log('[ClaudeCodeSession] Component unmounting, cleaning up listeners');
       isMountedRef.current = false;
       isListeningRef.current = false;
 
@@ -1255,8 +1056,6 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
     </div>
   );
 
-  const projectPathInput = null; // Removed project path display
-
   // If preview is maximized, render only the WebviewPreview in full screen
   if (showPreview && isPreviewMaximized) {
     return (
@@ -1287,17 +1086,21 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
         <SessionHeader
           projectPath={projectPath}
           claudeSessionId={claudeSessionId}
-          totalTokens={totalTokens}
+          sessionId={session?.id ?? null}
+          selectedModel={selectedModel}
+          onModelChange={setSelectedModel}
           isStreaming={isLoading}
           hasMessages={messages.length > 0}
           allCollapsed={allCollapsed}
           copyPopoverOpen={copyPopoverOpen}
           gitInfo={gitInfo}
-          onBack={() => {}}
+          onBack={onBack}
           onSelectPath={() => {}}
-          onCopyAsJsonl={() => {}}
-          onCopyAsMarkdown={() => {}}
-          onOpenFolder={projectPath && tauriOpen ? () => tauriOpen(projectPath) : undefined}
+          onCopyAsJsonl={handleCopyAsJsonl}
+          onCopyAsMarkdown={handleCopyAsMarkdown}
+          onProjectSettings={effectiveSession ? () => setShowSettings(true) : undefined}
+          onSlashCommandsSettings={projectPath ? () => setShowSlashCommandsSettings(true) : undefined}
+          onOpenFolder={projectPath ? () => api.openPath(projectPath) : undefined}
           onRefresh={session ? handleRefresh : undefined}
           onCollapseAll={() => {
             if (allCollapsed) {
@@ -1307,23 +1110,26 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
             }
             setAllCollapsed(v => !v);
           }}
-          onOpenSessionFile={claudeSessionId && effectiveSession?.project_id && tauriOpen ? async () => {
+          onOpenSessionFile={effectiveSession?.project_id ? async () => {
+            const sid = claudeSessionId ?? effectiveSession.id;
             try {
-              const filePath = await api.getSessionFilePath(claudeSessionId, effectiveSession.project_id);
-              await tauriOpen(filePath);
+              const filePath = await api.getSessionFilePath(sid, effectiveSession.project_id);
+              await api.openPath(filePath);
             } catch (e) {
               console.error('Failed to open session file:', e);
             }
           } : undefined}
-          onOpenSessionFolder={claudeSessionId && effectiveSession?.project_id && tauriOpen ? async () => {
+          onOpenSessionFolder={effectiveSession?.project_id ? async () => {
+            const sid = claudeSessionId ?? effectiveSession.id;
             try {
-              const filePath = await api.getSessionFilePath(claudeSessionId, effectiveSession.project_id);
+              const filePath = await api.getSessionFilePath(sid, effectiveSession.project_id);
               const folderPath = filePath.replace(/[/\\][^/\\]+$/, '');
-              await tauriOpen(folderPath);
+              await api.openPath(folderPath);
             } catch (e) {
               console.error('Failed to open session folder:', e);
             }
           } : undefined}
+          onShowTimeline={effectiveSession ? () => setShowTimeline(true) : undefined}
           setCopyPopoverOpen={setCopyPopoverOpen}
         />
         <div className="flex-1 min-h-0 flex flex-col">
@@ -1338,7 +1144,6 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
             <SplitPane
               left={
                 <div className="h-full flex flex-col">
-                  {projectPathInput}
                   {messagesList}
                 </div>
               }
@@ -1360,7 +1165,6 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
           ) : (
             // Original layout when no preview
             <div className="h-full flex flex-col mx-auto px-6">
-              {projectPathInput}
               {messagesList}
               
               {isLoading && messages.length === 0 && (
@@ -1378,70 +1182,70 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
         </div>
 
         {/* Floating Prompt Input - Always visible */}
-        <ErrorBoundary>
-          {/* Queued Prompts Display */}
-          <AnimatePresence>
-            {queuedPrompts.length > 0 && (
-              <motion.div
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: 20 }}
-                className="fixed bottom-24 left-1/2 -translate-x-1/2 z-30 w-full max-w-3xl px-4"
-              >
-                <div className="bg-background/95 backdrop-blur-md border rounded-lg shadow-lg p-3 space-y-2">
-                  <div className="flex items-center justify-between">
-                    <div className="text-xs font-medium text-muted-foreground mb-1">
-                      Queued Prompts ({queuedPrompts.length})
-                    </div>
-                    <TooltipSimple content={queuedPromptsCollapsed ? "Expand queue" : "Collapse queue"} side="top">
-                      <motion.div
-                        whileTap={{ scale: 0.97 }}
-                        transition={{ duration: 0.15 }}
-                      >
-                        <Button variant="ghost" size="icon" onClick={() => setQueuedPromptsCollapsed(prev => !prev)}>
-                          {queuedPromptsCollapsed ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
-                        </Button>
-                      </motion.div>
-                    </TooltipSimple>
+        {/* Queued Prompts Display */}
+        <AnimatePresence>
+          {queuedPrompts.length > 0 && (
+            <motion.div
+              initial={{ opacity: 0, y: -8 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -8 }}
+              className="w-full px-4 pb-2"
+            >
+              <div className="bg-background/95 backdrop-blur-md border rounded-lg shadow-lg p-3 space-y-2">
+                <div className="flex items-center justify-between">
+                  <div className="text-xs font-medium text-muted-foreground mb-1">
+                    Queued Prompts ({queuedPrompts.length})
                   </div>
-                  {!queuedPromptsCollapsed && queuedPrompts.map((queuedPrompt, index) => (
+                  <TooltipSimple content={queuedPromptsCollapsed ? "Expand queue" : "Collapse queue"} side="top">
                     <motion.div
-                      key={queuedPrompt.id}
-                      initial={{ opacity: 0, y: 4 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      exit={{ opacity: 0, y: -4 }}
-                      transition={{ duration: 0.15, delay: index * 0.02 }}
-                      className="flex items-start gap-2 bg-muted/50 rounded-md p-2"
+                      whileTap={{ scale: 0.97 }}
+                      transition={{ duration: 0.15 }}
                     >
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-2 mb-1">
-                          <span className="text-xs font-medium text-muted-foreground">#{index + 1}</span>
-                          <span className="text-xs px-1.5 py-0.5 bg-primary/10 text-primary rounded">
-                            {queuedPrompt.model === "opus" ? "Opus" : "Sonnet"}
-                          </span>
-                        </div>
-                        <p className="text-sm line-clamp-2 break-words">{queuedPrompt.prompt}</p>
-                      </div>
-                      <motion.div
-                        whileTap={{ scale: 0.97 }}
-                        transition={{ duration: 0.15 }}
-                      >
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className="h-6 w-6 flex-shrink-0"
-                          onClick={() => setQueuedPrompts(prev => prev.filter(p => p.id !== queuedPrompt.id))}
-                        >
-                          <X className="h-3 w-3" />
-                        </Button>
-                      </motion.div>
+                      <Button variant="ghost" size="icon" onClick={() => setQueuedPromptsCollapsed(prev => !prev)}>
+                        {queuedPromptsCollapsed ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
+                      </Button>
                     </motion.div>
-                  ))}
+                  </TooltipSimple>
                 </div>
-              </motion.div>
-            )}
-          </AnimatePresence>
+                {!queuedPromptsCollapsed && queuedPrompts.map((queuedPrompt, index) => (
+                  <motion.div
+                    key={queuedPrompt.id}
+                    initial={{ opacity: 0, y: 4 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: -4 }}
+                    transition={{ duration: 0.15, delay: index * 0.02 }}
+                    className="flex items-start gap-2 bg-muted/50 rounded-md p-2"
+                  >
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 mb-1">
+                        <span className="text-xs font-medium text-muted-foreground">#{index + 1}</span>
+                        <span className="text-xs px-1.5 py-0.5 bg-primary/10 text-primary rounded">
+                          {queuedPrompt.model === "opus" ? "Opus" : "Sonnet"}
+                        </span>
+                      </div>
+                      <p className="text-sm line-clamp-2 break-words">{queuedPrompt.prompt}</p>
+                    </div>
+                    <motion.div
+                      whileTap={{ scale: 0.97 }}
+                      transition={{ duration: 0.15 }}
+                    >
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-6 w-6 flex-shrink-0"
+                        onClick={() => setQueuedPrompts(prev => prev.filter(p => p.id !== queuedPrompt.id))}
+                      >
+                        <X className="h-3 w-3" />
+                      </Button>
+                    </motion.div>
+                  </motion.div>
+                ))}
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
 
+        <ErrorBoundary>
           {/* Navigation Arrows - positioned above prompt bar with spacing */}
           {displayableMessages.length > 5 && (
             <motion.div
@@ -1537,70 +1341,26 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
 
         </ErrorBoundary>
 
-        {/* Bottom bar — in flow so messages stop above it */}
-        <div className="flex-shrink-0">
+        {/* Bottom panel — status bar + prompt input as one visual unit */}
+        <div className="flex-shrink-0 border-t border-border/50">
           <SessionStatusBar
-            model={
-              sessionMetrics.current.modelChanges.length > 0
-                ? sessionMetrics.current.modelChanges[sessionMetrics.current.modelChanges.length - 1].to
-                : null
-            }
-            sessionDurationMs={sessionDurationMs}
-            totalTokens={totalTokens}
-            gitRepoName={gitInfo?.repo_name ?? null}
-            gitBranch={gitInfo?.branch ?? null}
-            diffAdditions={diffStat.additions}
-            diffDeletions={diffStat.deletions}
-            sessionState={sessionState}
+            sessionId={claudeSessionId ?? session?.id ?? null}
           />
           <div className={cn(
             "transition-all duration-300",
             showTimeline && "sm:mr-96"
           )}>
             <FloatingPromptInput
+              className="border-t-0"
               ref={floatingPromptRef}
               onSend={handleSendPrompt}
               onCancel={handleCancelExecution}
               isLoading={isLoading}
+              selectedModel={selectedModel}
               disabled={!projectPath}
               projectPath={projectPath}
               extraMenuItems={
                 <>
-                  {projectPath && tauriOpen && (
-                    <TooltipSimple content="Open project folder" side="top">
-                      <motion.div whileTap={{ scale: 0.97 }} transition={{ duration: 0.15 }}>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          onClick={() => tauriOpen(projectPath)}
-                          className="h-9 w-9 text-muted-foreground hover:text-foreground"
-                        >
-                          <FolderOpen className="h-3.5 w-3.5" />
-                        </Button>
-                      </motion.div>
-                    </TooltipSimple>
-                  )}
-                  {claudeSessionId && effectiveSession?.project_id && tauriOpen && (
-                    <TooltipSimple content="Open .claude session folder" side="top">
-                      <motion.div whileTap={{ scale: 0.97 }} transition={{ duration: 0.15 }}>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          onClick={async () => {
-                            try {
-                              const filePath = await api.getSessionFilePath(claudeSessionId, effectiveSession.project_id);
-                              await tauriOpen(filePath.replace(/[/\\][^/\\]+$/, ''));
-                            } catch (e) {
-                              console.error('Failed to open session folder:', e);
-                            }
-                          }}
-                          className="h-9 w-9 text-muted-foreground hover:text-foreground"
-                        >
-                          <FolderOpen className="h-3.5 w-3.5 opacity-60" />
-                        </Button>
-                      </motion.div>
-                    </TooltipSimple>
-                  )}
                   {messages.length > 0 && (
                     <Popover
                       trigger={
@@ -1667,7 +1427,6 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
                     currentMessageIndex={messages.length - 1}
                     onCheckpointSelect={handleCheckpointSelect}
                     onFork={handleFork}
-                    onCheckpointCreated={handleCheckpointCreated}
                     refreshVersion={timelineVersion}
                   />
                 </div>

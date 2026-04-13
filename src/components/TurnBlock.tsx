@@ -188,7 +188,7 @@ const WorkBlock: React.FC<WorkBlockProps> = ({
 
   return (
     <div
-      className="relative pl-4 border-l-2 mb-2 ml-2"
+      className="relative pl-6 border-l-2 mb-3 ml-4"
       style={{ borderColor: 'var(--chat-work-border)' }}
     >
       <WorkBlockHeader
@@ -238,7 +238,7 @@ const TurnBlockComponent: React.FC<TurnBlockProps> = ({ turn, streamMessages, is
   );
 
   return (
-    <div className="space-y-2">
+    <div className="space-y-3 max-w-3xl mx-auto w-full">
       {turn.userMessage && <UserBubble message={turn.userMessage} />}
 
       <WorkBlock

@@ -23,40 +23,41 @@ export interface CustomThemeColors {
   ring: string;
 }
 
-export interface ChatColors {
-  userBorder: string;
-  userBg: string;
-  workBorder: string;
-  agentBorder: string;
-  agentBg: string;
-  toolBorder: string;
-  toolBg: string;
-  finalBorder: string;
-  finalBg: string;
-  interruptBorder: string;
-  interruptBg: string;
-  interruptFg: string;
-  resultOkBorder: string;
-  resultOkBg: string;
-  resultErrBorder: string;
-  resultErrBg: string;
-}
 
 interface ThemeContextType {
   theme: ThemeMode;
   customColors: CustomThemeColors;
-  chatColors: ChatColors;
   setTheme: (theme: ThemeMode) => Promise<void>;
   setCustomColors: (colors: Partial<CustomThemeColors>) => Promise<void>;
-  setChatColors: (colors: Partial<ChatColors>) => Promise<void>;
   isLoading: boolean;
 }
 
 const ThemeContext = createContext<ThemeContextType | undefined>(undefined);
 
-const THEME_STORAGE_KEY = 'theme_preference';
-const CUSTOM_COLORS_STORAGE_KEY = 'theme_custom_colors';
-const CHAT_COLORS_STORAGE_KEY = 'theme_chat_colors';
+const THEME_KEY = 'theme_preference';
+const CUSTOM_COLORS_KEY = 'theme_custom_colors';
+
+async function loadThemeFromCcode(): Promise<{ theme: ThemeMode; colors: CustomThemeColors }> {
+  try {
+    const settings = await api.readCcodeSettings();
+    const themeMode: ThemeMode = (settings[THEME_KEY] as ThemeMode) || 'gray';
+    const colors: CustomThemeColors = settings[CUSTOM_COLORS_KEY]
+      ? (JSON.parse(settings[CUSTOM_COLORS_KEY]) as CustomThemeColors)
+      : DEFAULT_CUSTOM_COLORS;
+    return { theme: themeMode, colors };
+  } catch {
+    return { theme: 'gray', colors: DEFAULT_CUSTOM_COLORS };
+  }
+}
+
+async function saveThemeToCcode(key: string, value: string): Promise<void> {
+  try {
+    const current = await api.readCcodeSettings();
+    await api.writeCcodeSettings({ ...current, [key]: value });
+  } catch (err) {
+    console.error('Failed to save theme to .ccode:', err);
+  }
+}
 
 // Default custom theme colors (based on current dark theme)
 const DEFAULT_CUSTOM_COLORS: CustomThemeColors = {
@@ -79,24 +80,6 @@ const DEFAULT_CUSTOM_COLORS: CustomThemeColors = {
   ring: 'oklch(0.98 0.01 240)',
 };
 
-const DEFAULT_CHAT_COLORS: ChatColors = {
-  userBorder: 'rgba(59, 130, 246, 0.5)',
-  userBg: 'rgba(59, 130, 246, 0.1)',
-  workBorder: 'rgba(59, 130, 246, 0.25)',
-  agentBorder: 'rgba(59, 130, 246, 0.2)',
-  agentBg: 'rgba(59, 130, 246, 0.05)',
-  toolBorder: 'rgba(255, 255, 255, 0.1)',
-  toolBg: 'rgba(255, 255, 255, 0.04)',
-  finalBorder: 'rgba(34, 197, 94, 0.2)',
-  finalBg: 'rgba(34, 197, 94, 0.05)',
-  interruptBorder: 'rgba(245, 158, 11, 0.5)',
-  interruptBg: 'rgba(245, 158, 11, 0.1)',
-  interruptFg: 'rgba(251, 191, 36, 1)',
-  resultOkBorder: 'rgba(34, 197, 94, 0.2)',
-  resultOkBg: 'rgba(34, 197, 94, 0.05)',
-  resultErrBorder: 'rgba(239, 68, 68, 0.2)',
-  resultErrBg: 'rgba(239, 68, 68, 0.05)',
-};
 
 // ─── Contrast utilities ───────────────────────────────────────────────────────
 
@@ -157,149 +140,78 @@ function enforceContrastForegrounds(root: HTMLElement) {
 export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [theme, setThemeState] = useState<ThemeMode>('gray');
   const [customColors, setCustomColorsState] = useState<CustomThemeColors>(DEFAULT_CUSTOM_COLORS);
-  const [chatColors, setChatColorsState] = useState<ChatColors>(DEFAULT_CHAT_COLORS);
   const [isLoading, setIsLoading] = useState(true);
 
-  // Load theme preference and custom colors from storage
   useEffect(() => {
     const loadTheme = async () => {
       try {
-        // Load all settings in parallel
-        const [savedTheme, savedColors, savedChatColors] = await Promise.all([
-          api.getSetting(THEME_STORAGE_KEY),
-          api.getSetting(CUSTOM_COLORS_STORAGE_KEY),
-          api.getSetting(CHAT_COLORS_STORAGE_KEY),
-        ]);
-
-        const themeMode: ThemeMode = (savedTheme as ThemeMode) || 'gray';
-        const colors: CustomThemeColors = savedColors
-          ? (JSON.parse(savedColors) as CustomThemeColors)
-          : DEFAULT_CUSTOM_COLORS;
-        const chColors: ChatColors = savedChatColors
-          ? (JSON.parse(savedChatColors) as ChatColors)
-          : DEFAULT_CHAT_COLORS;
-
+        const { theme: themeMode, colors } = await loadThemeFromCcode();
         setThemeState(themeMode);
         setCustomColorsState(colors);
-        setChatColorsState(chColors);
-
-        // Apply theme using local variables — avoids stale closure on `theme`
-        await applyTheme(themeMode, colors, chColors);
+        await applyTheme(themeMode, colors);
       } catch (error) {
         console.error('Failed to load theme settings:', error);
       } finally {
         setIsLoading(false);
       }
     };
-
     loadTheme();
   }, []);
 
-  // Apply chat colors as CSS variables
-  const applyChatColors = useCallback((colors: ChatColors) => {
+  const applyTheme = useCallback(async (themeMode: ThemeMode, colors: CustomThemeColors) => {
     const root = document.documentElement;
-    Object.entries(colors).forEach(([key, value]) => {
-      const cssVarName = `--chat-${key.replace(/([A-Z])/g, '-$1').toLowerCase()}`;
-      root.style.setProperty(cssVarName, value);
-    });
-  }, []);
-
-  // Apply theme to document
-  const applyTheme = useCallback(async (themeMode: ThemeMode, colors: CustomThemeColors, chColors: ChatColors = DEFAULT_CHAT_COLORS) => {
-    const root = document.documentElement;
-
-    // Remove all theme classes
     root.classList.remove('theme-dark', 'theme-gray', 'theme-light', 'theme-custom');
-
-    // Add new theme class
     root.classList.add(`theme-${themeMode}`);
 
-    // If custom theme, apply custom colors as CSS variables
     if (themeMode === 'custom') {
       Object.entries(colors).forEach(([key, value]) => {
         const cssVarName = `--color-${key.replace(/([A-Z])/g, '-$1').toLowerCase()}`;
         root.style.setProperty(cssVarName, value);
       });
     } else {
-      // Clear custom CSS variables when not using custom theme
       Object.keys(colors).forEach((key) => {
         const cssVarName = `--color-${key.replace(/([A-Z])/g, '-$1').toLowerCase()}`;
         root.style.removeProperty(cssVarName);
       });
     }
 
-    // Always apply chat colors
-    applyChatColors(chColors);
-
-    // Auto-derive *-foreground vars so text is always readable on colored backgrounds
-    // Use requestAnimationFrame so the class/variable changes have been painted first
     requestAnimationFrame(() => enforceContrastForegrounds(root));
-  }, [applyChatColors]);
+  }, []);
 
   const setTheme = useCallback(async (newTheme: ThemeMode) => {
     try {
       setIsLoading(true);
-
-      // Apply theme immediately
       setThemeState(newTheme);
-      await applyTheme(newTheme, customColors, chatColors);
-
-      // Save to storage
-      await api.saveSetting(THEME_STORAGE_KEY, newTheme);
+      await applyTheme(newTheme, customColors);
+      await saveThemeToCcode(THEME_KEY, newTheme);
     } catch (error) {
       console.error('Failed to save theme preference:', error);
     } finally {
       setIsLoading(false);
     }
-  }, [customColors, chatColors, applyTheme]);
+  }, [customColors, applyTheme]);
 
   const setCustomColors = useCallback(async (colors: Partial<CustomThemeColors>) => {
     try {
       setIsLoading(true);
-
       const newColors = { ...customColors, ...colors };
       setCustomColorsState(newColors);
-
-      // Apply immediately if custom theme is active
       if (theme === 'custom') {
-        await applyTheme('custom', newColors, chatColors);
+        await applyTheme('custom', newColors);
       }
-
-      // Save to storage
-      await api.saveSetting(CUSTOM_COLORS_STORAGE_KEY, JSON.stringify(newColors));
+      await saveThemeToCcode(CUSTOM_COLORS_KEY, JSON.stringify(newColors));
     } catch (error) {
       console.error('Failed to save custom colors:', error);
     } finally {
       setIsLoading(false);
     }
-  }, [theme, customColors, chatColors, applyTheme]);
-
-  const setChatColors = useCallback(async (colors: Partial<ChatColors>) => {
-    try {
-      setIsLoading(true);
-
-      const newColors = { ...chatColors, ...colors };
-      setChatColorsState(newColors);
-
-      // Apply immediately
-      applyChatColors(newColors);
-
-      // Save to storage
-      await api.saveSetting(CHAT_COLORS_STORAGE_KEY, JSON.stringify(newColors));
-    } catch (error) {
-      console.error('Failed to save chat colors:', error);
-    } finally {
-      setIsLoading(false);
-    }
-  }, [chatColors, applyChatColors]);
+  }, [theme, customColors, applyTheme]);
 
   const value: ThemeContextType = {
     theme,
     customColors,
-    chatColors,
     setTheme,
     setCustomColors,
-    setChatColors,
     isLoading,
   };
 

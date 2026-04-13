@@ -11,10 +11,18 @@ import {
   RefreshCw,
   ChevronsUpDown,
   FileText,
+  Zap,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Popover } from '@/components/ui/popover';
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 import { Badge } from '@/components/ui/badge';
 import { TooltipSimple } from '@/components/ui/tooltip-modern';
 import { cn } from '@/lib/utils';
@@ -24,7 +32,8 @@ import { useProjectColor } from '@/hooks/useProjectColor';
 interface SessionHeaderProps {
   projectPath: string;
   claudeSessionId: string | null;
-  totalTokens: number;
+  sessionId?: string | null;
+  selectedModel: 'sonnet' | 'opus';
   isStreaming: boolean;
   hasMessages: boolean;
   allCollapsed?: boolean;
@@ -34,6 +43,7 @@ interface SessionHeaderProps {
   onSelectPath: () => void;
   onCopyAsJsonl: () => void;
   onCopyAsMarkdown: () => void;
+  onModelChange: (model: 'sonnet' | 'opus') => void;
   onProjectSettings?: () => void;
   onSlashCommandsSettings?: () => void;
   onOpenFolder?: () => void;
@@ -41,13 +51,15 @@ interface SessionHeaderProps {
   onRefresh?: () => void;
   onCollapseAll?: () => void;
   onOpenSessionFile?: () => void;
+  onShowTimeline?: () => void;
   setCopyPopoverOpen: (open: boolean) => void;
 }
 
 export const SessionHeader: React.FC<SessionHeaderProps> = React.memo(({
   projectPath,
   claudeSessionId,
-  totalTokens,
+  sessionId,
+  selectedModel,
   isStreaming,
   hasMessages,
   allCollapsed,
@@ -57,6 +69,7 @@ export const SessionHeader: React.FC<SessionHeaderProps> = React.memo(({
   onSelectPath,
   onCopyAsJsonl,
   onCopyAsMarkdown,
+  onModelChange,
   onProjectSettings,
   onSlashCommandsSettings,
   onOpenFolder,
@@ -64,7 +77,8 @@ export const SessionHeader: React.FC<SessionHeaderProps> = React.memo(({
   onRefresh,
   onCollapseAll,
   onOpenSessionFile,
-  setCopyPopoverOpen
+  onShowTimeline,
+  setCopyPopoverOpen,
 }) => {
   const { displayName, setDisplayName } = useProjectDisplayName(projectPath);
   const { color: projectColor } = useProjectColor(projectPath);
@@ -72,9 +86,11 @@ export const SessionHeader: React.FC<SessionHeaderProps> = React.memo(({
   const [editValue, setEditValue] = useState('');
   const [idCopied, setIdCopied] = useState(false);
 
+  const displayedSessionId = claudeSessionId ?? sessionId ?? null;
+
   const copySessionId = () => {
-    if (!claudeSessionId) return;
-    navigator.clipboard.writeText(claudeSessionId).then(() => {
+    if (!displayedSessionId) return;
+    navigator.clipboard.writeText(displayedSessionId).then(() => {
       setIdCopied(true);
       setTimeout(() => setIdCopied(false), 1500);
     });
@@ -84,31 +100,27 @@ export const SessionHeader: React.FC<SessionHeaderProps> = React.memo(({
     if (gitInfo?.is_git_repo) {
       return `${gitInfo.repo_name}(${gitInfo.branch})`;
     }
-    if (gitInfo) {
-      const lastSegment = projectPath.split(/[/\\]/).filter(Boolean).pop();
-      return lastSegment || "Claude Code Session";
+    if (projectPath) {
+      return projectPath.replace(/\\/g, '/').split('/').filter(Boolean).pop() ?? 'Claude Code Session';
     }
-    return "Claude Code Session";
+    return 'Claude Code Session';
   })();
 
   const displayedTitle = displayName ?? autoTitle;
 
   return (
-    <div className="bg-background border-b px-4 py-3 flex-shrink-0 z-10">
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={onBack}
-            className="h-8 w-8"
-          >
+    <div className="bg-background border-b px-4 py-2.5 flex-shrink-0 z-10">
+      <div className="flex items-center justify-between gap-2">
+
+        {/* Left — back + project name */}
+        <div className="flex items-center gap-2 min-w-0">
+          <Button variant="ghost" size="icon" onClick={onBack} className="h-8 w-8 shrink-0">
             <ArrowLeft className="h-4 w-4" />
           </Button>
-          
-          <div className="group flex items-center gap-2">
+
+          <div className="group flex items-center gap-2 min-w-0">
             <div
-              className="w-3 h-3 rounded-full flex-shrink-0"
+              className="w-2.5 h-2.5 rounded-full shrink-0"
               style={{ backgroundColor: projectColor }}
             />
             {isEditing ? (
@@ -117,104 +129,81 @@ export const SessionHeader: React.FC<SessionHeaderProps> = React.memo(({
                 value={editValue}
                 onChange={(e) => setEditValue(e.target.value)}
                 onKeyDown={(e) => {
-                  if (e.key === 'Enter') {
-                    setDisplayName(editValue.trim() || null);
-                    setIsEditing(false);
-                  }
-                  if (e.key === 'Escape') {
-                    setIsEditing(false);
-                  }
+                  if (e.key === 'Enter') { setDisplayName(editValue.trim() || null); setIsEditing(false); }
+                  if (e.key === 'Escape') { setIsEditing(false); }
                 }}
-                onBlur={() => {
-                  setDisplayName(editValue.trim() || null);
-                  setIsEditing(false);
-                }}
-                className="font-semibold bg-transparent border-b border-primary outline-none w-48"
+                onBlur={() => { setDisplayName(editValue.trim() || null); setIsEditing(false); }}
+                className="text-sm font-medium bg-transparent border-b border-primary outline-none w-40"
               />
             ) : (
-              <span className="font-semibold">{displayedTitle}</span>
+              <span className="text-sm font-medium truncate">{displayedTitle}</span>
             )}
-
             {!isEditing && projectPath && (
-              <TooltipSimple content="Rename project" side="bottom">
+              <TooltipSimple content="Rename" side="bottom">
                 <button
-                  onClick={() => {
-                    setEditValue(displayName ?? autoTitle);
-                    setIsEditing(true);
-                  }}
-                  className="p-1 rounded hover:bg-accent hover:text-accent-foreground transition-colors opacity-0 group-hover:opacity-100"
+                  onClick={() => { setEditValue(displayName ?? autoTitle); setIsEditing(true); }}
+                  className="p-1 rounded hover:bg-accent transition-colors opacity-0 group-hover:opacity-100 shrink-0"
                 >
-                  <Pencil size={12} />
+                  <Pencil size={11} />
                 </button>
               </TooltipSimple>
             )}
           </div>
 
           {!projectPath && (
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={onSelectPath}
-              className="flex items-center gap-2"
-            >
-              <FolderOpen className="h-4 w-4" />
+            <Button variant="outline" size="sm" onClick={onSelectPath} className="flex items-center gap-1.5 shrink-0">
+              <FolderOpen className="h-3.5 w-3.5" />
               Select Project
             </Button>
           )}
         </div>
 
-        <div className="flex items-center gap-2">
-          {onRefresh && claudeSessionId && !isStreaming && (
-            <TooltipSimple content="Reload session from file" side="bottom">
-              <Button
-                variant="ghost"
-                size="icon"
-                onClick={onRefresh}
-                className="h-8 w-8"
-              >
+        {/* Right — actions */}
+        <div className="flex items-center gap-1 shrink-0">
+
+          {onRefresh && !isStreaming && (
+            <TooltipSimple content="Reload session" side="bottom">
+              <Button variant="ghost" size="icon" onClick={onRefresh} className="h-8 w-8">
                 <RefreshCw className="h-4 w-4" />
               </Button>
             </TooltipSimple>
           )}
-          {claudeSessionId && (
-            <div className="flex items-center gap-2">
-              <TooltipSimple content={idCopied ? "Copied!" : "Copy session ID"} side="bottom">
-                <Badge
-                  variant="outline"
-                  className="text-xs cursor-pointer hover:bg-accent transition-colors select-none"
-                  onClick={copySessionId}
-                >
-                  <Hash className="h-3 w-3 mr-1" />
-                  {claudeSessionId.slice(0, 8)}
-                </Badge>
-              </TooltipSimple>
-              {onOpenFolder && projectPath && (
-                <TooltipSimple content="Open project folder (CWD)" side="bottom">
-                  <Button variant="ghost" size="icon" onClick={onOpenFolder} className="h-8 w-8">
-                    <FolderOpen className="h-4 w-4" />
-                  </Button>
-                </TooltipSimple>
-              )}
-              {onOpenSessionFolder && (
-                <TooltipSimple content="Open .claude session folder" side="bottom">
-                  <Button variant="ghost" size="icon" onClick={onOpenSessionFolder} className="h-8 w-8">
-                    <FolderOpen className="h-4 w-4 opacity-60" />
-                  </Button>
-                </TooltipSimple>
-              )}
-              {onOpenSessionFile && (
-                <TooltipSimple content="Open session JSONL file" side="bottom">
-                  <Button variant="ghost" size="icon" onClick={onOpenSessionFile} className="h-8 w-8">
-                    <FileText className="h-4 w-4" />
-                  </Button>
-                </TooltipSimple>
-              )}
-              {totalTokens > 0 && (
-                <Badge variant="secondary" className="text-xs">
-                  {totalTokens.toLocaleString()} tokens
-                </Badge>
-              )}
-            </div>
+
+          {displayedSessionId && (
+            <TooltipSimple content={idCopied ? 'Copied!' : 'Copy session ID'} side="bottom">
+              <Badge
+                variant="outline"
+                className="text-xs cursor-pointer hover:bg-accent transition-colors select-none font-mono"
+                onClick={copySessionId}
+              >
+                <Hash className="h-3 w-3 mr-1" />
+                {displayedSessionId.slice(0, 8)}
+              </Badge>
+            </TooltipSimple>
+          )}
+
+          {onOpenFolder && projectPath && (
+            <TooltipSimple content="Open project folder" side="bottom">
+              <Button variant="ghost" size="icon" onClick={onOpenFolder} className="h-8 w-8">
+                <FolderOpen className="h-4 w-4" />
+              </Button>
+            </TooltipSimple>
+          )}
+
+          {onOpenSessionFolder && (
+            <TooltipSimple content="Open session folder" side="bottom">
+              <Button variant="ghost" size="icon" onClick={onOpenSessionFolder} className="h-8 w-8">
+                <FolderOpen className="h-4 w-4 opacity-60" />
+              </Button>
+            </TooltipSimple>
+          )}
+
+          {onOpenSessionFile && (
+            <TooltipSimple content="Open session JSONL" side="bottom">
+              <Button variant="ghost" size="icon" onClick={onOpenSessionFile} className="h-8 w-8">
+                <FileText className="h-4 w-4" />
+              </Button>
+            </TooltipSimple>
           )}
 
           {hasMessages && !isStreaming && (
@@ -228,35 +217,25 @@ export const SessionHeader: React.FC<SessionHeaderProps> = React.memo(({
               }
               content={
                 <div className="space-y-1">
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className="w-full justify-start"
-                    onClick={onCopyAsJsonl}
-                  >
+                  <Button variant="ghost" size="sm" className="w-full justify-start" onClick={onCopyAsJsonl}>
                     Copy as JSONL
                   </Button>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className="w-full justify-start"
-                    onClick={onCopyAsMarkdown}
-                  >
+                  <Button variant="ghost" size="sm" className="w-full justify-start" onClick={onCopyAsMarkdown}>
                     Copy as Markdown
                   </Button>
                 </div>
               }
-              className="w-48 p-2"
+              className="w-44 p-2"
             />
           )}
 
           {hasMessages && onCollapseAll && (
-            <TooltipSimple content={allCollapsed ? "Expand all steps" : "Collapse all steps"} side="bottom">
+            <TooltipSimple content={allCollapsed ? 'Expand all' : 'Collapse all'} side="bottom">
               <Button
                 variant="ghost"
                 size="icon"
                 onClick={onCollapseAll}
-                className={cn("h-8 w-8 transition-colors", allCollapsed && "bg-accent text-accent-foreground")}
+                className={cn('h-8 w-8 transition-colors', allCollapsed && 'bg-accent text-accent-foreground')}
               >
                 <ChevronsUpDown className="h-4 w-4" />
               </Button>
@@ -271,7 +250,6 @@ export const SessionHeader: React.FC<SessionHeaderProps> = React.memo(({
                 className="h-8 w-8"
                 onClick={() => {
                   let url = gitInfo.remote_url!;
-                  // Convert SSH remote to HTTPS
                   if (url.startsWith('git@')) {
                     url = url.replace(/^git@([^:]+):/, 'https://$1/').replace(/\.git$/, '');
                   } else {
@@ -291,22 +269,57 @@ export const SessionHeader: React.FC<SessionHeaderProps> = React.memo(({
                 <Settings className="h-4 w-4" />
               </Button>
             </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="w-48">
-              {onProjectSettings && projectPath && (
+            <DropdownMenuContent align="end" className="w-52">
+              <DropdownMenuLabel className="text-xs text-muted-foreground font-normal">Model</DropdownMenuLabel>
+              <div className="flex gap-1 px-2 pb-2">
+                <button
+                  onClick={() => onModelChange('sonnet')}
+                  className={cn(
+                    'flex-1 flex items-center justify-center gap-1.5 h-7 rounded text-xs font-medium transition-colors',
+                    selectedModel === 'sonnet'
+                      ? 'bg-primary text-primary-foreground'
+                      : 'bg-muted hover:bg-accent'
+                  )}
+                >
+                  <Zap className="h-3 w-3" />
+                  Sonnet
+                </button>
+                <button
+                  onClick={() => onModelChange('opus')}
+                  className={cn(
+                    'flex-1 flex items-center justify-center gap-1.5 h-7 rounded text-xs font-medium transition-colors',
+                    selectedModel === 'opus'
+                      ? 'bg-primary text-primary-foreground'
+                      : 'bg-muted hover:bg-accent'
+                  )}
+                >
+                  <Zap className="h-3 w-3 rotate-180" />
+                  Opus
+                </button>
+              </div>
+              {(onProjectSettings || onSlashCommandsSettings || onShowTimeline) && <DropdownMenuSeparator />}
+              {onProjectSettings && (
                 <DropdownMenuItem onClick={onProjectSettings}>
                   <Settings className="h-4 w-4 mr-2" />
-                  Project Settings
+                  Session Settings
                 </DropdownMenuItem>
               )}
-              {onSlashCommandsSettings && projectPath && (
+              {onSlashCommandsSettings && (
                 <DropdownMenuItem onClick={onSlashCommandsSettings}>
                   <Command className="h-4 w-4 mr-2" />
                   Slash Commands
                 </DropdownMenuItem>
               )}
+              {onShowTimeline && (
+                <DropdownMenuItem onClick={onShowTimeline}>
+                  <GitBranch className="h-4 w-4 mr-2" />
+                  Session Timeline
+                </DropdownMenuItem>
+              )}
             </DropdownMenuContent>
           </DropdownMenu>
         </div>
+
       </div>
     </div>
   );

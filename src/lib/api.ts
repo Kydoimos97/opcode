@@ -2283,4 +2283,17 @@ export const api = {
     }
   },
 
+  async readSessionStatus(sessionId: string): Promise<Record<string, any> | null> {
+    try {
+      const result = await apiCall<Record<string, any> | null>("read_session_status", { sessionId });
+      return result ?? null;
+    } catch {
+      return null;
+    }
+  },
+
+  async openPath(path: string): Promise<void> {
+    await apiCall<void>("open_path", { path });
+  },
+
 };

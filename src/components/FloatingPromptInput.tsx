@@ -6,13 +6,11 @@ import {
   Minimize2,
   ChevronUp,
   Sparkles,
-  Zap,
   Square,
   Brain,
   Lightbulb,
   Cpu,
   Rocket,
-  
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -51,9 +49,9 @@ interface FloatingPromptInputProps {
    */
   disabled?: boolean;
   /**
-   * Default model to select
+   * Currently selected model (controlled by parent)
    */
-  defaultModel?: "sonnet" | "opus";
+  selectedModel: "sonnet" | "opus";
   /**
    * Project path for file picker
    */
@@ -172,33 +170,11 @@ const ThinkingModeIndicator: React.FC<{ level: number; color?: string }> = ({ le
   );
 };
 
-type Model = {
-  id: "sonnet" | "opus";
-  name: string;
-  description: string;
-  icon: React.ReactNode;
-  shortName: string;
-  color: string;
+const MODELS_DISPLAY: Record<"sonnet" | "opus", string> = {
+  sonnet: "Sonnet",
+  opus: "Opus",
 };
 
-const MODELS: Model[] = [
-  {
-    id: "sonnet",
-    name: "Claude 4 Sonnet",
-    description: "Faster, efficient for most tasks",
-    icon: <Zap className="h-3.5 w-3.5" />,
-    shortName: "S",
-    color: "text-primary"
-  },
-  {
-    id: "opus",
-    name: "Claude 4 Opus",
-    description: "More capable, better for complex tasks",
-    icon: <Zap className="h-3.5 w-3.5" />,
-    shortName: "O",
-    color: "text-primary"
-  }
-];
 
 /**
  * FloatingPromptInput component - Fixed position prompt input with model picker
@@ -216,7 +192,7 @@ const FloatingPromptInputInner = (
     onSend,
     isLoading = false,
     disabled = false,
-    defaultModel = "sonnet",
+    selectedModel,
     projectPath,
     className,
     onCancel,
@@ -225,10 +201,8 @@ const FloatingPromptInputInner = (
   ref: React.Ref<FloatingPromptInputRef>,
 ) => {
   const [prompt, setPrompt] = useState("");
-  const [selectedModel, setSelectedModel] = useState<"sonnet" | "opus">(defaultModel);
   const [selectedThinkingMode, setSelectedThinkingMode] = useState<ThinkingMode>("auto");
   const [isExpanded, setIsExpanded] = useState(false);
-  const [modelPickerOpen, setModelPickerOpen] = useState(false);
   const [thinkingModePickerOpen, setThinkingModePickerOpen] = useState(false);
   const [showFilePicker, setShowFilePicker] = useState(false);
   const [filePickerQuery, setFilePickerQuery] = useState("");
@@ -844,7 +818,7 @@ const FloatingPromptInputInner = (
     setPrompt(newPrompt.trim());
   };
 
-  const selectedModelData = MODELS.find(m => m.id === selectedModel) || MODELS[0];
+  const modelDisplayName = MODELS_DISPLAY[selectedModel] ?? "Sonnet";
 
   return (
     <TooltipProvider>
@@ -913,58 +887,9 @@ const FloatingPromptInputInner = (
 
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-4">
-                  <div className="flex items-center gap-2">
-                    <span className="text-xs text-muted-foreground">Model:</span>
-                    <Popover
-                      trigger={
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => setModelPickerOpen(!modelPickerOpen)}
-                          className="gap-2"
-                        >
-                          <span className={selectedModelData.color}>
-                            {selectedModelData.icon}
-                          </span>
-                          {selectedModelData.name}
-                        </Button>
-                      }
-                      content={
-                        <div className="w-[300px] p-1">
-                          {MODELS.map((model) => (
-                            <button
-                              key={model.id}
-                              onClick={() => {
-                                setSelectedModel(model.id);
-                                setModelPickerOpen(false);
-                              }}
-                              className={cn(
-                                "w-full flex items-start gap-3 p-3 rounded-md transition-colors text-left",
-                                "hover:bg-accent",
-                                selectedModel === model.id && "bg-accent"
-                              )}
-                            >
-                              <div className="mt-0.5">
-                                <span className={model.color}>
-                                  {model.icon}
-                                </span>
-                              </div>
-                              <div className="flex-1 space-y-1">
-                                <div className="font-medium text-sm">{model.name}</div>
-                                <div className="text-xs text-muted-foreground">
-                                  {model.description}
-                                </div>
-                              </div>
-                            </button>
-                          ))}
-                        </div>
-                      }
-                      open={modelPickerOpen}
-                      onOpenChange={setModelPickerOpen}
-                      align="start"
-                      side="top"
-                    />
-                  </div>
+                  <span className="text-xs text-muted-foreground">
+                    Model: <span className="text-foreground font-medium">{modelDisplayName}</span>
+                  </span>
 
                   <div className="flex items-center gap-2">
                     <span className="text-xs text-muted-foreground">Thinking:</span>
@@ -1080,74 +1005,8 @@ const FloatingPromptInputInner = (
 
           <div className="p-3">
             <div className="flex items-end gap-2">
-              {/* Model & Thinking Mode Selectors - Left side, fixed at bottom */}
+              {/* Thinking Mode Selector - Left side */}
               <div className="flex items-center gap-1 shrink-0 mb-1">
-                <Popover
-                  trigger={
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <motion.div
-                          whileTap={{ scale: 0.97 }}
-                            transition={{ duration: 0.15 }}
-                          >
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              disabled={disabled}
-                              className="h-9 px-2 hover:bg-accent/50 gap-1"
-                            >
-                              <span className={selectedModelData.color}>
-                                {selectedModelData.icon}
-                              </span>
-                              <span className="text-[10px] font-bold opacity-70">
-                                {selectedModelData.shortName}
-                              </span>
-                              <ChevronUp className="h-3 w-3 ml-0.5 opacity-50" />
-                            </Button>
-                          </motion.div>
-                        </TooltipTrigger>
-                        <TooltipContent side="top">
-                          <p className="text-xs font-medium">{selectedModelData.name}</p>
-                          <p className="text-xs text-muted-foreground">{selectedModelData.description}</p>
-                        </TooltipContent>
-                      </Tooltip>
-                  }
-                content={
-                  <div className="w-[300px] p-1">
-                    {MODELS.map((model) => (
-                      <button
-                        key={model.id}
-                        onClick={() => {
-                          setSelectedModel(model.id);
-                          setModelPickerOpen(false);
-                        }}
-                        className={cn(
-                          "w-full flex items-start gap-3 p-3 rounded-md transition-colors text-left",
-                          "hover:bg-accent",
-                          selectedModel === model.id && "bg-accent"
-                        )}
-                      >
-                        <div className="mt-0.5">
-                          <span className={model.color}>
-                            {model.icon}
-                          </span>
-                        </div>
-                        <div className="flex-1 space-y-1">
-                          <div className="font-medium text-sm">{model.name}</div>
-                          <div className="text-xs text-muted-foreground">
-                            {model.description}
-                          </div>
-                        </div>
-                      </button>
-                    ))}
-                  </div>
-                }
-                open={modelPickerOpen}
-                onOpenChange={setModelPickerOpen}
-                align="start"
-                side="top"
-              />
-
                 <Popover
                   trigger={
                     <Tooltip>
