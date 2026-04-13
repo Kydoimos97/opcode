@@ -204,8 +204,10 @@ export interface NativeAgent {
 
 export interface SkillInfo {
   name: string;
+  display_name: string;
   path: string;
   description: string;
+  usage_count: number;
 }
 
 // Usage Dashboard types

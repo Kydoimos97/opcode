@@ -22,6 +22,9 @@ import {
   Command,
   ShieldCheck,
   Palette,
+  ChevronDown,
+  ChevronRight,
+  BookOpen,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -152,6 +155,8 @@ export const Settings: React.FC<SettingsProps> = ({
   // Skills section state
   const [skills, setSkills] = useState<SkillInfo[]>([]);
   const [skillsLoading, setSkillsLoading] = useState(false);
+  const [expandedSkill, setExpandedSkill] = useState<string | null>(null);
+  const [skillContent, setSkillContent] = useState<Record<string, string>>({});
 
   // Plugins section state
   const [pluginList, setPluginList] = useState<{
@@ -1827,18 +1832,75 @@ export const Settings: React.FC<SettingsProps> = ({
                     <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
                   </div>
                 ) : skills.length === 0 ? (
-                  <div className="py-8 text-center text-muted-foreground">
-                    No skills found in ~/.claude/skills/ — install skills to see them here
+                  <div className="flex flex-col items-center justify-center py-10 text-center gap-3">
+                    <div className="p-3 bg-primary/10 rounded-full">
+                      <BookOpen className="h-8 w-8 text-primary/60" />
+                    </div>
+                    <div>
+                      <p className="font-medium text-sm">No skills installed</p>
+                      <p className="text-xs text-muted-foreground mt-1">Skills live in ~/.claude/skills/ — install a skill to see it here</p>
+                    </div>
                   </div>
                 ) : (
-                  <div className="space-y-3">
-                    {skills.map((skill) => (
-                      <div key={skill.name} className="p-3 border rounded-lg bg-muted/30">
-                        <h4 className="font-semibold text-sm">{skill.name}</h4>
-                        <p className="text-xs text-muted-foreground mt-1">{skill.description}</p>
-                        <p className="text-xs text-muted-foreground mt-2 font-mono">{skill.path}</p>
-                      </div>
-                    ))}
+                  <div className="space-y-2">
+                    {skills.sort((a, b) => b.usage_count - a.usage_count).map((skill) => {
+                      const isExpanded = expandedSkill === skill.name;
+                      return (
+                        <div key={skill.name} className="border rounded-lg overflow-hidden">
+                          <button
+                            onClick={async () => {
+                              if (isExpanded) {
+                                setExpandedSkill(null);
+                              } else {
+                                setExpandedSkill(skill.name);
+                                if (!skillContent[skill.name]) {
+                                  try {
+                                    const content = await api.readPlanFile(skill.path);
+                                    setSkillContent(prev => ({ ...prev, [skill.name]: content }));
+                                  } catch {
+                                    setSkillContent(prev => ({ ...prev, [skill.name]: 'Failed to load skill content.' }));
+                                  }
+                                }
+                              }
+                            }}
+                            className="w-full flex items-center gap-3 px-4 py-3 hover:bg-accent/50 transition-colors text-left"
+                          >
+                            {isExpanded
+                              ? <ChevronDown className="h-4 w-4 text-muted-foreground shrink-0" />
+                              : <ChevronRight className="h-4 w-4 text-muted-foreground shrink-0" />
+                            }
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center gap-2">
+                                <span className="font-medium text-sm">{skill.display_name || skill.name}</span>
+                                {skill.usage_count > 0 && (
+                                  <span className="text-xs px-1.5 py-0.5 rounded-full bg-primary/10 text-primary font-medium">
+                                    {skill.usage_count} {skill.usage_count === 1 ? 'use' : 'uses'}
+                                  </span>
+                                )}
+                              </div>
+                              {skill.description && (
+                                <p className="text-xs text-muted-foreground mt-0.5 truncate">{skill.description}</p>
+                              )}
+                            </div>
+                            <span className="text-xs text-muted-foreground/60 font-mono shrink-0">{skill.name}</span>
+                          </button>
+                          {isExpanded && (
+                            <div className="border-t bg-muted/20 px-4 py-3 max-h-64 overflow-y-auto">
+                              {skillContent[skill.name] ? (
+                                <pre className="text-xs font-mono whitespace-pre-wrap text-foreground/80 leading-relaxed">
+                                  {skillContent[skill.name]}
+                                </pre>
+                              ) : (
+                                <div className="flex items-center gap-2 text-xs text-muted-foreground py-2">
+                                  <Loader2 className="h-3 w-3 animate-spin" />
+                                  Loading...
+                                </div>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
                   </div>
                 )}
               </Card>

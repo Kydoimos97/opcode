@@ -2968,8 +2968,10 @@ pub struct NativeAgent {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SkillInfo {
     pub name: String,
+    pub display_name: String,
     pub path: String,
     pub description: String,
+    pub usage_count: u32,
 }
 
 /// Lists all native agents from ~/.claude/agents/
@@ -3130,6 +3132,21 @@ pub async fn list_skills() -> Result<Vec<SkillInfo>, String> {
         return Ok(Vec::new());
     }
 
+    let skill_usage: std::collections::HashMap<String, u32> = {
+        let claude_json_path = home.join(".claude.json");
+        if claude_json_path.exists() {
+            if let Ok(content) = fs::read_to_string(&claude_json_path) {
+                if let Ok(json) = serde_json::from_str::<serde_json::Value>(&content) {
+                    if let Some(usage_map) = json.get("skillUsage").and_then(|v| v.as_object()) {
+                        usage_map.iter()
+                            .filter_map(|(k, v)| v.as_u64().map(|n| (k.clone(), n as u32)))
+                            .collect()
+                    } else { std::collections::HashMap::new() }
+                } else { std::collections::HashMap::new() }
+            } else { std::collections::HashMap::new() }
+        } else { std::collections::HashMap::new() }
+    };
+
     let mut skills = Vec::new();
 
     match fs::read_dir(&skills_dir) {
@@ -3141,9 +3158,15 @@ pub async fn list_skills() -> Result<Vec<SkillInfo>, String> {
                     if skill_md.exists() {
                         if let Some(name) = path.file_name().and_then(|s| s.to_str()) {
                             if let Ok(content) = fs::read_to_string(&skill_md) {
+                                let display_name = content
+                                    .lines()
+                                    .find(|line| line.starts_with("# "))
+                                    .map(|line| line.trim_start_matches("# ").trim().to_string())
+                                    .unwrap_or_else(|| name.to_string());
+                                let usage_count = skill_usage.get(name).copied().unwrap_or(0);
                                 let description = content
                                     .lines()
-                                    .find(|line| !line.trim().is_empty())
+                                    .find(|line| !line.trim().is_empty() && !line.starts_with("#"))
                                     .unwrap_or("")
                                     .trim()
                                     .to_string();
@@ -3155,8 +3178,10 @@ pub async fn list_skills() -> Result<Vec<SkillInfo>, String> {
 
                                 skills.push(SkillInfo {
                                     name: name.to_string(),
+                                    display_name,
                                     path: skill_md.to_string_lossy().to_string(),
                                     description: desc,
+                                    usage_count,
                                 });
                             }
                         }
