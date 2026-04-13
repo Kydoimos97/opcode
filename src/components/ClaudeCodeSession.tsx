@@ -1,12 +1,11 @@
 import React, { useState, useEffect, useRef, useMemo } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { 
+import {
   Copy,
   ChevronDown,
-  GitBranch,
   ChevronUp,
   X,
-  Wrench
+  FolderOpen,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -1569,16 +1568,37 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
               projectPath={projectPath}
               extraMenuItems={
                 <>
-                  {effectiveSession && (
-                    <TooltipSimple content="Session Timeline" side="top">
+                  {projectPath && tauriOpen && (
+                    <TooltipSimple content="Open project folder" side="top">
                       <motion.div whileTap={{ scale: 0.97 }} transition={{ duration: 0.15 }}>
                         <Button
                           variant="ghost"
                           size="icon"
-                          onClick={() => setShowTimeline(!showTimeline)}
+                          onClick={() => tauriOpen(projectPath)}
                           className="h-9 w-9 text-muted-foreground hover:text-foreground"
                         >
-                          <GitBranch className={cn("h-3.5 w-3.5", showTimeline && "text-primary")} />
+                          <FolderOpen className="h-3.5 w-3.5" />
+                        </Button>
+                      </motion.div>
+                    </TooltipSimple>
+                  )}
+                  {claudeSessionId && effectiveSession?.project_id && tauriOpen && (
+                    <TooltipSimple content="Open .claude session folder" side="top">
+                      <motion.div whileTap={{ scale: 0.97 }} transition={{ duration: 0.15 }}>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          onClick={async () => {
+                            try {
+                              const filePath = await api.getSessionFilePath(claudeSessionId, effectiveSession.project_id);
+                              await tauriOpen(filePath.replace(/[/\\][^/\\]+$/, ''));
+                            } catch (e) {
+                              console.error('Failed to open session folder:', e);
+                            }
+                          }}
+                          className="h-9 w-9 text-muted-foreground hover:text-foreground"
+                        >
+                          <FolderOpen className="h-3.5 w-3.5 opacity-60" />
                         </Button>
                       </motion.div>
                     </TooltipSimple>
@@ -1610,18 +1630,6 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
                       align="end"
                     />
                   )}
-                  <TooltipSimple content="Checkpoint Settings" side="top">
-                    <motion.div whileTap={{ scale: 0.97 }} transition={{ duration: 0.15 }}>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        onClick={() => setShowSettings(!showSettings)}
-                        className="h-8 w-8 text-muted-foreground hover:text-foreground"
-                      >
-                        <Wrench className={cn("h-3.5 w-3.5", showSettings && "text-primary")} />
-                      </Button>
-                    </motion.div>
-                  </TooltipSimple>
                 </>
               }
             />

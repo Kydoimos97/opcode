@@ -1,5 +1,4 @@
 import React, { useState } from 'react';
-import { motion } from 'framer-motion';
 import {
   ArrowLeft,
   FolderOpen,
@@ -95,11 +94,7 @@ export const SessionHeader: React.FC<SessionHeaderProps> = React.memo(({
   const displayedTitle = displayName ?? autoTitle;
 
   return (
-    <motion.div
-      initial={{ opacity: 0, y: -20 }}
-      animate={{ opacity: 1, y: 0 }}
-      className="bg-background/95 backdrop-blur-sm border-b px-4 py-3 flex-shrink-0 z-10"
-    >
+    <div className="bg-background border-b px-4 py-3 flex-shrink-0 z-10">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">
           <Button
@@ -155,19 +150,6 @@ export const SessionHeader: React.FC<SessionHeaderProps> = React.memo(({
             )}
           </div>
 
-          {projectPath && onOpenFolder && (
-            <TooltipSimple content="Open folder" side="bottom">
-              <Button
-                variant="ghost"
-                size="icon"
-                onClick={onOpenFolder}
-                className="h-8 w-8"
-              >
-                <FolderOpen className="h-4 w-4" />
-              </Button>
-            </TooltipSimple>
-          )}
-
           {!projectPath && (
             <Button
               variant="outline"
@@ -206,27 +188,24 @@ export const SessionHeader: React.FC<SessionHeaderProps> = React.memo(({
                   {claudeSessionId.slice(0, 8)}
                 </Badge>
               </TooltipSimple>
-              {onOpenSessionFile && (
-                <TooltipSimple content="Open session JSONL file" side="bottom">
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    onClick={onOpenSessionFile}
-                    className="h-8 w-8"
-                  >
-                    <FileText className="h-4 w-4" />
+              {onOpenFolder && projectPath && (
+                <TooltipSimple content="Open project folder (CWD)" side="bottom">
+                  <Button variant="ghost" size="icon" onClick={onOpenFolder} className="h-8 w-8">
+                    <FolderOpen className="h-4 w-4" />
                   </Button>
                 </TooltipSimple>
               )}
               {onOpenSessionFolder && (
-                <TooltipSimple content="Open session folder" side="bottom">
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    onClick={onOpenSessionFolder}
-                    className="h-8 w-8"
-                  >
-                    <FolderOpen className="h-4 w-4" />
+                <TooltipSimple content="Open .claude session folder" side="bottom">
+                  <Button variant="ghost" size="icon" onClick={onOpenSessionFolder} className="h-8 w-8">
+                    <FolderOpen className="h-4 w-4 opacity-60" />
+                  </Button>
+                </TooltipSimple>
+              )}
+              {onOpenSessionFile && (
+                <TooltipSimple content="Open session JSONL file" side="bottom">
+                  <Button variant="ghost" size="icon" onClick={onOpenSessionFile} className="h-8 w-8">
+                    <FileText className="h-4 w-4" />
                   </Button>
                 </TooltipSimple>
               )}
@@ -329,6 +308,6 @@ export const SessionHeader: React.FC<SessionHeaderProps> = React.memo(({
           </DropdownMenu>
         </div>
       </div>
-    </motion.div>
+    </div>
   );
 });
