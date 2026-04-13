@@ -462,6 +462,7 @@ function App() {
     return true; // default if no cache
   });
   const [introProgress, setIntroProgress] = useState(0);
+  const [startupStep, setStartupStep] = useState('');
 
   useEffect(() => {
     let dismissed = false;
@@ -480,6 +481,7 @@ function App() {
     (async () => {
       try {
         // Step 1: read local settings (instant) — 15%
+        setStartupStep('Parsing C-Code settings...');
         const settingsData = await api.readCcodeSettings().catch(() => ({} as Record<string, string>));
         const pref: string | null = settingsData['startup_intro_enabled'] ?? null;
         const enabled = pref === null ? true : pref === 'true';
@@ -487,10 +489,12 @@ function App() {
         setIntroProgress(15);
 
         // Step 2: warm ccodeSettings cache — 30%
+        setStartupStep('Warming up cache...');
         ccodeSettings.warmup();
         setIntroProgress(30);
 
         // Step 3: run full startup snapshot (includes slow CLI calls) — runs to 90%
+        setStartupStep('Checking Claude history...');
         // Fake progress ticks while waiting so the bar keeps moving
         const ticker = setInterval(() => {
           setIntroProgress(p => Math.min(p + 3, 88));
@@ -501,7 +505,8 @@ function App() {
         clearInterval(ticker);
         setIntroProgress(90);
 
-        // Step 4: brief settle — 100%
+        // Step 4: restore session state — 100%
+        setStartupStep('Restoring session state...');
         await new Promise(r => setTimeout(r, 100));
 
         dismiss();
@@ -521,7 +526,7 @@ function App() {
         <OutputCacheProvider>
           <TabProvider>
             <AppContent />
-            <StartupIntro visible={showIntro} progress={introProgress} />
+            <StartupIntro visible={showIntro} progress={introProgress} stepLabel={startupStep} />
           </TabProvider>
         </OutputCacheProvider>
       </TooltipProvider>

@@ -3898,3 +3898,29 @@ pub async fn run_doctor(app: AppHandle) -> Result<String, String> {
         Ok(stdout)
     }
 }
+
+/// Saves the sidebar session state to ~/.ccode/sidebar_state.json
+#[tauri::command]
+pub async fn save_sidebar_state(json: String) -> Result<(), String> {
+    let ccode_dir = dirs::home_dir()
+        .ok_or_else(|| "Cannot find home directory".to_string())?
+        .join(".ccode");
+    std::fs::create_dir_all(&ccode_dir).map_err(|e| e.to_string())?;
+    let path = ccode_dir.join("sidebar_state.json");
+    std::fs::write(&path, json).map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+/// Loads the sidebar session state from ~/.ccode/sidebar_state.json
+/// Returns "{}" if the file does not exist.
+#[tauri::command]
+pub async fn load_sidebar_state() -> Result<String, String> {
+    let path = match dirs::home_dir() {
+        Some(h) => h.join(".ccode").join("sidebar_state.json"),
+        None => return Ok("{}".to_string()),
+    };
+    if !path.exists() {
+        return Ok("{}".to_string());
+    }
+    std::fs::read_to_string(&path).map_err(|e| e.to_string())
+}

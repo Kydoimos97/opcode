@@ -38,6 +38,7 @@ use commands::claude::{
     read_ccode_settings, write_ccode_settings, read_session_status, open_path,
     list_plugins, install_plugin, uninstall_plugin, enable_plugin, disable_plugin,
     list_plan_files, read_plan_file, get_auto_mode_config, run_doctor,
+    save_sidebar_state, load_sidebar_state,
 };
 use commands::fonts::list_system_fonts;
 use commands::system::get_system_resources;
@@ -343,6 +344,9 @@ fn main() {
             remove_hook_bridge,
             // Startup
             get_startup_snapshot,
+            // Sidebar state persistence
+            save_sidebar_state,
+            load_sidebar_state,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

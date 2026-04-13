@@ -117,6 +117,16 @@ export interface ClaudeInstallation {
   installation_type: "System" | "Custom";
 }
 
+/**
+ * Represents a sidebar session entry for persistence
+ */
+export interface SidebarStateEntry {
+  session_id: string;
+  project_id: string;
+  project_path: string;
+  title: string;
+}
+
 // Agent API types
 export interface Agent {
   id: string;
@@ -576,6 +586,28 @@ export const api = {
     } catch (error) {
       console.error("Failed to get project sessions:", error);
       throw error;
+    }
+  },
+
+  /**
+   * Saves the sidebar session state to ~/.ccode/sidebar_state.json
+   * @param state - The sidebar state containing sessions list
+   */
+  async saveSidebarState(state: { sessions: SidebarStateEntry[] }): Promise<void> {
+    return apiCall<void>('save_sidebar_state', { json: JSON.stringify(state) });
+  },
+
+  /**
+   * Loads the sidebar session state from ~/.ccode/sidebar_state.json
+   * @returns Promise resolving to the sidebar state or null if invalid
+   */
+  async loadSidebarState(): Promise<{ sessions: SidebarStateEntry[] } | null> {
+    const json = await apiCall<string>('load_sidebar_state', {});
+    try {
+      const parsed = JSON.parse(json);
+      return Array.isArray(parsed.sessions) ? parsed as { sessions: SidebarStateEntry[] } : null;
+    } catch {
+      return null;
     }
   },
 

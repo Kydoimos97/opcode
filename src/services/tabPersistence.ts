@@ -59,12 +59,9 @@ export class TabPersistenceService {
     try {
       // Filter out tabs that shouldn't be persisted
       const persistableTabs = tabs.filter(tab => {
-        // Don't persist tabs with running status (they're likely stale)
-        if (tab.status === 'running') return false;
-        
         // Don't persist create/import agent tabs (they're temporary)
         if (tab.type === 'create-agent' || tab.type === 'import-agent') return false;
-        
+
         return true;
       });
 

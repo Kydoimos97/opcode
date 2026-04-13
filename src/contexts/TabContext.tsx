@@ -1,6 +1,7 @@
 import React, { createContext, useState, useContext, useCallback, useEffect, useRef } from 'react';
 import { TabPersistenceService } from '@/services/tabPersistence';
 import { SessionPersistenceService } from '@/services/sessionPersistence';
+import { api } from '@/lib/api';
 
 export interface Tab {
   id: string;
@@ -61,7 +62,7 @@ export const TabProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     
     if (savedTabs.length > 0) {
       // For chat tabs, restore session data
-      const restoredTabs = await Promise.all(savedTabs.map(async (tab) => {
+      let restoredTabs = await Promise.all(savedTabs.map(async (tab) => {
         if (tab.type === 'chat' && tab.sessionId) {
           // Check if session can be restored
           const sessionData = SessionPersistenceService.loadSession(tab.sessionId);
@@ -77,7 +78,37 @@ export const TabProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         }
         return tab;
       }));
-      
+
+      // Merge sessions from sidebar_state.json that weren't in localStorage
+      // (e.g. sessions that were running when app closed before fix #1 was deployed)
+      try {
+        const sidebarState = await api.loadSidebarState();
+        if (sidebarState?.sessions) {
+          for (const s of sidebarState.sessions) {
+            if (!s.session_id || !s.project_id) continue;
+            const alreadyPresent = restoredTabs.some(t =>
+              t.claudeSessionId === s.session_id || t.sessionId === s.session_id
+            );
+            if (!alreadyPresent) {
+              restoredTabs.push({
+                id: `tab-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+                type: 'chat',
+                title: s.title || 'Session',
+                sessionId: s.session_id,
+                claudeSessionId: s.session_id,
+                claudeProjectId: s.project_id,
+                initialProjectPath: s.project_path || '',
+                status: 'idle',
+                hasUnsavedChanges: false,
+                order: restoredTabs.length,
+                createdAt: new Date(),
+                updatedAt: new Date(),
+              } as any);
+            }
+          }
+        }
+      } catch { /* ignore — sidebar_state.json is optional */ }
+
       setTabs(restoredTabs);
       setActiveTabId(savedActiveTabId);
     } else {
@@ -113,6 +144,18 @@ export const TabProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     // Debounce saving to avoid excessive writes
     saveTimeoutRef.current = setTimeout(() => {
       TabPersistenceService.saveTabs(tabs, activeTabId);
+
+      // Also persist to sidebar_state.json for cross-restart session recovery
+      const chatSessions = tabs
+        .filter(t => t.type === 'chat' && (t.claudeSessionId || t.sessionId))
+        .map(t => ({
+          session_id: t.claudeSessionId || t.sessionId!,
+          project_id: t.claudeProjectId || (t.sessionData as any)?.project_id || '',
+          project_path: t.initialProjectPath || '',
+          title: t.title,
+        }))
+        .filter(s => s.project_id);
+      api.saveSidebarState({ sessions: chatSessions }).catch(() => {});
     }, 500); // Wait 500ms after last change before saving
 
     return () => {

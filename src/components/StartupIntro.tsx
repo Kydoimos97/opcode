@@ -7,8 +7,9 @@ import type { CSSProperties } from "react";
  * - Non-interactive; auto-fades after parent hides it via the `visible` prop.
  * - Uses existing shimmer/rotating-symbol styles from shimmer.css.
  * - `progress` (0-100): drives the thin loading bar at the bottom.
+ * - `stepLabel`: displays the current startup step below the brand text.
  */
-export function StartupIntro({ visible, progress = 0 }: { visible: boolean; progress?: number }) {
+export function StartupIntro({ visible, progress = 0, stepLabel }: { visible: boolean; progress?: number; stepLabel?: string }) {
   // Simple entrance animations only
   return (
     <AnimatePresence>
@@ -85,6 +86,17 @@ export function StartupIntro({ visible, progress = 0 }: { visible: boolean; prog
               </motion.div>
             </div>
 
+            {stepLabel && (
+              <motion.p
+                key={stepLabel}
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                transition={{ duration: 0.2 }}
+                className="mt-4 text-xs text-muted-foreground tracking-wide"
+              >
+                {stepLabel}
+              </motion.p>
+            )}
 
           </motion.div>
 
