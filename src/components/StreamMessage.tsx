@@ -798,6 +798,30 @@ const StreamMessageComponent: React.FC<StreamMessageProps> = ({
       }
     }
 
+    // High-frequency internal types that produce no user-visible content — silently ignored.
+    const SILENT_TYPES = new Set([
+      'progress', 'queue-operation', 'agent-setting',
+      'file-history-snapshot', 'last-prompt',
+    ]);
+    const msgType = (message as any).type;
+    if (msgType && SILENT_TYPES.has(msgType)) return null;
+
+    // Fallback: truly unknown type — show a collapsed raw JSON block.
+    // Excludes system/* subtypes (init is already handled; others are internal markers).
+    if (msgType && msgType !== 'system') {
+      return (
+        <details className="text-xs text-muted-foreground border border-border/30 rounded p-2 my-1">
+          <summary className="cursor-pointer select-none">
+            Unknown message type: <code className="font-mono">{msgType}</code>
+            {(message as any).subtype ? `/${(message as any).subtype}` : ''}
+          </summary>
+          <pre className="mt-2 overflow-auto max-h-40 text-xs font-mono whitespace-pre-wrap">
+            {JSON.stringify(message, null, 2)}
+          </pre>
+        </details>
+      );
+    }
+
     return null;
   } catch (error) {
     console.error("Error rendering stream message:", error, message);

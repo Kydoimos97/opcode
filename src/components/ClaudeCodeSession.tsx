@@ -51,6 +51,7 @@ import { useTabState } from "@/hooks/useTabState";
 import { SessionPersistenceService } from "@/services/sessionPersistence";
 import { useGroupedMessages } from "@/hooks/useGroupedMessages";
 import { useMessagePartition } from "@/hooks/useMessagePartition";
+import { useHookEvents } from "@/hooks/useHookEvents";
 import { TurnBlock } from "./TurnBlock";
 
 export type SessionState =
@@ -289,6 +290,15 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
   const allTurns = useGroupedMessages(displayableMessages);
   const { visible: partitionedTurns, hiddenCount } = useMessagePartition(allTurns, 10, historyExpanded);
   const turns = partitionedTurns;
+
+  const hookState = useHookEvents(claudeSessionId);
+
+  // Auto-update tab title from hook session_title
+  useEffect(() => {
+    if (hookState.sessionTitle && activeTab) {
+      updateTabTitle(activeTab.id, hookState.sessionTitle);
+    }
+  }, [hookState.sessionTitle, activeTab?.id, updateTabTitle]);
 
   const searchMatchTurnIndices = useMemo(() => {
     if (!searchQuery.trim()) return [];
@@ -1438,6 +1448,37 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
           <SessionStatusBar
             sessionId={claudeSessionId ?? session?.id ?? null}
           />
+          <AnimatePresence>
+            {hookState.subagentActive && (
+              <motion.div
+                initial={{ opacity: 0, y: 4 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: 4 }}
+                transition={{ duration: 0.15 }}
+                className="flex items-center gap-1.5 px-4 py-0.5 text-xs text-amber-500 bg-amber-500/10 border-t border-amber-500/20"
+              >
+                <div className="h-1.5 w-1.5 rounded-full bg-amber-500 animate-pulse" />
+                <span>subagent {hookState.subagentType ?? 'working'}</span>
+              </motion.div>
+            )}
+            {hookState.currentTool && (
+              <motion.div
+                initial={{ opacity: 0, y: 4 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: 4 }}
+                transition={{ duration: 0.15 }}
+                className="flex items-center gap-2 px-4 py-1 text-xs text-muted-foreground bg-muted/40 border-t border-border/40"
+              >
+                <div className="rotating-symbol text-primary h-3 w-3" />
+                <span className="font-medium">{hookState.currentTool.name}</span>
+                {hookState.currentTool.input && Object.keys(hookState.currentTool.input).length > 0 && (
+                  <span className="opacity-60 truncate max-w-xs">
+                    {Object.values(hookState.currentTool.input)[0]?.toString().slice(0, 80) ?? ''}
+                  </span>
+                )}
+              </motion.div>
+            )}
+          </AnimatePresence>
           <div className={cn(
             "transition-all duration-300",
             showTimeline && "sm:mr-96"

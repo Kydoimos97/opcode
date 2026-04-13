@@ -180,6 +180,9 @@ export const Settings: React.FC<SettingsProps> = ({
   const [systemFonts, setSystemFonts] = useState<Array<{ name: string; is_monospace: boolean }>>([]);
   const [fontsLoading, setFontsLoading] = useState(false);
 
+  const [hookBridgeInstalled, setHookBridgeInstalled] = useState(false);
+  const [hookBridgeLoading, setHookBridgeLoading] = useState(false);
+
   useEffect(() => {
     setSidebarDefaultOpen(localStorage.getItem('ui_pref:sidebar_default_open') === 'true');
     setStatusBarVisible(localStorage.getItem('ui_pref:status_bar_visible') !== 'false');
@@ -214,6 +217,8 @@ export const Settings: React.FC<SettingsProps> = ({
       setStartupIntroEnabled(startupIntroPref === null || startupIntroPref === undefined ? true : Boolean(startupIntroPref));
       const cguardStatus = await api.checkCguardInstalled();
       setCguardInstalled(cguardStatus);
+      const bridgeInstalled = await api.checkHookBridgeInstalled().catch(() => false);
+      setHookBridgeInstalled(bridgeInstalled);
 
       // Load font preferences from ccodeSettings
       const savedFontSans = await ccodeSettings.getPreference('font_sans');
@@ -1611,6 +1616,55 @@ export const Settings: React.FC<SettingsProps> = ({
 
               {activeSection === 'hooks' && (
               <div className="space-y-6">
+              <Card className="p-4">
+                <div className="flex items-center justify-between">
+                  <div className="space-y-1">
+                    <p className="text-sm font-medium">C-Code Hook Integration</p>
+                    <p className="text-xs text-muted-foreground">
+                      Real-time tool indicators, auto session titles, and waiting state via hooks.
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                      Changes take effect in your next Claude Code session.
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <div className={cn(
+                      'flex items-center gap-1 text-xs px-2 py-0.5 rounded-full',
+                      hookBridgeInstalled
+                        ? 'bg-green-500/20 text-green-600'
+                        : 'bg-muted text-muted-foreground'
+                    )}>
+                      <div className={cn('h-1.5 w-1.5 rounded-full', hookBridgeInstalled ? 'bg-green-500' : 'bg-muted-foreground')} />
+                      {hookBridgeInstalled ? 'Installed' : 'Not installed'}
+                    </div>
+                    <Button
+                      variant={hookBridgeInstalled ? 'outline' : 'default'}
+                      size="sm"
+                      disabled={hookBridgeLoading}
+                      onClick={async () => {
+                        setHookBridgeLoading(true);
+                        try {
+                          if (hookBridgeInstalled) {
+                            await api.removeHookBridge();
+                            setHookBridgeInstalled(false);
+                            setToast({ message: 'Hook bridge removed', type: 'success' });
+                          } else {
+                            await api.installHookBridge();
+                            setHookBridgeInstalled(true);
+                            setToast({ message: 'Hook bridge installed', type: 'success' });
+                          }
+                        } catch (e) {
+                          setToast({ message: `Failed: ${e}`, type: 'error' });
+                        } finally {
+                          setHookBridgeLoading(false);
+                        }
+                      }}
+                    >
+                      {hookBridgeLoading ? 'Working...' : hookBridgeInstalled ? 'Remove' : 'Install'}
+                    </Button>
+                  </div>
+                </div>
+              </Card>
               <Card className="p-6">
                 <div className="space-y-4">
                   <div>

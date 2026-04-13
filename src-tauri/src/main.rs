@@ -39,6 +39,7 @@ use commands::claude::{
 };
 use commands::fonts::list_system_fonts;
 use commands::system::get_system_resources;
+use commands::hook_events::{get_hook_events, check_hook_bridge_installed, install_hook_bridge, remove_hook_bridge};
 use commands::mcp::{
     mcp_add, mcp_add_from_claude_desktop, mcp_add_json, mcp_get, mcp_get_server_status, mcp_list,
     mcp_read_project_config, mcp_remove, mcp_reset_project_choices, mcp_save_project_config,
@@ -306,6 +307,11 @@ fn main() {
             open_path,
             list_system_fonts,
             get_system_resources,
+            // Hook event bridge
+            get_hook_events,
+            check_hook_bridge_installed,
+            install_hook_bridge,
+            remove_hook_bridge,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

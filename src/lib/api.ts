@@ -2153,4 +2153,37 @@ export const api = {
     }
   },
 
+  /**
+   * Gets hook events for a session
+   * @param sessionId - The session ID
+   * @returns Promise resolving to array of JSONL event lines
+   */
+  async getHookEvents(sessionId: string): Promise<string[]> {
+    return apiCall<string[]>('get_hook_events', { sessionId });
+  },
+
+  /**
+   * Checks if the hook bridge scripts are installed
+   * @returns Promise resolving to boolean indicating installation status
+   */
+  async checkHookBridgeInstalled(): Promise<boolean> {
+    return apiCall<boolean>('check_hook_bridge_installed');
+  },
+
+  /**
+   * Installs the hook event bridge
+   * @returns Promise resolving when installation completes
+   */
+  async installHookBridge(): Promise<void> {
+    return apiCall<void>('install_hook_bridge');
+  },
+
+  /**
+   * Removes the hook event bridge
+   * @returns Promise resolving when removal completes
+   */
+  async removeHookBridge(): Promise<void> {
+    return apiCall<void>('remove_hook_bridge');
+  },
+
 };
