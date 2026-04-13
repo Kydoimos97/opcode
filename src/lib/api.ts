@@ -2203,6 +2203,42 @@ export const api = {
     return apiCall('get_auth_status');
   },
 
+  async listPlugins(): Promise<{
+    installed: Array<{
+      id: string;
+      version: string | null;
+      scope: string | null;
+      enabled: boolean;
+      installedAt: string | null;
+      lastUpdated: string | null;
+    }>;
+    available: Array<{
+      pluginId: string;
+      name: string;
+      description: string | null;
+      marketplaceName: string | null;
+      installCount: number | null;
+    }>;
+  }> {
+    return apiCall('list_plugins');
+  },
+
+  async installPlugin(pluginId: string, scope: string = 'user'): Promise<void> {
+    return apiCall('install_plugin', { pluginId, scope });
+  },
+
+  async uninstallPlugin(pluginId: string): Promise<void> {
+    return apiCall('uninstall_plugin', { pluginId });
+  },
+
+  async enablePlugin(pluginId: string): Promise<void> {
+    return apiCall('enable_plugin', { pluginId });
+  },
+
+  async disablePlugin(pluginId: string): Promise<void> {
+    return apiCall('disable_plugin', { pluginId });
+  },
+
   /**
    * Installs the hook event bridge
    * @returns Promise resolving when installation completes

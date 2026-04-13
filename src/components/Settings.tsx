@@ -15,6 +15,7 @@ import {
   Zap,
   Network,
   Package,
+  Package2,
   Eye,
   Shield,
   Terminal,
@@ -87,6 +88,7 @@ const CLAUDE_NAV_ITEMS = [
   { id: 'commands', label: 'Commands', icon: Command },
   { id: 'cguard', label: 'c-guard', icon: ShieldCheck },
   { id: 'skills', label: 'Skills', icon: Package },
+  { id: 'plugins', label: 'Plugins', icon: Package2 },
 ] as const;
 
 type SectionId = typeof CCODE_NAV_ITEMS[number]['id'] | typeof CLAUDE_NAV_ITEMS[number]['id'];
@@ -150,6 +152,15 @@ export const Settings: React.FC<SettingsProps> = ({
   // Skills section state
   const [skills, setSkills] = useState<SkillInfo[]>([]);
   const [skillsLoading, setSkillsLoading] = useState(false);
+
+  // Plugins section state
+  const [pluginList, setPluginList] = useState<{
+    installed: Array<{ id: string; version: string | null; scope: string | null; enabled: boolean; installedAt: string | null; lastUpdated: string | null }>;
+    available: Array<{ pluginId: string; name: string; description: string | null; marketplaceName: string | null; installCount: number | null }>;
+  }>({ installed: [], available: [] });
+  const [pluginsLoading, setPluginsLoading] = useState(false);
+  const [pluginAction, setPluginAction] = useState<string | null>(null);
+  const [pluginsTab, setPluginsTab] = useState<'installed' | 'browse'>('installed');
 
   // Hooks display state
   const [globalSettings, setGlobalSettings] = useState<Record<string, any>>({});
@@ -274,6 +285,12 @@ export const Settings: React.FC<SettingsProps> = ({
       .finally(() => setFontsLoading(false));
   }, [activeSection, systemFonts.length]);
 
+  useEffect(() => {
+    if (activeSection === 'plugins') {
+      loadPlugins();
+    }
+  }, [activeSection]);
+
   const handleFontSansChange = async (value: string) => {
     setFontSans(value);
     if (value) {
@@ -313,6 +330,18 @@ export const Settings: React.FC<SettingsProps> = ({
       setSkills([]);
     } finally {
       setSkillsLoading(false);
+    }
+  };
+
+  const loadPlugins = async () => {
+    try {
+      setPluginsLoading(true);
+      const result = await api.listPlugins();
+      setPluginList(result);
+    } catch (err) {
+      console.error('Failed to load plugins:', err);
+    } finally {
+      setPluginsLoading(false);
     }
   };
 
@@ -1813,6 +1842,174 @@ export const Settings: React.FC<SettingsProps> = ({
                   </div>
                 )}
               </Card>
+              </div>
+              )}
+
+              {activeSection === 'plugins' && (
+              <div className="space-y-4 mt-6">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <h3 className="text-heading-4">Plugins</h3>
+                    <p className="text-caption text-muted-foreground">
+                      Manage Claude Code plugins via claude plugin commands
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <div className="flex rounded-md border border-border overflow-hidden text-xs">
+                      <button
+                        onClick={() => setPluginsTab('installed')}
+                        className={cn('px-3 py-1.5 transition-colors', pluginsTab === 'installed' ? 'bg-primary text-primary-foreground' : 'hover:bg-muted')}
+                      >
+                        Installed ({pluginList.installed.length})
+                      </button>
+                      <button
+                        onClick={() => setPluginsTab('browse')}
+                        className={cn('px-3 py-1.5 transition-colors border-l border-border', pluginsTab === 'browse' ? 'bg-primary text-primary-foreground' : 'hover:bg-muted')}
+                      >
+                        Browse ({pluginList.available.length})
+                      </button>
+                    </div>
+                    <Button size="sm" variant="outline" onClick={loadPlugins} disabled={pluginsLoading}>
+                      <RefreshCw className={cn('h-4 w-4 mr-2', pluginsLoading && 'animate-spin')} />
+                      Refresh
+                    </Button>
+                  </div>
+                </div>
+
+                {pluginsLoading && pluginList.installed.length === 0 ? (
+                  <div className="flex items-center justify-center h-32 text-muted-foreground text-sm">
+                    <RefreshCw className="h-4 w-4 animate-spin mr-2" /> Loading plugins...
+                  </div>
+                ) : pluginsTab === 'installed' ? (
+                  pluginList.installed.length === 0 ? (
+                    <Card className="p-6 text-center text-muted-foreground text-sm">
+                      No plugins installed — browse available plugins to install one
+                    </Card>
+                  ) : (
+                    <div className="space-y-2">
+                      {pluginList.installed.map(plugin => {
+                        const shortName = plugin.id.split('@')[0];
+                        return (
+                          <Card key={plugin.id} className="p-3">
+                            <div className="flex items-center justify-between gap-3">
+                              <div className="flex-1 min-w-0">
+                                <div className="flex items-center gap-2 flex-wrap">
+                                  <span className="text-sm font-medium">{shortName}</span>
+                                  {plugin.scope && (
+                                    <span className="text-xs px-1.5 py-0.5 rounded bg-muted text-muted-foreground">{plugin.scope}</span>
+                                  )}
+                                  {plugin.version && plugin.version !== 'latest' && (
+                                    <span className="text-xs text-muted-foreground">v{plugin.version}</span>
+                                  )}
+                                </div>
+                                <p className="text-xs text-muted-foreground truncate">{plugin.id}</p>
+                              </div>
+                              <div className="flex items-center gap-2 flex-shrink-0">
+                                <div className={cn('h-1.5 w-1.5 rounded-full', plugin.enabled ? 'bg-green-500' : 'bg-muted-foreground')} />
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  disabled={pluginAction === plugin.id}
+                                  onClick={async () => {
+                                    setPluginAction(plugin.id);
+                                    try {
+                                      if (plugin.enabled) {
+                                        await api.disablePlugin(plugin.id);
+                                      } else {
+                                        await api.enablePlugin(plugin.id);
+                                      }
+                                      await loadPlugins();
+                                    } catch (e) {
+                                      console.warn('Plugin toggle failed:', e);
+                                    } finally {
+                                      setPluginAction(null);
+                                    }
+                                  }}
+                                >
+                                  {plugin.enabled ? 'Disable' : 'Enable'}
+                                </Button>
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  disabled={pluginAction === plugin.id}
+                                  onClick={async () => {
+                                    setPluginAction(plugin.id);
+                                    try {
+                                      await api.uninstallPlugin(plugin.id);
+                                      await loadPlugins();
+                                    } catch (e) {
+                                      console.warn('Uninstall failed:', e);
+                                    } finally {
+                                      setPluginAction(null);
+                                    }
+                                  }}
+                                >
+                                  Uninstall
+                                </Button>
+                              </div>
+                            </div>
+                          </Card>
+                        );
+                      })}
+                    </div>
+                  )
+                ) : (
+                  pluginList.available.length === 0 ? (
+                    <Card className="p-6 text-center text-muted-foreground text-sm">
+                      No plugins available from configured marketplaces
+                    </Card>
+                  ) : (
+                    <div className="space-y-2">
+                      {pluginList.available.map(plugin => {
+                        const isInstalled = pluginList.installed.some(p => p.id.startsWith(plugin.pluginId) || p.id === plugin.pluginId);
+                        return (
+                          <Card key={plugin.pluginId} className="p-3">
+                            <div className="flex items-center justify-between gap-3">
+                              <div className="flex-1 min-w-0">
+                                <div className="flex items-center gap-2 flex-wrap">
+                                  <span className="text-sm font-medium">{plugin.name}</span>
+                                  {plugin.marketplaceName && (
+                                    <span className="text-xs px-1.5 py-0.5 rounded bg-muted text-muted-foreground">{plugin.marketplaceName}</span>
+                                  )}
+                                  {plugin.installCount != null && plugin.installCount > 0 && (
+                                    <span className="text-xs text-muted-foreground">{plugin.installCount.toLocaleString()} installs</span>
+                                  )}
+                                </div>
+                                {plugin.description && (
+                                  <p className="text-xs text-muted-foreground mt-0.5 line-clamp-2">{plugin.description}</p>
+                                )}
+                              </div>
+                              <div className="flex-shrink-0">
+                                {isInstalled ? (
+                                  <span className="text-xs px-2 py-1 rounded bg-green-500/10 text-green-600">Installed</span>
+                                ) : (
+                                  <Button
+                                    size="sm"
+                                    disabled={pluginAction === plugin.pluginId}
+                                    onClick={async () => {
+                                      setPluginAction(plugin.pluginId);
+                                      try {
+                                        await api.installPlugin(plugin.pluginId, 'user');
+                                        await loadPlugins();
+                                        setPluginsTab('installed');
+                                      } catch (e) {
+                                        console.warn('Install failed:', e);
+                                      } finally {
+                                        setPluginAction(null);
+                                      }
+                                    }}
+                                  >
+                                    Install
+                                  </Button>
+                                )}
+                              </div>
+                            </div>
+                          </Card>
+                        );
+                      })}
+                    </div>
+                  )
+                )}
               </div>
               )}
 

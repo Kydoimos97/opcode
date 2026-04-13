@@ -884,6 +884,130 @@ pub async fn get_auth_status(app: AppHandle) -> Result<AuthStatus, String> {
     })
 }
 
+#[derive(serde::Serialize, serde::Deserialize, Clone, Debug)]
+pub struct InstalledPlugin {
+    pub id: String,
+    pub version: Option<String>,
+    pub scope: Option<String>,
+    pub enabled: bool,
+    pub installed_at: Option<String>,
+    pub last_updated: Option<String>,
+}
+
+#[derive(serde::Serialize, serde::Deserialize, Clone, Debug)]
+pub struct AvailablePlugin {
+    pub plugin_id: String,
+    pub name: String,
+    pub description: Option<String>,
+    pub marketplace_name: Option<String>,
+    pub install_count: Option<u64>,
+}
+
+#[derive(serde::Serialize, serde::Deserialize, Clone, Debug)]
+pub struct PluginList {
+    pub installed: Vec<InstalledPlugin>,
+    pub available: Vec<AvailablePlugin>,
+}
+
+fn run_plugin_command(app: &AppHandle, args: &[&str]) -> Result<String, String> {
+    let claude_path = find_claude_binary(app).map_err(|e| e.to_string())?;
+    let mut cmd = create_command_with_env(&claude_path);
+    cmd.arg("plugin");
+    for arg in args {
+        cmd.arg(arg);
+    }
+    let out = std::process::Command::new(&claude_path)
+        .args(["plugin"])
+        .args(args)
+        .output()
+        .map_err(|e| e.to_string())?;
+    if out.status.success() {
+        Ok(String::from_utf8_lossy(&out.stdout).to_string())
+    } else {
+        Err(String::from_utf8_lossy(&out.stderr).to_string())
+    }
+}
+
+fn parse_installed_plugin(v: &serde_json::Value) -> Option<InstalledPlugin> {
+    Some(InstalledPlugin {
+        id: v.get("id")?.as_str()?.to_string(),
+        version: v.get("version").and_then(|x| x.as_str()).map(String::from),
+        scope: v.get("scope").and_then(|x| x.as_str()).map(String::from),
+        enabled: v.get("enabled").and_then(|x| x.as_bool()).unwrap_or(true),
+        installed_at: v.get("installedAt").and_then(|x| x.as_str()).map(String::from),
+        last_updated: v.get("lastUpdated").and_then(|x| x.as_str()).map(String::from),
+    })
+}
+
+fn parse_available_plugin(v: &serde_json::Value) -> Option<AvailablePlugin> {
+    Some(AvailablePlugin {
+        plugin_id: v.get("pluginId")?.as_str()?.to_string(),
+        name: v.get("name")?.as_str()?.to_string(),
+        description: v.get("description").and_then(|x| x.as_str()).map(String::from),
+        marketplace_name: v.get("marketplaceName").and_then(|x| x.as_str()).map(String::from),
+        install_count: v.get("installCount").and_then(|x| x.as_u64()),
+    })
+}
+
+#[tauri::command]
+pub async fn list_plugins(app: AppHandle) -> Result<PluginList, String> {
+    let output = run_plugin_command(&app, &["list", "--json", "--available"])
+        .unwrap_or_else(|_| {
+            run_plugin_command(&app, &["list", "--json"]).unwrap_or_default()
+        });
+
+    let trimmed = output.trim();
+    if trimmed.is_empty() {
+        return Ok(PluginList { installed: vec![], available: vec![] });
+    }
+
+    let json: serde_json::Value = serde_json::from_str(trimmed)
+        .unwrap_or(serde_json::Value::Null);
+
+    if let Some(obj) = json.as_object() {
+        let installed = obj.get("installed")
+            .and_then(|v| v.as_array())
+            .map(|arr| arr.iter().filter_map(parse_installed_plugin).collect())
+            .unwrap_or_default();
+        let available = obj.get("available")
+            .and_then(|v| v.as_array())
+            .map(|arr| arr.iter().filter_map(parse_available_plugin).collect())
+            .unwrap_or_default();
+        return Ok(PluginList { installed, available });
+    }
+
+    if let Some(arr) = json.as_array() {
+        let installed = arr.iter().filter_map(parse_installed_plugin).collect();
+        return Ok(PluginList { installed, available: vec![] });
+    }
+
+    Ok(PluginList { installed: vec![], available: vec![] })
+}
+
+#[tauri::command]
+pub async fn install_plugin(app: AppHandle, plugin_id: String, scope: String) -> Result<(), String> {
+    run_plugin_command(&app, &["install", &plugin_id, "--scope", &scope])
+        .map(|_| ())
+}
+
+#[tauri::command]
+pub async fn uninstall_plugin(app: AppHandle, plugin_id: String) -> Result<(), String> {
+    run_plugin_command(&app, &["uninstall", &plugin_id])
+        .map(|_| ())
+}
+
+#[tauri::command]
+pub async fn enable_plugin(app: AppHandle, plugin_id: String) -> Result<(), String> {
+    run_plugin_command(&app, &["enable", &plugin_id])
+        .map(|_| ())
+}
+
+#[tauri::command]
+pub async fn disable_plugin(app: AppHandle, plugin_id: String) -> Result<(), String> {
+    run_plugin_command(&app, &["disable", &plugin_id])
+        .map(|_| ())
+}
+
 /// Saves the CLAUDE.md system prompt file
 #[tauri::command]
 pub async fn save_system_prompt(content: String) -> Result<String, String> {

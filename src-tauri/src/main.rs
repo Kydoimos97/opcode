@@ -36,6 +36,7 @@ use commands::claude::{
     list_claude_directory, read_claude_file, list_session_logs,
     poll_session_file, read_session_tail, get_session_file_status, get_session_file_path,
     read_ccode_settings, write_ccode_settings, read_session_status, open_path,
+    list_plugins, install_plugin, uninstall_plugin, enable_plugin, disable_plugin,
 };
 use commands::fonts::list_system_fonts;
 use commands::system::get_system_resources;
@@ -219,6 +220,11 @@ fn main() {
             get_git_info,
             get_git_diff_stat,
             get_worktrees,
+            list_plugins,
+            install_plugin,
+            uninstall_plugin,
+            enable_plugin,
+            disable_plugin,
             // Checkpoint Management
             create_checkpoint,
             restore_checkpoint,
