@@ -38,6 +38,7 @@ use commands::claude::{
     read_ccode_settings, write_ccode_settings, read_session_status, open_path,
 };
 use commands::fonts::list_system_fonts;
+use commands::system::get_system_resources;
 use commands::mcp::{
     mcp_add, mcp_add_from_claude_desktop, mcp_add_json, mcp_get, mcp_get_server_status, mcp_list,
     mcp_read_project_config, mcp_remove, mcp_reset_project_choices, mcp_save_project_config,
@@ -51,6 +52,7 @@ use commands::usage::{
 };
 use process::ProcessRegistryState;
 use tauri::Manager;
+use tauri::Emitter;
 
 #[cfg(target_os = "macos")]
 use window_vibrancy::{apply_vibrancy, NSVisualEffectMaterial};
@@ -98,6 +100,46 @@ fn main() {
             // Initialize session watcher
             let watcher_state = watcher::init_session_watcher(app.handle().clone());
             app.manage(watcher_state);
+
+            // Start system resources background polling (emits every 5s)
+            {
+                use sysinfo::{CpuRefreshKind, Disks, MemoryRefreshKind, RefreshKind, System};
+                use std::time::Duration;
+                use commands::system::SystemResources;
+
+                let app_handle = app.handle().clone();
+                tauri::async_runtime::spawn(async move {
+                    let mut sys = System::new_with_specifics(
+                        RefreshKind::new()
+                            .with_memory(MemoryRefreshKind::everything())
+                            .with_cpu(CpuRefreshKind::everything()),
+                    );
+                    loop {
+                        sys.refresh_memory();
+                        sys.refresh_cpu_usage();
+
+                        let disks = Disks::new_with_refreshed_list();
+                        let (disk_used, disk_total) =
+                            disks.iter().fold((0u64, 0u64), |(used, total), d| {
+                                (
+                                    used + d.total_space().saturating_sub(d.available_space()),
+                                    total + d.total_space(),
+                                )
+                            });
+
+                        let payload = SystemResources {
+                            ram_used_mb: sys.used_memory() / 1_048_576,
+                            ram_total_mb: sys.total_memory() / 1_048_576,
+                            cpu_percent: sys.global_cpu_usage(),
+                            disk_used_gb: disk_used as f64 / 1_073_741_824.0,
+                            disk_total_gb: disk_total as f64 / 1_073_741_824.0,
+                        };
+
+                        let _ = app_handle.emit("system-resources", &payload);
+                        tokio::time::sleep(Duration::from_secs(5)).await;
+                    }
+                });
+            }
 
             // Apply window vibrancy with rounded corners on macOS
             #[cfg(target_os = "macos")]
@@ -263,6 +305,7 @@ fn main() {
             read_session_status,
             open_path,
             list_system_fonts,
+            get_system_resources,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

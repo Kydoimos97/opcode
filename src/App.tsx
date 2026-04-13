@@ -23,6 +23,7 @@ import { MCPManager } from "@/components/MCPManager";
 import { ClaudeBinaryDialog } from "@/components/ClaudeBinaryDialog";
 import { ProjectSettings } from '@/components/ProjectSettings';
 import { TabContent } from "@/components/TabContent";
+import { SystemFooter } from "@/components/SystemFooter";
 import { useTabState } from "@/hooks/useTabState";
 import { StartupIntro } from "@/components/StartupIntro";
 import { Toaster } from "@/components/ui/Toaster";
@@ -62,6 +63,7 @@ function AppContent() {
   const [homeDirectory, setHomeDirectory] = useState<string>('/');
   const [projectForSettings, setProjectForSettings] = useState<Project | null>(null);
   const [previousView] = useState<View>("welcome");
+  const [showSystemFooter, setShowSystemFooter] = useState(false);
 
   // Initialize web mode compatibility on mount, apply saved font preferences
   useEffect(() => {
@@ -73,10 +75,12 @@ function AppContent() {
       ccodeSettings.getPreference('font_sans'),
       ccodeSettings.getPreference('font_mono'),
       ccodeSettings.getPreference('font_size'),
-    ]).then(([sans, mono, size]) => {
+      ccodeSettings.getPreference('show_system_footer'),
+    ]).then(([sans, mono, size, footer]) => {
       if (sans) document.documentElement.style.setProperty('--font-sans', sans);
       if (mono) document.documentElement.style.setProperty('--font-mono', mono);
       if (size) document.documentElement.style.setProperty('font-size', `${size}px`);
+      if (footer !== null && footer !== undefined) setShowSystemFooter(Boolean(footer));
     }).catch(() => {});
   }, []);
 
@@ -388,6 +392,8 @@ function AppContent() {
       <div className="flex-1 overflow-hidden">
         {renderContent()}
       </div>
+
+      {showSystemFooter && <SystemFooter />}
 
       {/* Claude Binary Dialog */}
       <ClaudeBinaryDialog

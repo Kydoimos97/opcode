@@ -172,6 +172,7 @@ export const Settings: React.FC<SettingsProps> = ({
   const [statusBarVisible, setStatusBarVisible] = useState(true);
   const [workBlockAutoExpand, setWorkBlockAutoExpand] = useState(false);
   const [showStreamingIndicator, setShowStreamingIndicator] = useState(true);
+  const [showSystemFooter, setShowSystemFooter] = useState(false);
 
   const [fontSans, setFontSans] = useState('');
   const [fontMono, setFontMono] = useState('');
@@ -218,9 +219,13 @@ export const Settings: React.FC<SettingsProps> = ({
       const savedFontSans = await ccodeSettings.getPreference('font_sans');
       const savedFontMono = await ccodeSettings.getPreference('font_mono');
       const savedFontSize = await ccodeSettings.getPreference('font_size');
+      const savedShowSystemFooter = await ccodeSettings.getPreference('show_system_footer');
       setFontSans(savedFontSans || '');
       setFontMono(savedFontMono || '');
       setFontSize(savedFontSize || 14);
+      if (savedShowSystemFooter !== null && savedShowSystemFooter !== undefined) {
+        setShowSystemFooter(Boolean(savedShowSystemFooter));
+      }
 
       // Apply immediately
       if (savedFontSans) document.documentElement.style.setProperty('--font-sans', savedFontSans);
@@ -813,6 +818,30 @@ export const Settings: React.FC<SettingsProps> = ({
                         id="show-streaming-indicator-gen"
                         checked={showStreamingIndicator}
                         onCheckedChange={setShowStreamingIndicator}
+                      />
+                    </div>
+
+                    <div className="flex items-center justify-between">
+                      <div className="space-y-1">
+                        <Label htmlFor="show-system-footer-gen" className="text-label">
+                          System Resources Footer
+                        </Label>
+                        <p className="text-caption text-muted-foreground">
+                          Show RAM, CPU, and disk usage in a footer bar
+                        </p>
+                      </div>
+                      <Switch
+                        id="show-system-footer-gen"
+                        checked={showSystemFooter}
+                        onCheckedChange={async (checked) => {
+                          setShowSystemFooter(checked);
+                          try {
+                            await ccodeSettings.setPreference('show_system_footer', checked);
+                            setToast({ message: checked ? 'System footer enabled' : 'System footer disabled', type: 'success' });
+                          } catch {
+                            setToast({ message: 'Failed to save preference', type: 'error' });
+                          }
+                        }}
                       />
                     </div>
 
