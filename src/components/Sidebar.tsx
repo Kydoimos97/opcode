@@ -151,47 +151,73 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onToggle }) => {
     }
   };
 
-  // Poll session file status every 5s for all chat tabs that have session IDs stored
+  // Tick every 2s. Active tab polls every tick. Background tabs poll every 15th tick (30s),
+  // and back off after 5 consecutive unchanged polls (reset when tab becomes active or message changes).
+  const tickRef = useRef(0);
+  const bgUnchangedCount = useRef<Map<string, number>>(new Map());
+  const BG_TICK_DIVISOR = 15; // 15 × 2s = 30s
+  const BG_STALE_LIMIT = 5;
+
   useEffect(() => {
-    const interval = setInterval(async () => {
+    const pollTab = async (tab: Tab) => {
+      try {
+        const status: SessionFileStatus = await api.getSessionFileStatus(
+          tab.claudeSessionId!,
+          tab.claudeProjectId!,
+        );
+        let newStatus: Tab['status'];
+        if (status.last_type === 'result') {
+          newStatus = status.is_error ? 'error' : 'complete';
+        } else if (status.awaiting_approval) {
+          newStatus = 'idle';
+        } else if (status.modified_secs_ago < 30) {
+          newStatus = 'running';
+        } else {
+          newStatus = 'idle';
+        }
+        if (status.last_user_message) {
+          const prev = lastMessageCache.current.get(tab.id);
+          if (prev !== status.last_user_message) {
+            lastMessageCache.current.set(tab.id, status.last_user_message);
+            bgUnchangedCount.current.set(tab.id, 0);
+            setLastMessageVersion((v) => v + 1);
+          } else {
+            bgUnchangedCount.current.set(tab.id, (bgUnchangedCount.current.get(tab.id) ?? 0) + 1);
+          }
+        }
+        if (tab.status !== newStatus) {
+          updateTab(tab.id, { status: newStatus });
+        }
+      } catch {
+        // Silently ignore
+      }
+    };
+
+    const interval = setInterval(() => {
+      tickRef.current += 1;
+      const tick = tickRef.current;
+
       const pollTargets = tabs.filter(
         t => t.type === 'chat' && t.claudeSessionId && t.claudeProjectId
       );
+
       for (const tab of pollTargets) {
-        try {
-          const status: SessionFileStatus = await api.getSessionFileStatus(
-            tab.claudeSessionId!,
-            tab.claudeProjectId!,
-          );
-          let newStatus: Tab['status'];
-          if (status.last_type === 'result') {
-            newStatus = status.is_error ? 'error' : 'complete';
-          } else if (status.awaiting_approval) {
-            newStatus = 'idle'; // no 'waiting' status in the Tab type — idle is the fallback
-          } else if (status.modified_secs_ago < 30) {
-            newStatus = 'running';
-          } else {
-            newStatus = 'idle';
+        const isActive = tab.id === activeTabId;
+        if (isActive) {
+          // Reset stale counter when active so it polls freely when next backgrounded
+          bgUnchangedCount.current.set(tab.id, 0);
+          pollTab(tab);
+        } else if (tick % BG_TICK_DIVISOR === 0) {
+          const stale = bgUnchangedCount.current.get(tab.id) ?? 0;
+          if (stale < BG_STALE_LIMIT) {
+            pollTab(tab);
           }
-          if (status.last_user_message) {
-            const prev = lastMessageCache.current.get(tab.id);
-            if (prev !== status.last_user_message) {
-              lastMessageCache.current.set(tab.id, status.last_user_message);
-              setLastMessageVersion((v) => v + 1);
-            }
-          }
-          // Only update if changed to avoid unnecessary re-renders
-          if (tab.status !== newStatus) {
-            updateTab(tab.id, { status: newStatus });
-          }
-        } catch {
-          // Silently ignore
         }
       }
-    }, 5000);
+    }, 2000);
 
     return () => clearInterval(interval);
-  }, [tabs, updateTab]);
+  }, [tabs, activeTabId, updateTab]);
 
   useEffect(() => {
     chatTabs.forEach((tab) => {
