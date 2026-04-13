@@ -22,10 +22,8 @@ let tauriOpen: any;
 type UnlistenFn = () => void;
 
 try {
-  if (typeof window !== 'undefined' && window.__TAURI__) {
-    tauriListen = require("@tauri-apps/api/event").listen;
-    tauriOpen = require("@tauri-apps/plugin-shell").open;
-  }
+  tauriListen = require("@tauri-apps/api/event").listen;
+  tauriOpen = require("@tauri-apps/plugin-shell").open;
 } catch (e) {
   console.log('[ClaudeCodeSession] Tauri APIs not available, using web mode');
 }
