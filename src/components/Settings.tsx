@@ -768,7 +768,7 @@ export const Settings: React.FC<SettingsProps> = ({
               <div className="space-y-6">
               <Card className="p-6 space-y-6">
                 <div>
-                  <h3 className="text-heading-4 mb-4">Opcode Settings</h3>
+                  <h3 className="text-heading-4 mb-4">C-Code Settings</h3>
                   <p className="text-caption text-muted-foreground mb-4">
                     Configure app-level preferences
                   </p>

@@ -1,7 +1,8 @@
 {
-  "name": "opcode",
+  "name": "c-code",
   "private": true,
   "version": "0.2.1",
+  "description": "C-Code — Desktop GUI for Claude Code",
   "license": "AGPL-3.0",
   "type": "module",
   "scripts": {
