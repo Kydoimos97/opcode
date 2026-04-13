@@ -11,6 +11,9 @@ import {
   Lightbulb,
   Cpu,
   Rocket,
+  Shield,
+  ShieldCheck,
+  ShieldOff,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -35,11 +38,13 @@ try {
 // Web-compatible replacement
 const getCurrentWebviewWindow = tauriGetCurrentWebviewWindow || (() => ({ listen: () => Promise.resolve(() => {}) }));
 
+type PermissionMode = "default" | "acceptEdits" | "bypassPermissions";
+
 interface FloatingPromptInputProps {
   /**
    * Callback when prompt is sent
    */
-  onSend: (prompt: string, model: "sonnet" | "opus") => void;
+  onSend: (prompt: string, model: "sonnet" | "opus", permissionMode?: PermissionMode) => void;
   /**
    * Whether the input is loading
    */
@@ -52,6 +57,14 @@ interface FloatingPromptInputProps {
    * Currently selected model (controlled by parent)
    */
   selectedModel: "sonnet" | "opus";
+  /**
+   * Currently selected permission mode (controlled by parent)
+   */
+  selectedPermissionMode?: PermissionMode;
+  /**
+   * Callback when permission mode changes
+   */
+  onPermissionModeChange?: (mode: PermissionMode) => void;
   /**
    * Project path for file picker
    */
@@ -175,6 +188,42 @@ const MODELS_DISPLAY: Record<"sonnet" | "opus", string> = {
   opus: "Opus",
 };
 
+type PermissionModeConfig = {
+  id: PermissionMode;
+  name: string;
+  shortName: string;
+  description: string;
+  icon: React.ReactNode;
+  color: string;
+};
+
+const PERMISSION_MODES: PermissionModeConfig[] = [
+  {
+    id: "default",
+    name: "Ask",
+    shortName: "Ask",
+    description: "Claude asks before each tool use",
+    icon: <Shield className="h-3.5 w-3.5" />,
+    color: "text-muted-foreground",
+  },
+  {
+    id: "acceptEdits",
+    name: "Accept Edits",
+    shortName: "Edits",
+    description: "Auto-approve file edits; ask for shell commands",
+    icon: <ShieldCheck className="h-3.5 w-3.5" />,
+    color: "text-blue-500",
+  },
+  {
+    id: "bypassPermissions",
+    name: "Bypass All",
+    shortName: "Bypass",
+    description: "Skip all permission prompts",
+    icon: <ShieldOff className="h-3.5 w-3.5" />,
+    color: "text-amber-500",
+  },
+];
+
 
 /**
  * FloatingPromptInput component - Fixed position prompt input with model picker
@@ -193,6 +242,8 @@ const FloatingPromptInputInner = (
     isLoading = false,
     disabled = false,
     selectedModel,
+    selectedPermissionMode = "bypassPermissions",
+    onPermissionModeChange,
     projectPath,
     className,
     onCancel,
@@ -680,7 +731,7 @@ const FloatingPromptInputInner = (
         finalPrompt = `${finalPrompt}.\n\n${thinkingMode.phrase}.`;
       }
 
-      onSend(finalPrompt, selectedModel);
+      onSend(finalPrompt, selectedModel, selectedPermissionMode);
       setPrompt("");
       setEmbeddedImages([]);
       setTextareaHeight(48); // Reset height after sending
@@ -906,8 +957,8 @@ const FloatingPromptInputInner = (
                                 <span className={THINKING_MODES.find(m => m.id === selectedThinkingMode)?.color}>
                                   {THINKING_MODES.find(m => m.id === selectedThinkingMode)?.icon}
                                 </span>
-                                <ThinkingModeIndicator 
-                                  level={THINKING_MODES.find(m => m.id === selectedThinkingMode)?.level || 0} 
+                                <ThinkingModeIndicator
+                                  level={THINKING_MODES.find(m => m.id === selectedThinkingMode)?.level || 0}
                                 />
                               </Button>
                             </TooltipTrigger>
@@ -950,6 +1001,53 @@ const FloatingPromptInputInner = (
                       }
                       open={thinkingModePickerOpen}
                       onOpenChange={setThinkingModePickerOpen}
+                      align="start"
+                      side="top"
+                    />
+                  </div>
+
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs text-muted-foreground">Permissions:</span>
+                    <Popover
+                      trigger={
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <Button variant="outline" size="sm" className="gap-1.5">
+                              <span className={PERMISSION_MODES.find(m => m.id === selectedPermissionMode)?.color}>
+                                {PERMISSION_MODES.find(m => m.id === selectedPermissionMode)?.icon}
+                              </span>
+                              <span className="text-xs">{PERMISSION_MODES.find(m => m.id === selectedPermissionMode)?.shortName}</span>
+                            </Button>
+                          </TooltipTrigger>
+                          <TooltipContent>
+                            <p className="font-medium">{PERMISSION_MODES.find(m => m.id === selectedPermissionMode)?.name}</p>
+                            <p className="text-xs text-muted-foreground">{PERMISSION_MODES.find(m => m.id === selectedPermissionMode)?.description}</p>
+                          </TooltipContent>
+                        </Tooltip>
+                      }
+                      content={
+                        <div className="w-[260px] p-1">
+                          {PERMISSION_MODES.map((mode) => (
+                            <button
+                              key={mode.id}
+                              onClick={() => onPermissionModeChange?.(mode.id)}
+                              className={cn(
+                                "w-full flex items-start gap-3 p-3 rounded-md transition-colors text-left",
+                                "hover:bg-accent",
+                                selectedPermissionMode === mode.id && "bg-accent"
+                              )}
+                            >
+                              <span className={cn("mt-0.5", mode.color)}>
+                                {mode.icon}
+                              </span>
+                              <div className="flex-1 space-y-1">
+                                <div className="font-medium text-sm">{mode.name}</div>
+                                <div className="text-xs text-muted-foreground">{mode.description}</div>
+                              </div>
+                            </button>
+                          ))}
+                        </div>
+                      }
                       align="start"
                       side="top"
                     />
@@ -1074,6 +1172,59 @@ const FloatingPromptInputInner = (
                 side="top"
               />
 
+                <Popover
+                  trigger={
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <motion.div whileTap={{ scale: 0.97 }} transition={{ duration: 0.15 }}>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            disabled={disabled}
+                            className="h-9 px-2 hover:bg-accent/50 gap-1"
+                          >
+                            <span className={PERMISSION_MODES.find(m => m.id === selectedPermissionMode)?.color}>
+                              {PERMISSION_MODES.find(m => m.id === selectedPermissionMode)?.icon}
+                            </span>
+                            <span className="text-[10px] font-semibold opacity-70">
+                              {PERMISSION_MODES.find(m => m.id === selectedPermissionMode)?.shortName}
+                            </span>
+                            <ChevronUp className="h-3 w-3 ml-0.5 opacity-50" />
+                          </Button>
+                        </motion.div>
+                      </TooltipTrigger>
+                      <TooltipContent side="top">
+                        <p className="text-xs font-medium">Permissions: {PERMISSION_MODES.find(m => m.id === selectedPermissionMode)?.name}</p>
+                        <p className="text-xs text-muted-foreground">{PERMISSION_MODES.find(m => m.id === selectedPermissionMode)?.description}</p>
+                      </TooltipContent>
+                    </Tooltip>
+                  }
+                  content={
+                    <div className="w-[260px] p-1">
+                      {PERMISSION_MODES.map((mode) => (
+                        <button
+                          key={mode.id}
+                          onClick={() => onPermissionModeChange?.(mode.id)}
+                          className={cn(
+                            "w-full flex items-start gap-3 p-3 rounded-md transition-colors text-left",
+                            "hover:bg-accent",
+                            selectedPermissionMode === mode.id && "bg-accent"
+                          )}
+                        >
+                          <span className={cn("mt-0.5", mode.color)}>
+                            {mode.icon}
+                          </span>
+                          <div className="flex-1 space-y-1">
+                            <div className="font-medium text-sm">{mode.name}</div>
+                            <div className="text-xs text-muted-foreground">{mode.description}</div>
+                          </div>
+                        </button>
+                      ))}
+                    </div>
+                  }
+                  align="start"
+                  side="top"
+                />
               </div>
 
               {/* Prompt Input - Center */}

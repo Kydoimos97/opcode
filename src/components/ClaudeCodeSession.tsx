@@ -114,6 +114,7 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
   const [copyPopoverOpen, setCopyPopoverOpen] = useState(false);
   const [isFirstPrompt, setIsFirstPrompt] = useState(!session);
   const [selectedModel, setSelectedModel] = useState<"sonnet" | "opus">("sonnet");
+  const [selectedPermissionMode, setSelectedPermissionMode] = useState<"default" | "acceptEdits" | "bypassPermissions">("bypassPermissions");
   const [extractedSessionInfo, setExtractedSessionInfo] = useState<{ sessionId: string; projectId: string } | null>(null);
   const [claudeSessionId, setClaudeSessionId] = useState<string | null>(null);
   const [showTimeline, setShowTimeline] = useState(false);
@@ -522,11 +523,13 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
 
   // Project path selection handled by parent tab controls
 
-  const handleSendPrompt = async (prompt: string, model: "sonnet" | "opus") => {
+  const handleSendPrompt = async (prompt: string, model: "sonnet" | "opus", permissionMode?: "default" | "acceptEdits" | "bypassPermissions") => {
     if (!projectPath) {
       setError("Please select a project directory first");
       return;
     }
+
+    const effectivePermissionMode = permissionMode ?? selectedPermissionMode;
 
     // If already loading, queue the prompt
     if (isLoading) {
@@ -749,10 +752,10 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
 
         // Execute the appropriate command
         if (effectiveSession && !isFirstPrompt) {
-          await api.resumeClaudeCode(projectPath, effectiveSession.id, prompt, model);
+          await api.resumeClaudeCode(projectPath, effectiveSession.id, prompt, model, effectivePermissionMode);
         } else {
           setIsFirstPrompt(false);
-          await api.executeClaudeCode(projectPath, prompt, model);
+          await api.executeClaudeCode(projectPath, prompt, model, effectivePermissionMode);
         }
       }
     } catch (err) {
@@ -1357,6 +1360,8 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
               onCancel={handleCancelExecution}
               isLoading={isLoading}
               selectedModel={selectedModel}
+              selectedPermissionMode={selectedPermissionMode}
+              onPermissionModeChange={setSelectedPermissionMode}
               disabled={!projectPath}
               projectPath={projectPath}
               extraMenuItems={

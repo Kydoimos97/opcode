@@ -1131,6 +1131,21 @@ pub async fn get_session_file_status(
     })
 }
 
+/// Build the permission-related CLI flags for a given mode.
+/// - "default"        → no flags (Claude prompts for each tool use)
+/// - "acceptEdits"    → --allowedTools covering file ops; Bash still requires approval
+/// - "bypassPermissions" (anything else) → --dangerously-skip-permissions
+fn permission_args(mode: &str) -> Vec<String> {
+    match mode {
+        "default" => vec![],
+        "acceptEdits" => vec![
+            "--allowedTools".to_string(),
+            "Edit,MultiEdit,Write,Read,Glob,Grep,LS".to_string(),
+        ],
+        _ => vec!["--dangerously-skip-permissions".to_string()],
+    }
+}
+
 /// Execute a new interactive Claude Code session with streaming output
 #[tauri::command]
 pub async fn execute_claude_code(
@@ -1138,16 +1153,19 @@ pub async fn execute_claude_code(
     project_path: String,
     prompt: String,
     model: String,
+    permission_mode: Option<String>,
 ) -> Result<(), String> {
+    let mode = permission_mode.as_deref().unwrap_or("bypassPermissions");
     log::info!(
-        "Starting new Claude Code session in: {} with model: {}",
+        "Starting new Claude Code session in: {} with model: {} permission_mode: {}",
         project_path,
-        model
+        model,
+        mode
     );
 
     let claude_path = find_claude_binary(&app)?;
 
-    let args = vec![
+    let mut args = vec![
         "-p".to_string(),
         prompt.clone(),
         "--model".to_string(),
@@ -1155,8 +1173,8 @@ pub async fn execute_claude_code(
         "--output-format".to_string(),
         "stream-json".to_string(),
         "--verbose".to_string(),
-        "--dangerously-skip-permissions".to_string(),
     ];
+    args.extend(permission_args(mode));
 
     let cmd = create_system_command(&claude_path, args, &project_path);
     spawn_claude_process(app, cmd, prompt, model, project_path).await
@@ -1169,17 +1187,20 @@ pub async fn continue_claude_code(
     project_path: String,
     prompt: String,
     model: String,
+    permission_mode: Option<String>,
 ) -> Result<(), String> {
+    let mode = permission_mode.as_deref().unwrap_or("bypassPermissions");
     log::info!(
-        "Continuing Claude Code conversation in: {} with model: {}",
+        "Continuing Claude Code conversation in: {} with model: {} permission_mode: {}",
         project_path,
-        model
+        model,
+        mode
     );
 
     let claude_path = find_claude_binary(&app)?;
 
-    let args = vec![
-        "-c".to_string(), // Continue flag
+    let mut args = vec![
+        "-c".to_string(),
         "-p".to_string(),
         prompt.clone(),
         "--model".to_string(),
@@ -1187,8 +1208,8 @@ pub async fn continue_claude_code(
         "--output-format".to_string(),
         "stream-json".to_string(),
         "--verbose".to_string(),
-        "--dangerously-skip-permissions".to_string(),
     ];
+    args.extend(permission_args(mode));
 
     let cmd = create_system_command(&claude_path, args, &project_path);
     spawn_claude_process(app, cmd, prompt, model, project_path).await
@@ -1202,17 +1223,20 @@ pub async fn resume_claude_code(
     session_id: String,
     prompt: String,
     model: String,
+    permission_mode: Option<String>,
 ) -> Result<(), String> {
+    let mode = permission_mode.as_deref().unwrap_or("bypassPermissions");
     log::info!(
-        "Resuming Claude Code session: {} in: {} with model: {}",
+        "Resuming Claude Code session: {} in: {} with model: {} permission_mode: {}",
         session_id,
         project_path,
-        model
+        model,
+        mode
     );
 
     let claude_path = find_claude_binary(&app)?;
 
-    let args = vec![
+    let mut args = vec![
         "--resume".to_string(),
         session_id.clone(),
         "-p".to_string(),
@@ -1222,8 +1246,8 @@ pub async fn resume_claude_code(
         "--output-format".to_string(),
         "stream-json".to_string(),
         "--verbose".to_string(),
-        "--dangerously-skip-permissions".to_string(),
     ];
+    args.extend(permission_args(mode));
 
     let cmd = create_system_command(&claude_path, args, &project_path);
     spawn_claude_process(app, cmd, prompt, model, project_path).await
