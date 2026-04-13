@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { 
   Plus, 
@@ -35,6 +35,8 @@ interface SlashCommandsManagerProps {
   className?: string;
   scopeFilter?: 'project' | 'user' | 'all';
 }
+
+type ScopeOption = 'all' | 'project' | 'user' | 'built-in';
 
 interface CommandForm {
   name: string;
@@ -96,7 +98,7 @@ export const SlashCommandsManager: React.FC<SlashCommandsManagerProps> = ({
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
-  const [selectedScope, setSelectedScope] = useState<'all' | 'project' | 'user'>(scopeFilter === 'all' ? 'all' : scopeFilter as 'project' | 'user');
+  const [selectedScope, setSelectedScope] = useState<ScopeOption>(scopeFilter === 'all' ? 'all' : scopeFilter as 'project' | 'user');
   const [expandedCommands, setExpandedCommands] = useState<Set<string>>(new Set());
   
   // Edit dialog state
@@ -248,8 +250,8 @@ export const SlashCommandsManager: React.FC<SlashCommandsManagerProps> = ({
 
   // Filter commands
   const filteredCommands = commands.filter(cmd => {
-    // Hide default commands
-    if (cmd.scope === 'default') {
+    // When a specific scopeFilter is set by the parent, hide built-ins
+    if (cmd.scope === 'default' && scopeFilter !== 'all') {
       return false;
     }
 
@@ -258,8 +260,14 @@ export const SlashCommandsManager: React.FC<SlashCommandsManagerProps> = ({
       return false;
     }
 
-    // Scope filter
-    if (selectedScope !== 'all' && cmd.scope !== selectedScope) {
+    // Selected scope filter (user-driven dropdown)
+    let scopeMatch = true;
+    if (selectedScope === 'built-in') {
+      scopeMatch = cmd.scope === 'default';
+    } else if (selectedScope !== 'all') {
+      scopeMatch = cmd.scope === selectedScope;
+    }
+    if (!scopeMatch) {
       return false;
     }
 
@@ -277,17 +285,131 @@ export const SlashCommandsManager: React.FC<SlashCommandsManagerProps> = ({
     return true;
   });
 
-  // Group commands by namespace and scope
-  const groupedCommands = filteredCommands.reduce((acc, cmd) => {
-    const key = cmd.namespace 
-      ? `${cmd.namespace} (${cmd.scope})` 
-      : `${cmd.scope === 'project' ? 'Project' : 'User'} Commands`;
-    if (!acc[key]) {
-      acc[key] = [];
-    }
-    acc[key].push(cmd);
-    return acc;
-  }, {} as Record<string, SlashCommand[]>);
+  // Group commands by scope
+  const groupedByScope = useMemo(() => {
+    const user = filteredCommands.filter(c => c.scope === 'user');
+    const project = filteredCommands.filter(c => c.scope === 'project');
+    const builtin = filteredCommands.filter(c => c.scope === 'default');
+    return { user, project, builtin };
+  }, [filteredCommands]);
+
+  // Render a command row with optional read-only mode
+  const renderCommandRow = (command: SlashCommand, readOnly: boolean) => {
+    const Icon = getCommandIcon(command);
+    const isExpanded = expandedCommands.has(command.id);
+
+    return (
+      <div key={command.id}>
+        <div className={cn("p-4", readOnly && "opacity-60")}>
+          <div className="flex items-start gap-4">
+            <Icon className="h-5 w-5 mt-0.5 text-muted-foreground flex-shrink-0" />
+
+            <div className="flex-1 min-w-0">
+              <div className="flex items-center gap-2 mb-1">
+                <code className="text-sm font-mono text-primary">
+                  {command.full_command}
+                </code>
+                {command.accepts_arguments && (
+                  <Badge variant="secondary" className="text-xs">
+                    Arguments
+                  </Badge>
+                )}
+                {readOnly && (
+                  <Badge variant="outline" className="text-xs text-muted-foreground">
+                    Read-only
+                  </Badge>
+                )}
+              </div>
+
+              {command.description && (
+                <p className="text-sm text-muted-foreground mb-2">
+                  {command.description}
+                </p>
+              )}
+
+              <div className="flex items-center gap-4 text-xs">
+                {command.allowed_tools.length > 0 && (
+                  <span className="text-muted-foreground">
+                    {command.allowed_tools.length} tool{command.allowed_tools.length === 1 ? '' : 's'}
+                  </span>
+                )}
+
+                {command.has_bash_commands && (
+                  <Badge variant="outline" className="text-xs">
+                    Bash
+                  </Badge>
+                )}
+
+                {command.has_file_references && (
+                  <Badge variant="outline" className="text-xs">
+                    Files
+                  </Badge>
+                )}
+
+                <button
+                  onClick={() => toggleExpanded(command.id)}
+                  className="flex items-center gap-1 text-muted-foreground hover:text-foreground transition-colors"
+                >
+                  {isExpanded ? (
+                    <>
+                      <ChevronDown className="h-3 w-3" />
+                      Hide content
+                    </>
+                  ) : (
+                    <>
+                      <ChevronRight className="h-3 w-3" />
+                      Show content
+                    </>
+                  )}
+                </button>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2">
+              {!readOnly && (
+                <>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    onClick={() => handleEdit(command)}
+                    className="h-8 w-8"
+                  >
+                    <Edit className="h-4 w-4" />
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    onClick={() => handleDeleteClick(command)}
+                    className="h-8 w-8 text-destructive hover:text-destructive"
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </Button>
+                </>
+              )}
+            </div>
+          </div>
+
+          <AnimatePresence>
+            {isExpanded && (
+              <motion.div
+                initial={{ height: 0, opacity: 0 }}
+                animate={{ height: "auto", opacity: 1 }}
+                exit={{ height: 0, opacity: 0 }}
+                transition={{ duration: 0.2 }}
+                className="overflow-hidden"
+              >
+                <div className="mt-4 p-3 bg-muted/50 rounded-md">
+                  <pre className="text-xs font-mono whitespace-pre-wrap">
+                    {command.content}
+                  </pre>
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
+        </div>
+      </div>
+    );
+  };
 
   return (
     <div className={cn("space-y-4", className)}>
@@ -323,7 +445,7 @@ export const SlashCommandsManager: React.FC<SlashCommandsManagerProps> = ({
           </div>
         </div>
         {scopeFilter === 'all' && (
-          <Select value={selectedScope} onValueChange={(value: any) => setSelectedScope(value)}>
+          <Select value={selectedScope} onValueChange={(value: ScopeOption) => setSelectedScope(value)}>
             <SelectTrigger className="w-[150px]">
               <SelectValue />
             </SelectTrigger>
@@ -331,6 +453,7 @@ export const SlashCommandsManager: React.FC<SlashCommandsManagerProps> = ({
               <SelectItem value="all">All Commands</SelectItem>
               <SelectItem value="project">Project</SelectItem>
               <SelectItem value="user">User</SelectItem>
+              <SelectItem value="built-in">Built-in</SelectItem>
             </SelectContent>
           </Select>
         )}
@@ -354,142 +477,53 @@ export const SlashCommandsManager: React.FC<SlashCommandsManagerProps> = ({
           <div className="text-center">
             <Command className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
             <p className="text-sm text-muted-foreground">
-              {searchQuery 
-                ? "No commands found" 
-                : scopeFilter === 'project' 
-                  ? "No project commands created yet" 
+              {searchQuery
+                ? "No commands found"
+                : scopeFilter === 'project'
+                  ? "No project commands created yet"
                   : "No commands created yet"}
             </p>
-            {!searchQuery && (
+            {!searchQuery && scopeFilter !== 'project' && (
               <Button onClick={handleCreateNew} variant="outline" size="sm" className="mt-4">
-                {scopeFilter === 'project' 
-                  ? "Create your first project command" 
-                  : "Create your first command"}
+                Create your first command
               </Button>
             )}
           </div>
         </Card>
       ) : (
         <div className="space-y-4">
-          {Object.entries(groupedCommands).map(([groupKey, groupCommands]) => (
-            <Card key={groupKey} className="overflow-hidden">
+          {groupedByScope.user.length > 0 && (
+            <Card className="overflow-hidden">
               <div className="p-4 bg-muted/50 border-b">
-                <h4 className="text-sm font-medium">
-                  {groupKey}
-                </h4>
+                <h4 className="text-sm font-medium">User</h4>
               </div>
-              
               <div className="divide-y">
-                {groupCommands.map((command) => {
-                  const Icon = getCommandIcon(command);
-                  const isExpanded = expandedCommands.has(command.id);
-                  
-                  return (
-                    <div key={command.id}>
-                      <div className="p-4">
-                        <div className="flex items-start gap-4">
-                          <Icon className="h-5 w-5 mt-0.5 text-muted-foreground flex-shrink-0" />
-                          
-                          <div className="flex-1 min-w-0">
-                            <div className="flex items-center gap-2 mb-1">
-                              <code className="text-sm font-mono text-primary">
-                                {command.full_command}
-                              </code>
-                              {command.accepts_arguments && (
-                                <Badge variant="secondary" className="text-xs">
-                                  Arguments
-                                </Badge>
-                              )}
-                            </div>
-                            
-                            {command.description && (
-                              <p className="text-sm text-muted-foreground mb-2">
-                                {command.description}
-                              </p>
-                            )}
-                            
-                            <div className="flex items-center gap-4 text-xs">
-                              {command.allowed_tools.length > 0 && (
-                                <span className="text-muted-foreground">
-                                  {command.allowed_tools.length} tool{command.allowed_tools.length === 1 ? '' : 's'}
-                                </span>
-                              )}
-                              
-                              {command.has_bash_commands && (
-                                <Badge variant="outline" className="text-xs">
-                                  Bash
-                                </Badge>
-                              )}
-                              
-                              {command.has_file_references && (
-                                <Badge variant="outline" className="text-xs">
-                                  Files
-                                </Badge>
-                              )}
-                              
-                              <button
-                                onClick={() => toggleExpanded(command.id)}
-                                className="flex items-center gap-1 text-muted-foreground hover:text-foreground transition-colors"
-                              >
-                                {isExpanded ? (
-                                  <>
-                                    <ChevronDown className="h-3 w-3" />
-                                    Hide content
-                                  </>
-                                ) : (
-                                  <>
-                                    <ChevronRight className="h-3 w-3" />
-                                    Show content
-                                  </>
-                                )}
-                              </button>
-                            </div>
-                          </div>
-                          
-                          <div className="flex items-center gap-2">
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              onClick={() => handleEdit(command)}
-                              className="h-8 w-8"
-                            >
-                              <Edit className="h-4 w-4" />
-                            </Button>
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              onClick={() => handleDeleteClick(command)}
-                              className="h-8 w-8 text-destructive hover:text-destructive"
-                            >
-                              <Trash2 className="h-4 w-4" />
-                            </Button>
-                          </div>
-                        </div>
-                        
-                        <AnimatePresence>
-                          {isExpanded && (
-                            <motion.div
-                              initial={{ height: 0, opacity: 0 }}
-                              animate={{ height: "auto", opacity: 1 }}
-                              exit={{ height: 0, opacity: 0 }}
-                              transition={{ duration: 0.2 }}
-                              className="overflow-hidden"
-                            >
-                              <div className="mt-4 p-3 bg-muted/50 rounded-md">
-                                <pre className="text-xs font-mono whitespace-pre-wrap">
-                                  {command.content}
-                                </pre>
-                              </div>
-                            </motion.div>
-                          )}
-                        </AnimatePresence>
-                      </div>
-                    </div>
-                  );
-                })}
+                {groupedByScope.user.map(cmd => renderCommandRow(cmd, false))}
               </div>
             </Card>
-          ))}
+          )}
+
+          {groupedByScope.project.length > 0 && (
+            <Card className="overflow-hidden">
+              <div className="p-4 bg-muted/50 border-b">
+                <h4 className="text-sm font-medium">Project</h4>
+              </div>
+              <div className="divide-y">
+                {groupedByScope.project.map(cmd => renderCommandRow(cmd, false))}
+              </div>
+            </Card>
+          )}
+
+          {groupedByScope.builtin.length > 0 && (
+            <Card className="overflow-hidden">
+              <div className="p-4 bg-muted/50 border-b">
+                <h4 className="text-sm font-medium">Built-in</h4>
+              </div>
+              <div className="divide-y">
+                {groupedByScope.builtin.map(cmd => renderCommandRow(cmd, true))}
+              </div>
+            </Card>
+          )}
         </div>
       )}
 
