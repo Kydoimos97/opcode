@@ -70,6 +70,12 @@ fn main() {
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_window_state::Builder::default().build())
         .setup(|app| {
+            // Restore window position and size from previous session
+            if let Some(window) = app.get_webview_window("main") {
+                use tauri_plugin_window_state::{WindowExt, StateFlags};
+                window.restore_state(StateFlags::all()).ok();
+            }
+
             // Load and apply proxy settings from ~/.ccode/settings.json
             let proxy_settings = load_proxy_at_startup();
             apply_proxy_settings(&proxy_settings);
