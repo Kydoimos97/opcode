@@ -4,6 +4,7 @@ pub mod fonts;
 pub mod hook_events;
 pub mod mcp;
 pub mod proxy;
+pub mod pty;
 pub mod slash_commands;
 pub mod system;
 pub mod terminal;

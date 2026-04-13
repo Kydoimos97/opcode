@@ -48,6 +48,7 @@ use commands::mcp::{
 };
 
 use commands::proxy::{apply_proxy_settings, get_proxy_settings, load_proxy_at_startup, save_proxy_settings};
+use commands::pty::{spawn_pty, write_pty, resize_pty, kill_pty};
 use commands::usage::{
     get_session_stats, get_usage_by_date_range, get_usage_details, get_usage_stats,
     read_usage_cache, write_usage_cache,
@@ -310,6 +311,11 @@ fn main() {
             get_system_resources,
             // Terminal
             open_terminal_in,
+            // PTY Commands
+            spawn_pty,
+            write_pty,
+            resize_pty,
+            kill_pty,
             // Hook event bridge
             get_hook_events,
             check_hook_bridge_installed,

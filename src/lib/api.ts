@@ -2190,4 +2190,20 @@ export const api = {
     return apiCall<void>('remove_hook_bridge');
   },
 
+  async spawnPty(path: string): Promise<string> {
+    return apiCall<string>('spawn_pty', { path });
+  },
+
+  async writePty(ptyId: string, data: string): Promise<void> {
+    return apiCall<void>('write_pty', { ptyId, data });
+  },
+
+  async resizePty(ptyId: string, cols: number, rows: number): Promise<void> {
+    return apiCall<void>('resize_pty', { ptyId, cols, rows });
+  },
+
+  async killPty(ptyId: string): Promise<void> {
+    return apiCall<void>('kill_pty', { ptyId });
+  },
+
 };

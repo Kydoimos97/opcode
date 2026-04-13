@@ -28,6 +28,7 @@ interface UseTabStateReturn {
   createLogsTab: () => string | null;
   createSkillsTab: () => string | null;
   createPluginsTab: () => string | null;
+  createTerminalTab: (path?: string) => string | null;
   closeTab: (id: string, force?: boolean) => Promise<boolean>;
   closeCurrentTab: () => Promise<boolean>;
   switchToTab: (id: string) => void;
@@ -320,6 +321,17 @@ export const useTabState = (): UseTabStateReturn => {
     });
   }, [addTab, tabs, setActiveTab]);
 
+  const createTerminalTab = useCallback((path?: string): string | null => {
+    return addTab({
+      type: 'terminal',
+      title: 'Terminal',
+      projectPath: path || undefined,
+      status: 'idle',
+      hasUnsavedChanges: false,
+      icon: 'terminal'
+    });
+  }, [addTab]);
+
   const closeTab = useCallback(async (id: string, force: boolean = false): Promise<boolean> => {
     const tab = getTabById(id);
     if (!tab) return true;
@@ -416,6 +428,7 @@ export const useTabState = (): UseTabStateReturn => {
     createLogsTab,
     createSkillsTab,
     createPluginsTab,
+    createTerminalTab,
     closeTab,
     closeCurrentTab,
     switchToTab: setActiveTab,

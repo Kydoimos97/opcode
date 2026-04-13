@@ -14,6 +14,7 @@ import {
   FileText,
   FolderSearch,
   Settings,
+  Terminal,
   X,
   Wrench,
   Puzzle,
@@ -44,6 +45,7 @@ const UTILITY_ITEMS = [
   { icon: Server, label: 'MCP Servers', type: 'mcp' as const },
   { icon: Wrench, label: 'Skills', type: 'skills' as const },
   { icon: Puzzle, label: 'Plugins', type: 'plugins' as const },
+  { icon: Terminal, label: 'Terminal', type: 'terminal' as const },
   { icon: FileText, label: 'CLAUDE.md', type: 'claude-md' as const },
   { icon: FolderSearch, label: '.claude Explorer', type: 'claude-explorer' as const },
   { icon: Settings, label: 'Settings', type: 'settings' as const },
@@ -63,6 +65,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onToggle }) => {
     createSettingsTab,
     createSkillsTab,
     createPluginsTab,
+    createTerminalTab,
     closeTab,
   } = useTabState();
 
@@ -288,6 +291,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onToggle }) => {
       'mcp': createMCPTab,
       'skills': createSkillsTab,
       'plugins': createPluginsTab,
+      'terminal': createTerminalTab,
       'claude-md': createClaudeMdTab,
       'claude-explorer': createExplorerTab,
       'session-logs': createLogsTab,

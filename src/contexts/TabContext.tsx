@@ -4,7 +4,7 @@ import { SessionPersistenceService } from '@/services/sessionPersistence';
 
 export interface Tab {
   id: string;
-  type: 'chat' | 'agent' | 'agents' | 'projects' | 'usage' | 'mcp' | 'settings' | 'claude-md' | 'claude-file' | 'agent-execution' | 'create-agent' | 'import-agent' | 'claude-explorer' | 'session-logs' | 'skills' | 'plugins';
+  type: 'chat' | 'agent' | 'agents' | 'projects' | 'usage' | 'mcp' | 'settings' | 'claude-md' | 'claude-file' | 'agent-execution' | 'create-agent' | 'import-agent' | 'claude-explorer' | 'session-logs' | 'skills' | 'plugins' | 'terminal';
   title: string;
   sessionId?: string;  // for chat tabs
   sessionData?: any; // for chat tabs - stores full session object
@@ -12,7 +12,7 @@ export interface Tab {
   agentData?: any; // for agent-execution tabs
   claudeFileId?: string; // for claude-file tabs
   initialProjectPath?: string; // for chat tabs
-  projectPath?: string; // for agent-execution tabs
+  projectPath?: string; // for agent-execution and terminal tabs
   claudeSessionId?: string; // JSONL session UUID for file polling
   claudeProjectId?: string; // ~/.claude/projects/<id> folder name for file polling
   status: 'active' | 'idle' | 'running' | 'complete' | 'error' | 'waiting';

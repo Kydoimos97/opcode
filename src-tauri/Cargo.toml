@@ -69,6 +69,8 @@ futures-util = "0.3"
 image = "=0.25.1"
 fontdb = "0.22"
 sysinfo = "0.32"
+portable-pty = "0.8"
+once_cell = "1.20"
 
 
 [target.'cfg(target_os = "macos")'.dependencies]

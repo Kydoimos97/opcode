@@ -22,6 +22,7 @@ const Settings = lazy(() => import('@/components/Settings').then(m => ({ default
 const MarkdownEditor = lazy(() => import('@/components/MarkdownEditor').then(m => ({ default: m.MarkdownEditor })));
 const ClaudeExplorer = lazy(() => import('@/components/ClaudeExplorer').then(m => ({ default: m.ClaudeExplorer })));
 const SessionLogs = lazy(() => import('@/components/SessionLogs').then(m => ({ default: m.SessionLogs })));
+const TerminalTab = lazy(() => import('@/components/TerminalTab').then(m => ({ default: m.TerminalTab })));
 // const ClaudeFileEditor = lazy(() => import('@/components/ClaudeFileEditor').then(m => ({ default: m.ClaudeFileEditor })));
 
 // Import non-lazy components for projects view
@@ -454,6 +455,13 @@ const TabPanel: React.FC<TabPanelProps> = ({ tab, isActive }) => {
 
       case 'plugins':
         return <div className="p-6 text-muted-foreground text-sm">Plugins — coming soon</div>;
+
+      case 'terminal':
+        return (
+          <div className="h-full">
+            <TerminalTab path={tab.projectPath} />
+          </div>
+        );
 
       default:
         return (
