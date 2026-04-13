@@ -6,4 +6,5 @@ pub mod mcp;
 pub mod proxy;
 pub mod slash_commands;
 pub mod system;
+pub mod terminal;
 pub mod usage;

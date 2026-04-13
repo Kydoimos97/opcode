@@ -1223,6 +1223,13 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
               console.error('Failed to open session folder:', e);
             }
           } : undefined}
+          onOpenTerminal={projectPath ? async () => {
+            try {
+              await api.openTerminalIn(projectPath);
+            } catch (e) {
+              setError(typeof e === 'string' ? e : 'No terminal emulator found. Install WezTerm or Windows Terminal.');
+            }
+          } : undefined}
           onShowTimeline={effectiveSession ? () => setShowTimeline(true) : undefined}
           setCopyPopoverOpen={setCopyPopoverOpen}
           searchOpen={searchOpen}

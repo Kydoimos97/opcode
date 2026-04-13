@@ -39,6 +39,7 @@ use commands::claude::{
 };
 use commands::fonts::list_system_fonts;
 use commands::system::get_system_resources;
+use commands::terminal::open_terminal_in;
 use commands::hook_events::{get_hook_events, check_hook_bridge_installed, install_hook_bridge, remove_hook_bridge};
 use commands::mcp::{
     mcp_add, mcp_add_from_claude_desktop, mcp_add_json, mcp_get, mcp_get_server_status, mcp_list,
@@ -307,6 +308,8 @@ fn main() {
             open_path,
             list_system_fonts,
             get_system_resources,
+            // Terminal
+            open_terminal_in,
             // Hook event bridge
             get_hook_events,
             check_hook_bridge_installed,

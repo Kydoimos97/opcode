@@ -2144,6 +2144,10 @@ export const api = {
     await apiCall<void>("open_path", { path });
   },
 
+  async openTerminalIn(path: string): Promise<string> {
+    return apiCall<string>("open_terminal_in", { path });
+  },
+
   async listSystemFonts(): Promise<Array<{ name: string; is_monospace: boolean }>> {
     try {
       return await apiCall<Array<{ name: string; is_monospace: boolean }>>("list_system_fonts");

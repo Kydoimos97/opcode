@@ -18,6 +18,7 @@ import {
   ChevronUp,
   ChevronDown,
   X,
+  Terminal,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Popover } from '@/components/ui/popover';
@@ -54,6 +55,7 @@ interface SessionHeaderProps {
   onSlashCommandsSettings?: () => void;
   onOpenFolder?: () => void;
   onOpenSessionFolder?: () => void;
+  onOpenTerminal?: () => void;
   onRefresh?: () => void;
   onCollapseAll?: () => void;
   onOpenSessionFile?: () => void;
@@ -88,6 +90,7 @@ export const SessionHeader: React.FC<SessionHeaderProps> = React.memo(({
   onSlashCommandsSettings,
   onOpenFolder,
   onOpenSessionFolder,
+  onOpenTerminal,
   onRefresh,
   onCollapseAll,
   onOpenSessionFile,
@@ -229,6 +232,14 @@ export const SessionHeader: React.FC<SessionHeaderProps> = React.memo(({
             <TooltipSimple content="Open session folder" side="bottom">
               <Button variant="ghost" size="icon" onClick={onOpenSessionFolder} className="h-8 w-8">
                 <FolderOpen className="h-4 w-4 opacity-60" />
+              </Button>
+            </TooltipSimple>
+          )}
+
+          {onOpenTerminal && projectPath && (
+            <TooltipSimple content="Open terminal here" side="bottom">
+              <Button variant="ghost" size="icon" onClick={onOpenTerminal} className="h-8 w-8">
+                <Terminal className="h-4 w-4" />
               </Button>
             </TooltipSimple>
           )}
