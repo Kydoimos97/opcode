@@ -183,6 +183,15 @@ export const Settings: React.FC<SettingsProps> = ({
   const [hookBridgeTypeCount, setHookBridgeTypeCount] = useState(0);
   const [hookBridgeLoading, setHookBridgeLoading] = useState(false);
 
+  // Auth status state
+  const [authStatus, setAuthStatus] = useState<{
+    loggedIn: boolean;
+    email: string | null;
+    orgName: string | null;
+    subscriptionType: string | null;
+    authMethod: string | null;
+  } | null>(null);
+
   useEffect(() => {
     setSidebarDefaultOpen(localStorage.getItem('ui_pref:sidebar_default_open') === 'true');
     setStatusBarVisible(localStorage.getItem('ui_pref:status_bar_visible') !== 'false');
@@ -219,6 +228,10 @@ export const Settings: React.FC<SettingsProps> = ({
       setCguardInstalled(cguardStatus);
       const bridgeTypeCount = await api.checkHookBridgeInstalled().catch(() => 0);
       setHookBridgeTypeCount(bridgeTypeCount);
+
+      // Load auth status
+      const auth = await api.getAuthStatus().catch(() => null);
+      setAuthStatus(auth);
 
       // Load font preferences from ccodeSettings
       const savedFontSans = await ccodeSettings.getPreference('font_sans');
@@ -766,6 +779,44 @@ export const Settings: React.FC<SettingsProps> = ({
             
               {activeSection === 'general' && (
               <div className="space-y-6">
+              {/* Auth status card */}
+              <Card className="p-4">
+                <div className="flex items-center justify-between">
+                  <div className="space-y-1">
+                    <p className="text-sm font-medium">Claude Account</p>
+                    {authStatus?.loggedIn ? (
+                      <div className="space-y-0.5">
+                        {authStatus.email && (
+                          <p className="text-xs text-muted-foreground">{authStatus.email}</p>
+                        )}
+                        {authStatus.orgName && (
+                          <p className="text-xs text-muted-foreground">{authStatus.orgName}</p>
+                        )}
+                      </div>
+                    ) : (
+                      <p className="text-xs text-muted-foreground">Not logged in</p>
+                    )}
+                  </div>
+                  <div className="flex items-center gap-2">
+                    {authStatus && (
+                      <div className={cn(
+                        'flex items-center gap-1 text-xs px-2 py-0.5 rounded-full',
+                        authStatus.loggedIn
+                          ? 'bg-green-500/20 text-green-600'
+                          : 'bg-muted text-muted-foreground'
+                      )}>
+                        <div className={cn(
+                          'h-1.5 w-1.5 rounded-full',
+                          authStatus.loggedIn ? 'bg-green-500' : 'bg-muted-foreground'
+                        )} />
+                        {authStatus.loggedIn
+                          ? (authStatus.subscriptionType ?? 'logged in')
+                          : 'logged out'}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </Card>
               <Card className="p-6 space-y-6">
                 <div>
                   <h3 className="text-heading-4 mb-4">C-Code Settings</h3>

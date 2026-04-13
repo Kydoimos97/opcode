@@ -805,6 +805,85 @@ pub async fn check_claude_version(app: AppHandle) -> Result<ClaudeVersionStatus,
     }
 }
 
+/// Represents Claude authentication status
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AuthStatus {
+    pub logged_in: bool,
+    pub email: Option<String>,
+    pub org_name: Option<String>,
+    pub subscription_type: Option<String>,
+    pub auth_method: Option<String>,
+}
+
+/// Gets the current Claude authentication status
+#[tauri::command]
+pub async fn get_auth_status(app: AppHandle) -> Result<AuthStatus, String> {
+    log::info!("Getting Claude auth status");
+
+    let claude_path = match find_claude_binary(&app) {
+        Ok(p) => p,
+        Err(_) => {
+            return Ok(AuthStatus {
+                logged_in: false,
+                email: None,
+                org_name: None,
+                subscription_type: None,
+                auth_method: None,
+            });
+        }
+    };
+
+    let mut cmd = create_command_with_env(&claude_path);
+    cmd.args(&["auth", "status", "--json"]);
+
+    let output = match cmd.output().await {
+        Ok(output) => output,
+        Err(e) => {
+            log::error!("Failed to run claude auth status: {}", e);
+            return Ok(AuthStatus {
+                logged_in: false,
+                email: None,
+                org_name: None,
+                subscription_type: None,
+                auth_method: None,
+            });
+        }
+    };
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+
+    let json: serde_json::Value = match serde_json::from_str(stdout.trim()) {
+        Ok(val) => val,
+        Err(e) => {
+            log::error!("Failed to parse auth status JSON: {}", e);
+            serde_json::Value::Null
+        }
+    };
+
+    Ok(AuthStatus {
+        logged_in: json
+            .get("loggedIn")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false),
+        email: json
+            .get("email")
+            .and_then(|v| v.as_str())
+            .map(String::from),
+        org_name: json
+            .get("orgName")
+            .and_then(|v| v.as_str())
+            .map(String::from),
+        subscription_type: json
+            .get("subscriptionType")
+            .and_then(|v| v.as_str())
+            .map(String::from),
+        auth_method: json
+            .get("authMethod")
+            .and_then(|v| v.as_str())
+            .map(String::from),
+    })
+}
+
 /// Saves the CLAUDE.md system prompt file
 #[tauri::command]
 pub async fn save_system_prompt(content: String) -> Result<String, String> {

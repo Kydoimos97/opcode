@@ -2190,6 +2190,20 @@ export const api = {
   },
 
   /**
+   * Gets the current Claude authentication status
+   * @returns Promise resolving to auth status
+   */
+  async getAuthStatus(): Promise<{
+    loggedIn: boolean;
+    email: string | null;
+    orgName: string | null;
+    subscriptionType: string | null;
+    authMethod: string | null;
+  }> {
+    return apiCall('get_auth_status');
+  },
+
+  /**
    * Installs the hook event bridge
    * @returns Promise resolving when installation completes
    */
