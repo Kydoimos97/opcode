@@ -22,13 +22,62 @@ pub fn get_hook_events(session_id: String) -> Result<Vec<String>, String> {
     Ok(content.lines().filter(|l| !l.trim().is_empty()).map(String::from).collect())
 }
 
-/// Checks if the hook bridge scripts are installed.
-/// Returns true if ~/.claude/hooks/hook-event-bridge.sh exists.
+/// Returns the number of hook types that have the bridge command wired in
+/// ~/.claude/settings.json. Returns 0 if the bridge script is not installed
+/// or if settings cannot be read. Returns up to 14 (current full set).
 #[tauri::command]
-pub fn check_hook_bridge_installed() -> bool {
-    dirs::home_dir()
-        .map(|h| h.join(".claude").join("hooks").join("hook-event-bridge.sh").exists())
-        .unwrap_or(false)
+pub fn check_hook_bridge_installed() -> u8 {
+    let home = match dirs::home_dir() {
+        Some(h) => h,
+        None => return 0,
+    };
+
+    // If the script file doesn't exist, not installed at all
+    if !home.join(".claude").join("hooks").join("hook-event-bridge.sh").exists() {
+        return 0;
+    }
+
+    // Count how many hook types have the bridge command wired
+    let settings_path = home.join(".claude").join("settings.json");
+    let content = match std::fs::read_to_string(&settings_path) {
+        Ok(c) => c,
+        Err(_) => return 1, // script exists but can't count — report 1 (outdated)
+    };
+    let settings: serde_json::Value = match serde_json::from_str(&content) {
+        Ok(v) => v,
+        Err(_) => return 1,
+    };
+
+    let bridge_command = "bash $HOME/.claude/hooks/hook-event-bridge.sh";
+    let hook_types = [
+        "UserPromptSubmit", "PreToolUse", "PostToolUse", "PostToolUseFailure",
+        "Stop", "Notification", "SubagentStart", "SubagentStop",
+        "SessionStart", "SessionEnd", "PreCompact", "PostCompact",
+        "InstructionsLoaded", "PermissionRequest",
+    ];
+
+    let hooks_obj = match settings.get("hooks").and_then(|h| h.as_object()) {
+        Some(o) => o,
+        None => return 0,
+    };
+
+    let mut count: u8 = 0;
+    for hook_type in &hook_types {
+        if let Some(arr) = hooks_obj.get(*hook_type).and_then(|v| v.as_array()) {
+            let present = arr.iter().any(|item| {
+                item.get("hooks")
+                    .and_then(|h| h.as_array())
+                    .map(|h| h.iter().any(|cmd| {
+                        cmd.get("command").and_then(|c| c.as_str()) == Some(bridge_command)
+                    }))
+                    .unwrap_or(false)
+            });
+            if present {
+                count += 1;
+            }
+        }
+    }
+    count
 }
 
 /// Installs the hook event bridge:
@@ -97,12 +146,17 @@ pub fn install_hook_bridge() -> Result<(), String> {
         "UserPromptSubmit",
         "PreToolUse",
         "PostToolUse",
+        "PostToolUseFailure",
         "Stop",
         "Notification",
         "SubagentStart",
         "SubagentStop",
         "SessionStart",
         "SessionEnd",
+        "PreCompact",
+        "PostCompact",
+        "InstructionsLoaded",
+        "PermissionRequest",
     ];
 
     for hook_type in &hook_types {

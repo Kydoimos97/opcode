@@ -180,7 +180,7 @@ export const Settings: React.FC<SettingsProps> = ({
   const [systemFonts, setSystemFonts] = useState<Array<{ name: string; is_monospace: boolean }>>([]);
   const [fontsLoading, setFontsLoading] = useState(false);
 
-  const [hookBridgeInstalled, setHookBridgeInstalled] = useState(false);
+  const [hookBridgeTypeCount, setHookBridgeTypeCount] = useState(0);
   const [hookBridgeLoading, setHookBridgeLoading] = useState(false);
 
   useEffect(() => {
@@ -217,8 +217,8 @@ export const Settings: React.FC<SettingsProps> = ({
       setStartupIntroEnabled(startupIntroPref === null || startupIntroPref === undefined ? true : Boolean(startupIntroPref));
       const cguardStatus = await api.checkCguardInstalled();
       setCguardInstalled(cguardStatus);
-      const bridgeInstalled = await api.checkHookBridgeInstalled().catch(() => false);
-      setHookBridgeInstalled(bridgeInstalled);
+      const bridgeTypeCount = await api.checkHookBridgeInstalled().catch(() => 0);
+      setHookBridgeTypeCount(bridgeTypeCount);
 
       // Load font preferences from ccodeSettings
       const savedFontSans = await ccodeSettings.getPreference('font_sans');
@@ -1631,28 +1631,33 @@ export const Settings: React.FC<SettingsProps> = ({
                   <div className="flex items-center gap-2">
                     <div className={cn(
                       'flex items-center gap-1 text-xs px-2 py-0.5 rounded-full',
-                      hookBridgeInstalled
+                      hookBridgeTypeCount >= 14
                         ? 'bg-green-500/20 text-green-600'
+                        : hookBridgeTypeCount > 0
+                        ? 'bg-amber-500/20 text-amber-600'
                         : 'bg-muted text-muted-foreground'
                     )}>
-                      <div className={cn('h-1.5 w-1.5 rounded-full', hookBridgeInstalled ? 'bg-green-500' : 'bg-muted-foreground')} />
-                      {hookBridgeInstalled ? 'Installed' : 'Not installed'}
+                      <div className={cn(
+                        'h-1.5 w-1.5 rounded-full',
+                        hookBridgeTypeCount >= 14 ? 'bg-green-500' : hookBridgeTypeCount > 0 ? 'bg-amber-500' : 'bg-muted-foreground'
+                      )} />
+                      {hookBridgeTypeCount >= 14 ? 'Installed' : hookBridgeTypeCount > 0 ? 'Update available' : 'Not installed'}
                     </div>
                     <Button
-                      variant={hookBridgeInstalled ? 'outline' : 'default'}
+                      variant={hookBridgeTypeCount >= 14 ? 'outline' : 'default'}
                       size="sm"
                       disabled={hookBridgeLoading}
                       onClick={async () => {
                         setHookBridgeLoading(true);
                         try {
-                          if (hookBridgeInstalled) {
+                          if (hookBridgeTypeCount >= 14) {
                             await api.removeHookBridge();
-                            setHookBridgeInstalled(false);
+                            setHookBridgeTypeCount(0);
                             setToast({ message: 'Hook bridge removed', type: 'success' });
                           } else {
                             await api.installHookBridge();
-                            setHookBridgeInstalled(true);
-                            setToast({ message: 'Hook bridge installed', type: 'success' });
+                            setHookBridgeTypeCount(14);
+                            setToast({ message: hookBridgeTypeCount > 0 ? 'Hook bridge updated' : 'Hook bridge installed', type: 'success' });
                           }
                         } catch (e) {
                           setToast({ message: `Failed: ${e}`, type: 'error' });
@@ -1661,7 +1666,7 @@ export const Settings: React.FC<SettingsProps> = ({
                         }
                       }}
                     >
-                      {hookBridgeLoading ? 'Working...' : hookBridgeInstalled ? 'Remove' : 'Install'}
+                      {hookBridgeLoading ? 'Working...' : hookBridgeTypeCount >= 14 ? 'Remove' : hookBridgeTypeCount > 0 ? 'Update' : 'Install'}
                     </Button>
                   </div>
                 </div>

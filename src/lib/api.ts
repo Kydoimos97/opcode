@@ -2168,10 +2168,10 @@ export const api = {
 
   /**
    * Checks if the hook bridge scripts are installed
-   * @returns Promise resolving to boolean indicating installation status
+   * @returns Promise resolving to number of hook types wired (0-14)
    */
-  async checkHookBridgeInstalled(): Promise<boolean> {
-    return apiCall<boolean>('check_hook_bridge_installed');
+  async checkHookBridgeInstalled(): Promise<number> {
+    return apiCall<number>('check_hook_bridge_installed');
   },
 
   /**

@@ -14,6 +14,15 @@ export interface HookState {
   subagentActive: boolean;
   subagentType: string | null;
   lastEventCount: number;
+  toolError: { name: string; error: string; isInterrupt: boolean } | null;
+  isCompacting: boolean;
+  lastCompactSummary: string | null;
+  instructionsLoaded: Array<{ filePath: string; memoryType: string }>;
+  permissionRequest: {
+    toolName: string;
+    toolInput: Record<string, unknown>;
+    suggestions: Array<{ type: string; mode: string; destination: string }>;
+  } | null;
 }
 
 const INITIAL_STATE: HookState = {
@@ -23,6 +32,11 @@ const INITIAL_STATE: HookState = {
   subagentActive: false,
   subagentType: null,
   lastEventCount: 0,
+  toolError: null,
+  isCompacting: false,
+  lastCompactSummary: null,
+  instructionsLoaded: [],
+  permissionRequest: null,
 };
 
 /**
@@ -43,6 +57,7 @@ export function deriveHookState(lines: string[]): HookState {
             name: (payload.tool_name as string) ?? 'unknown',
             input: (payload.tool_input as Record<string, unknown>) ?? {},
           };
+          state.toolError = null;
           break;
 
         case 'PostToolUse':
@@ -54,9 +69,20 @@ export function deriveHookState(lines: string[]): HookState {
           }
           break;
 
+        case 'PostToolUseFailure':
+          state.currentTool = null;
+          state.toolError = {
+            name: (payload.tool_name as string) ?? 'unknown',
+            error: (payload.error as string) ?? 'Unknown error',
+            isInterrupt: (payload.is_interrupt as boolean) ?? false,
+          };
+          break;
+
         case 'UserPromptSubmit':
           state.isWaitingForHuman = false;
           state.currentTool = null;
+          state.permissionRequest = null;
+          state.toolError = null;
           if (payload.session_title) {
             state.sessionTitle = payload.session_title as string;
           }
@@ -68,11 +94,41 @@ export function deriveHookState(lines: string[]): HookState {
           }
           break;
 
+        case 'PreCompact':
+          state.isCompacting = true;
+          break;
+
+        case 'PostCompact':
+          state.isCompacting = false;
+          state.lastCompactSummary = (payload.compact_summary as string) ?? null;
+          break;
+
+        case 'InstructionsLoaded':
+          {
+            const filePath = (payload.file_path as string) ?? '';
+            const memoryType = (payload.memory_type as string) ?? '';
+            if (filePath && !state.instructionsLoaded.some(item => item.filePath === filePath)) {
+              state.instructionsLoaded.push({ filePath, memoryType });
+            }
+          }
+          break;
+
+        case 'PermissionRequest':
+          state.permissionRequest = {
+            toolName: (payload.tool_name as string) ?? 'unknown',
+            toolInput: (payload.tool_input as Record<string, unknown>) ?? {},
+            suggestions: (payload.permission_suggestions as Array<{ type: string; mode: string; destination: string }>) ?? [],
+          };
+          break;
+
         case 'Stop':
           state.currentTool = null;
           state.isWaitingForHuman = false;
           state.subagentActive = false;
           state.subagentType = null;
+          state.permissionRequest = null;
+          state.toolError = null;
+          state.isCompacting = false;
           break;
 
         case 'SubagentStart':

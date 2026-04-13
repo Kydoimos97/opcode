@@ -1,4 +1,4 @@
-import React, { useRef, useEffect, useMemo } from 'react';
+import React, { useRef, useEffect, useLayoutEffect, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { StreamMessage } from '../StreamMessage';
@@ -78,7 +78,7 @@ export const MessageList: React.FC<MessageListProps> = React.memo(({
   });
 
   // Auto-scroll to bottom when new messages arrive
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (shouldAutoScrollRef.current && scrollContainerRef.current) {
       const scrollElement = scrollContainerRef.current;
       scrollElement.scrollTop = scrollElement.scrollHeight;

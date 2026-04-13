@@ -5,6 +5,9 @@ import {
   ChevronDown,
   ChevronUp,
   X,
+  AlertCircle,
+  RefreshCw,
+  ShieldAlert,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -1482,6 +1485,48 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
                   <span className="opacity-60 truncate max-w-xs">
                     {Object.values(hookState.currentTool.input)[0]?.toString().slice(0, 80) ?? ''}
                   </span>
+                )}
+              </motion.div>
+            )}
+            {hookState.toolError && (
+              <motion.div
+                initial={{ opacity: 0, y: 4 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: 4 }}
+                transition={{ duration: 0.15 }}
+                className="flex items-center gap-2 px-4 py-1 text-xs text-red-500 bg-red-500/10 border-t border-red-500/20"
+              >
+                <AlertCircle className="h-3 w-3 flex-shrink-0" />
+                <span className="font-medium">Tool failed: {hookState.toolError.name}</span>
+                {hookState.toolError.error && (
+                  <span className="opacity-60 truncate max-w-xs">{hookState.toolError.error.slice(0, 80)}</span>
+                )}
+              </motion.div>
+            )}
+            {hookState.isCompacting && (
+              <motion.div
+                initial={{ opacity: 0, y: 4 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: 4 }}
+                transition={{ duration: 0.15 }}
+                className="flex items-center gap-1.5 px-4 py-0.5 text-xs text-amber-500 bg-amber-500/10 border-t border-amber-500/20"
+              >
+                <RefreshCw className="h-3 w-3 animate-spin" />
+                <span>Compacting context...</span>
+              </motion.div>
+            )}
+            {hookState.permissionRequest && (
+              <motion.div
+                initial={{ opacity: 0, y: 4 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: 4 }}
+                transition={{ duration: 0.15 }}
+                className="flex items-center gap-2 px-4 py-1 text-xs text-amber-600 bg-amber-500/10 border-t border-amber-500/20"
+              >
+                <ShieldAlert className="h-3 w-3 flex-shrink-0" />
+                <span className="font-medium">Permission needed: {hookState.permissionRequest.toolName}</span>
+                {hookState.permissionRequest.suggestions.length > 0 && (
+                  <span className="opacity-60">{hookState.permissionRequest.suggestions[0].mode}</span>
                 )}
               </motion.div>
             )}
