@@ -28,6 +28,13 @@ import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Card } from "@/components/ui/card";
 import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
   api,
   type ClaudeSettings,
   type ClaudeInstallation,
@@ -40,6 +47,7 @@ import { SlashCommandsManager } from "./SlashCommandsManager";
 import { ProxySettings } from "./ProxySettings";
 import { useTheme } from "@/hooks";
 import { TabPersistenceService } from "@/services/tabPersistence";
+import { ccodeSettings } from "@/lib/ccodeSettings";
 
 interface SettingsProps {
   /**
@@ -167,14 +175,15 @@ export const Settings: React.FC<SettingsProps> = ({
 
   const [fontSans, setFontSans] = useState('');
   const [fontMono, setFontMono] = useState('');
+  const [fontSize, setFontSize] = useState(14);
+  const [systemFonts, setSystemFonts] = useState<Array<{ name: string; is_monospace: boolean }>>([]);
+  const [fontsLoading, setFontsLoading] = useState(false);
 
   useEffect(() => {
     setSidebarDefaultOpen(localStorage.getItem('ui_pref:sidebar_default_open') === 'true');
     setStatusBarVisible(localStorage.getItem('ui_pref:status_bar_visible') !== 'false');
     setWorkBlockAutoExpand(localStorage.getItem('ui_pref:work_block_auto_expand') === 'true');
     setShowStreamingIndicator(localStorage.getItem('ui_pref:show_streaming_indicator') !== 'false');
-    setFontSans(localStorage.getItem('ui_pref:font_sans') || '');
-    setFontMono(localStorage.getItem('ui_pref:font_mono') || '');
   }, []);
 
   useEffect(() => {
@@ -193,23 +202,6 @@ export const Settings: React.FC<SettingsProps> = ({
     localStorage.setItem('ui_pref:show_streaming_indicator', showStreamingIndicator.toString());
   }, [showStreamingIndicator]);
 
-  useEffect(() => {
-    localStorage.setItem('ui_pref:font_sans', fontSans);
-    if (fontSans) {
-      document.documentElement.style.setProperty('--font-sans', fontSans);
-    } else {
-      document.documentElement.style.removeProperty('--font-sans');
-    }
-  }, [fontSans]);
-
-  useEffect(() => {
-    localStorage.setItem('ui_pref:font_mono', fontMono);
-    if (fontMono) {
-      document.documentElement.style.setProperty('--font-mono', fontMono);
-    } else {
-      document.documentElement.style.removeProperty('--font-mono');
-    }
-  }, [fontMono]);
 
   // Load settings on mount
   useEffect(() => {
@@ -217,17 +209,27 @@ export const Settings: React.FC<SettingsProps> = ({
     loadClaudeBinaryPath();
     setTabPersistenceEnabled(TabPersistenceService.isEnabled());
     (async () => {
-      const ccodeSettings = await api.readCcodeSettings().catch(() => ({} as Record<string, string>));
-      const pref: string | null = ccodeSettings['startup_intro_enabled'] ?? null;
+      const ccodeSettingsData = await api.readCcodeSettings().catch(() => ({} as Record<string, string>));
+      const pref: string | null = ccodeSettingsData['startup_intro_enabled'] ?? null;
       setStartupIntroEnabled(pref === null ? true : pref === 'true');
       const cguardStatus = await api.checkCguardInstalled();
       setCguardInstalled(cguardStatus);
+
+      // Load font preferences from ccodeSettings
+      const savedFontSans = await ccodeSettings.getPreference('font_sans');
+      const savedFontMono = await ccodeSettings.getPreference('font_mono');
+      const savedFontSize = await ccodeSettings.getPreference('font_size');
+      setFontSans(savedFontSans || '');
+      setFontMono(savedFontMono || '');
+      setFontSize(savedFontSize || 14);
+
+      // Apply immediately
+      if (savedFontSans) document.documentElement.style.setProperty('--font-sans', savedFontSans);
+      if (savedFontMono) document.documentElement.style.setProperty('--font-mono', savedFontMono);
+      document.documentElement.style.setProperty('font-size', `${savedFontSize || 14}px`);
     })();
   }, []);
 
-  /**
-   * Loads analytics settings
-   */
   /**
    * Loads the current Claude binary path
    */
@@ -238,6 +240,42 @@ export const Settings: React.FC<SettingsProps> = ({
     } catch (err) {
       console.error("Failed to load Claude binary path:", err);
     }
+  };
+
+  // Load system fonts when theme section is activated (lazy loading)
+  useEffect(() => {
+    if (activeSection !== 'theme' || systemFonts.length > 0) return;
+    setFontsLoading(true);
+    api.listSystemFonts()
+      .then(fonts => setSystemFonts(fonts))
+      .catch(() => {})
+      .finally(() => setFontsLoading(false));
+  }, [activeSection, systemFonts.length]);
+
+  const handleFontSansChange = async (value: string) => {
+    setFontSans(value);
+    if (value) {
+      document.documentElement.style.setProperty('--font-sans', value);
+    } else {
+      document.documentElement.style.removeProperty('--font-sans');
+    }
+    await ccodeSettings.setPreference('font_sans', value);
+  };
+
+  const handleFontMonoChange = async (value: string) => {
+    setFontMono(value);
+    if (value) {
+      document.documentElement.style.setProperty('--font-mono', value);
+    } else {
+      document.documentElement.style.removeProperty('--font-mono');
+    }
+    await ccodeSettings.setPreference('font_mono', value);
+  };
+
+  const handleFontSizeChange = async (value: number) => {
+    setFontSize(value);
+    document.documentElement.style.setProperty('font-size', `${value}px`);
+    await ccodeSettings.setPreference('font_size', value);
   };
 
   /**
@@ -1237,108 +1275,66 @@ export const Settings: React.FC<SettingsProps> = ({
               )}
 
 
-              <Card className="p-6 space-y-6">
-                <div>
-                  <h3 className="text-heading-4 mb-4">Typography</h3>
+              <Card className="p-6 space-y-4">
+                <h3 className="text-heading-4">Typography</h3>
 
-                  <div className="space-y-6">
-                    <div className="space-y-3">
-                      <div>
-                        <Label htmlFor="font-sans-select" className="text-label">
-                          Sans-serif Font
-                        </Label>
-                        <p className="text-caption text-muted-foreground mt-1 mb-2">
-                          Default system font is Inter
-                        </p>
+                <div className="space-y-3">
+                  <div>
+                    <Label className="text-sm mb-1.5 block">UI Font</Label>
+                    {fontsLoading ? (
+                      <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                        <Loader2 className="h-3 w-3 animate-spin" /> Loading fonts...
                       </div>
+                    ) : (
+                      <Select value={fontSans || '__default__'} onValueChange={v => handleFontSansChange(v === '__default__' ? '' : v)}>
+                        <SelectTrigger className="h-8 text-sm">
+                          <SelectValue placeholder="System default" />
+                        </SelectTrigger>
+                        <SelectContent className="max-h-60">
+                          <SelectItem value="__default__">System default</SelectItem>
+                          {systemFonts.filter(f => !f.is_monospace).map(f => (
+                            <SelectItem key={f.name} value={f.name} style={{ fontFamily: f.name }}>{f.name}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    )}
+                  </div>
 
-                      <div className="space-y-2">
-                        <select
-                          id="font-sans-select"
-                          value={fontSans}
-                          onChange={(e) => setFontSans(e.target.value)}
-                          className="w-full px-3 py-2 border rounded-md bg-background border-border text-sm"
-                        >
-                          <option value="">Default (Inter)</option>
-                          <option value="system-ui">System UI</option>
-                          <option value="Arial">Arial</option>
-                          <option value="Georgia">Georgia</option>
-                        </select>
+                  <div>
+                    <Label className="text-sm mb-1.5 block">Monospace Font</Label>
+                    {fontsLoading ? (
+                      <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                        <Loader2 className="h-3 w-3 animate-spin" /> Loading fonts...
                       </div>
+                    ) : (
+                      <Select value={fontMono || '__default__'} onValueChange={v => handleFontMonoChange(v === '__default__' ? '' : v)}>
+                        <SelectTrigger className="h-8 text-sm">
+                          <SelectValue placeholder="System default" />
+                        </SelectTrigger>
+                        <SelectContent className="max-h-60">
+                          <SelectItem value="__default__">System default</SelectItem>
+                          {systemFonts.filter(f => f.is_monospace).map(f => (
+                            <SelectItem key={f.name} value={f.name} style={{ fontFamily: f.name }}>{f.name}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    )}
+                  </div>
 
-                      <div>
-                        <Label htmlFor="font-sans-custom" className="text-caption">
-                          Or enter custom font name
-                        </Label>
-                        <Input
-                          id="font-sans-custom"
-                          type="text"
-                          placeholder="e.g., Roboto, Segoe UI"
-                          value={fontSans}
-                          onChange={(e) => setFontSans(e.target.value)}
-                          className="font-mono text-xs mt-1"
-                        />
-                      </div>
-
-                      {fontSans && (
-                        <div
-                          className="p-3 rounded-md bg-muted/30 border border-border"
-                          style={{ fontFamily: fontSans }}
-                        >
-                          <p className="text-sm">
-                            The quick brown fox jumps over the lazy dog. Grumpy wizards make toxic brew.
-                          </p>
-                        </div>
-                      )}
-                    </div>
-
-                    <div className="space-y-3">
-                      <div>
-                        <Label htmlFor="font-mono-select" className="text-label">
-                          Monospace Font
-                        </Label>
-                        <p className="text-caption text-muted-foreground mt-1 mb-2">
-                          Used for code and terminal text
-                        </p>
-                      </div>
-
-                      <div className="space-y-2">
-                        <select
-                          id="font-mono-select"
-                          value={fontMono}
-                          onChange={(e) => setFontMono(e.target.value)}
-                          className="w-full px-3 py-2 border rounded-md bg-background border-border text-sm"
-                        >
-                          <option value="">Default monospace</option>
-                          <option value="Consolas">Consolas</option>
-                          <option value="Courier New">Courier New</option>
-                          <option value="JetBrains Mono">JetBrains Mono</option>
-                        </select>
-                      </div>
-
-                      <div>
-                        <Label htmlFor="font-mono-custom" className="text-caption">
-                          Or enter custom font name
-                        </Label>
-                        <Input
-                          id="font-mono-custom"
-                          type="text"
-                          placeholder="e.g., Fira Code, Monaco"
-                          value={fontMono}
-                          onChange={(e) => setFontMono(e.target.value)}
-                          className="font-mono text-xs mt-1"
-                        />
-                      </div>
-
-                      {fontMono && (
-                        <div
-                          className="p-3 rounded-md bg-muted/30 border border-border font-mono text-xs"
-                          style={{ fontFamily: fontMono }}
-                        >
-                          <p>const message = "Sample monospace text";</p>
-                          <p>const value = 42;</p>
-                        </div>
-                      )}
+                  <div>
+                    <Label className="text-sm mb-1.5 block">Font Size: {fontSize}px</Label>
+                    <input
+                      type="range"
+                      min={12}
+                      max={20}
+                      step={1}
+                      value={fontSize}
+                      onChange={e => handleFontSizeChange(Number(e.target.value))}
+                      className="w-full h-2 accent-primary cursor-pointer"
+                    />
+                    <div className="flex justify-between text-xs text-muted-foreground mt-1">
+                      <span>12px</span>
+                      <span>20px</span>
                     </div>
                   </div>
                 </div>

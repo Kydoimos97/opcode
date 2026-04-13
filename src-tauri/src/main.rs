@@ -37,6 +37,7 @@ use commands::claude::{
     poll_session_file, get_session_file_status, get_session_file_path,
     read_ccode_settings, write_ccode_settings, read_session_status, open_path,
 };
+use commands::fonts::list_system_fonts;
 use commands::mcp::{
     mcp_add, mcp_add_from_claude_desktop, mcp_add_json, mcp_get, mcp_get_server_status, mcp_list,
     mcp_read_project_config, mcp_remove, mcp_reset_project_choices, mcp_save_project_config,
@@ -261,6 +262,7 @@ fn main() {
             write_ccode_settings,
             read_session_status,
             open_path,
+            list_system_fonts,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

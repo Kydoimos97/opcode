@@ -63,10 +63,21 @@ function AppContent() {
   const [projectForSettings, setProjectForSettings] = useState<Project | null>(null);
   const [previousView] = useState<View>("welcome");
 
-  // Initialize web mode compatibility on mount
+  // Initialize web mode compatibility on mount, apply saved font preferences
   useEffect(() => {
     initializeWebMode();
     ccodeSettings.warmup();
+    // Apply saved font preferences immediately so they take effect without
+    // the user needing to open Settings first
+    Promise.all([
+      ccodeSettings.getPreference('font_sans'),
+      ccodeSettings.getPreference('font_mono'),
+      ccodeSettings.getPreference('font_size'),
+    ]).then(([sans, mono, size]) => {
+      if (sans) document.documentElement.style.setProperty('--font-sans', sans);
+      if (mono) document.documentElement.style.setProperty('--font-mono', mono);
+      if (size) document.documentElement.style.setProperty('font-size', `${size}px`);
+    }).catch(() => {});
   }, []);
 
   // Load projects on mount when in projects view

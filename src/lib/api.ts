@@ -2144,4 +2144,13 @@ export const api = {
     await apiCall<void>("open_path", { path });
   },
 
+  async listSystemFonts(): Promise<Array<{ name: string; is_monospace: boolean }>> {
+    try {
+      return await apiCall<Array<{ name: string; is_monospace: boolean }>>("list_system_fonts");
+    } catch (err) {
+      console.error("Failed to list system fonts:", err);
+      return [];
+    }
+  },
+
 };

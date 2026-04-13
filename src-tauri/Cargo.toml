@@ -67,6 +67,7 @@ clap = { version = "4.0", features = ["derive"] }
 futures-util = "0.3"
 # Pin image to avoid edition2024 requirement
 image = "=0.25.1"
+fontdb = "0.22"
 
 
 [target.'cfg(target_os = "macos")'.dependencies]
