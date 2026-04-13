@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Bot, Loader2, Play, Clock, CheckCircle, XCircle, Trash2, Import, ChevronDown, ChevronRight, FileJson, Globe, Download, Plus, History, Edit } from 'lucide-react';
+import { Bot, Loader2, Play, Clock, CheckCircle, XCircle, Trash2, ChevronDown, ChevronRight, Plus, History, RotateCcw } from 'lucide-react';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -12,24 +12,19 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Card } from '@/components/ui/card';
 import { Toast } from '@/components/ui/toast';
-import { api, type Agent, type AgentRunWithMetrics } from '@/lib/api';
-import { open as openDialog, save } from '@tauri-apps/plugin-dialog';
-import { invoke } from '@tauri-apps/api/core';
-import { GitHubAgentBrowser } from '@/components/GitHubAgentBrowser';
+import { api, type NativeAgent, type AgentRunWithMetrics } from '@/lib/api';
 import { CreateAgent } from '@/components/CreateAgent';
 import { useTabState } from '@/hooks/useTabState';
 
 export const Agents: React.FC = () => {
   const [activeTab, setActiveTab] = useState('agents');
   const [showCreateAgent, setShowCreateAgent] = useState(false);
-  const [editingAgent, setEditingAgent] = useState<Agent | null>(null);
-  const [agents, setAgents] = useState<Agent[]>([]);
+  const [agents, setAgents] = useState<NativeAgent[]>([]);
   const [runningAgents, setRunningAgents] = useState<AgentRunWithMetrics[]>([]);
   const [loading, setLoading] = useState(true);
-  const [agentToDelete, setAgentToDelete] = useState<Agent | null>(null);
+  const [agentToDelete, setAgentToDelete] = useState<NativeAgent | null>(null);
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
   const [toast, setToast] = useState<{ message: string; type: "success" | "error" } | null>(null);
-  const [showGitHubBrowser, setShowGitHubBrowser] = useState(false);
   const { createAgentTab } = useTabState();
 
   // Load agents on mount
@@ -50,7 +45,7 @@ export const Agents: React.FC = () => {
   const loadAgents = async () => {
     try {
       setLoading(true);
-      const agents = await api.listAgents();
+      const agents = await api.listNativeAgents();
       setAgents(agents);
     } catch (error) {
       console.error('Failed to load agents:', error);
@@ -69,34 +64,25 @@ export const Agents: React.FC = () => {
     }
   };
 
-  const handleRunAgent = async (agent: Agent) => {
-    if (!agent.id) {
-      setToast({ message: 'Agent ID is missing', type: 'error' });
-      return;
-    }
-    
-    // Import the dialog function
+  const handleRunAgent = async (agent: NativeAgent) => {
     const { open } = await import('@tauri-apps/plugin-dialog');
-    
+
     try {
-      // Prompt user to select a project directory
       const projectPath = await open({
         directory: true,
         multiple: false,
         title: `Select project directory for ${agent.name}`
       });
-      
+
       if (!projectPath) {
-        // User cancelled
         return;
       }
-      
-      // Dispatch event to open agent execution in a new tab
-      const tabId = `agent-exec-${agent.id}-${Date.now()}`;
-      window.dispatchEvent(new CustomEvent('open-agent-execution', { 
-        detail: { agent, tabId, projectPath } 
+
+      const tabId = `agent-exec-${agent.path}-${Date.now()}`;
+      window.dispatchEvent(new CustomEvent('open-agent-execution', {
+        detail: { agent, tabId, projectPath }
       }));
-      
+
       setToast({ message: `Opening agent: ${agent.name}`, type: 'success' });
     } catch (error) {
       console.error('Failed to open agent:', error);
@@ -105,57 +91,17 @@ export const Agents: React.FC = () => {
   };
 
   const handleDeleteAgent = async () => {
-    if (!agentToDelete || !agentToDelete.id) return;
-    
+    if (!agentToDelete) return;
+
     try {
-      await api.deleteAgent(agentToDelete.id);
+      await api.deleteNativeAgent(agentToDelete.path);
       setToast({ message: `Deleted agent: ${agentToDelete.name}`, type: 'success' });
-      setAgents(prev => prev.filter(a => a.id !== agentToDelete.id));
+      setAgents(prev => prev.filter(a => a.path !== agentToDelete.path));
       setShowDeleteDialog(false);
       setAgentToDelete(null);
     } catch (error) {
       console.error('Failed to delete agent:', error);
       setToast({ message: `Failed to delete agent: ${agentToDelete.name}`, type: 'error' });
-    }
-  };
-
-  const handleImportFromFile = async () => {
-    try {
-      const selected = await openDialog({
-        filters: [
-          { name: 'opcode Agent', extensions: ['opcode.json', 'json'] },
-          { name: 'All Files', extensions: ['*'] }
-        ],
-        multiple: false,
-      });
-
-      if (selected) {
-        const importedAgent = await api.importAgentFromFile(selected as string);
-        setToast({ message: `Imported agent: ${importedAgent.name}`, type: 'success' });
-        loadAgents();
-      }
-    } catch (error) {
-      console.error('Failed to import agent:', error);
-      setToast({ message: 'Failed to import agent', type: 'error' });
-    }
-  };
-
-  const handleExportAgent = async (agent: Agent) => {
-    try {
-      const path = await save({
-        defaultPath: `${agent.name.toLowerCase().replace(/\s+/g, '-')}.opcode.json`,
-        filters: [
-          { name: 'opcode Agent', extensions: ['opcode.json'] }
-        ]
-      });
-
-      if (path && agent.id) {
-        await invoke('export_agent_to_file', { id: agent.id, filePath: path });
-        setToast({ message: `Exported agent: ${agent.name}`, type: 'success' });
-      }
-    } catch (error) {
-      console.error('Failed to export agent:', error);
-      setToast({ message: 'Failed to export agent', type: 'error' });
     }
   };
 
@@ -172,28 +118,13 @@ export const Agents: React.FC = () => {
     }
   };
 
-  // Show CreateAgent component if creating
   if (showCreateAgent) {
     return (
-      <CreateAgent 
+      <CreateAgent
         onBack={() => setShowCreateAgent(false)}
         onAgentCreated={() => {
           setShowCreateAgent(false);
-          loadAgents(); // Reload agents after creation
-        }}
-      />
-    );
-  }
-
-  // Show CreateAgent component in edit mode
-  if (editingAgent) {
-    return (
-      <CreateAgent
-        agent={editingAgent}
-        onBack={() => setEditingAgent(null)}
-        onAgentCreated={() => {
-          setEditingAgent(null);
-          loadAgents(); // Reload agents after update
+          loadAgents();
         }}
       />
     );
@@ -201,7 +132,7 @@ export const Agents: React.FC = () => {
 
   return (
     <div className="h-full overflow-y-auto">
-      <div className="max-w-6xl mx-auto flex flex-col h-full">
+      <div className="mx-auto flex flex-col h-full">
         {/* Header */}
         <div className="p-6">
           <div className="flex items-center justify-between">
@@ -212,26 +143,9 @@ export const Agents: React.FC = () => {
               </p>
             </div>
             <div className="flex items-center gap-2">
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                  <Button variant="outline">
-                    <Import className="w-4 h-4 mr-2" />
-                    Import
-                    <ChevronDown className="w-4 h-4 ml-2" />
-                  </Button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="end">
-                  <DropdownMenuItem onClick={handleImportFromFile}>
-                    <FileJson className="w-4 h-4 mr-2" />
-                    From File
-                  </DropdownMenuItem>
-                  <DropdownMenuItem onClick={() => setShowGitHubBrowser(true)}>
-                    <Globe className="w-4 h-4 mr-2" />
-                    From GitHub
-                  </DropdownMenuItem>
-                </DropdownMenuContent>
-              </DropdownMenu>
-
+              <Button variant="outline" size="icon" onClick={loadAgents}>
+                <RotateCcw className="w-4 h-4" />
+              </Button>
               <Button onClick={() => setShowCreateAgent(true)}>
                 <Plus className="w-4 h-4 mr-2" />
                 Create Agent
@@ -257,18 +171,6 @@ export const Agents: React.FC = () => {
             </motion.div>
           )}
         </AnimatePresence>
-
-      {showGitHubBrowser && (
-        <GitHubAgentBrowser
-          isOpen={showGitHubBrowser}
-          onClose={() => setShowGitHubBrowser(false)}
-          onImportSuccess={() => {
-            loadAgents();
-            setShowGitHubBrowser(false);
-            setToast({ message: 'Agent imported successfully', type: 'success' });
-          }}
-        />
-      )}
 
       <AnimatePresence>
         {showDeleteDialog && agentToDelete && (
@@ -331,9 +233,9 @@ export const Agents: React.FC = () => {
               ) : agents.length === 0 ? (
                 <div className="flex flex-col items-center justify-center h-64 text-center">
                   <Bot className="w-12 h-12 text-muted-foreground mb-4" />
-                  <h3 className="text-lg font-semibold mb-2">No Agents Yet</h3>
+                  <h3 className="text-lg font-semibold mb-2">No agents found</h3>
                   <p className="text-muted-foreground mb-4">
-                    Create your first agent to get started
+                    No agents found in ~/.claude/agents/ — create a .md file there or use the Create button
                   </p>
                   <Button onClick={() => setShowCreateAgent(true)}>
                     <Plus className="w-4 h-4 mr-2" />
@@ -344,7 +246,7 @@ export const Agents: React.FC = () => {
                 <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
                   {agents.map((agent) => (
                     <Card
-                      key={agent.id}
+                      key={agent.path}
                       className="p-4 hover:shadow-md transition-shadow"
                     >
                       <div className="flex items-start justify-between mb-3">
@@ -359,19 +261,11 @@ export const Agents: React.FC = () => {
                             </Button>
                           </DropdownMenuTrigger>
                           <DropdownMenuContent align="end">
-                            <DropdownMenuItem onClick={() => setEditingAgent(agent)}>
-                              <Edit className="w-4 h-4 mr-2" />
-                              Edit
-                            </DropdownMenuItem>
                             <DropdownMenuItem onClick={() => handleRunAgent(agent)}>
                               <Play className="w-4 h-4 mr-2" />
                               Run
                             </DropdownMenuItem>
-                            <DropdownMenuItem onClick={() => handleExportAgent(agent)}>
-                              <Download className="w-4 h-4 mr-2" />
-                              Export
-                            </DropdownMenuItem>
-                            <DropdownMenuItem 
+                            <DropdownMenuItem
                               onClick={() => {
                                 setAgentToDelete(agent);
                                 setShowDeleteDialog(true);
@@ -386,12 +280,12 @@ export const Agents: React.FC = () => {
                       </div>
 
                       <p className="text-sm text-muted-foreground mb-3 line-clamp-2">
-                        No description provided
+                        {agent.description || 'No description provided'}
                       </p>
 
                       <div className="flex items-center justify-between">
                         <Badge variant="secondary" className="text-xs">
-                          v1.0.0
+                          {agent.model || 'unknown'}
                         </Badge>
                         <Button
                           size="sm"

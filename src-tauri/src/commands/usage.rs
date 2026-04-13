@@ -228,26 +228,6 @@ fn parse_jsonl_file(
     entries
 }
 
-fn get_earliest_timestamp(path: &PathBuf) -> Option<String> {
-    if let Ok(content) = fs::read_to_string(path) {
-        let mut earliest_timestamp: Option<String> = None;
-        for line in content.lines() {
-            if let Ok(json_value) = serde_json::from_str::<serde_json::Value>(line) {
-                if let Some(timestamp_str) = json_value.get("timestamp").and_then(|v| v.as_str()) {
-                    if let Some(current_earliest) = &earliest_timestamp {
-                        if timestamp_str < current_earliest.as_str() {
-                            earliest_timestamp = Some(timestamp_str.to_string());
-                        }
-                    } else {
-                        earliest_timestamp = Some(timestamp_str.to_string());
-                    }
-                }
-            }
-        }
-        return earliest_timestamp;
-    }
-    None
-}
 
 fn get_all_usage_entries(claude_path: &PathBuf) -> Vec<UsageEntry> {
     let mut all_entries = Vec::new();
@@ -273,10 +253,6 @@ fn get_all_usage_entries(claude_path: &PathBuf) -> Vec<UsageEntry> {
         }
     }
 
-    // Sort files by their earliest timestamp to ensure chronological processing
-    // and deterministic deduplication.
-    files_to_process.sort_by_cached_key(|(path, _)| get_earliest_timestamp(path));
-
     for (path, project_name) in files_to_process {
         let entries = parse_jsonl_file(&path, &project_name, &mut processed_hashes);
         all_entries.extend(entries);
@@ -289,12 +265,13 @@ fn get_all_usage_entries(claude_path: &PathBuf) -> Vec<UsageEntry> {
 }
 
 #[command]
-pub fn get_usage_stats(days: Option<u32>) -> Result<UsageStats, String> {
-    let claude_path = dirs::home_dir()
-        .ok_or("Failed to get home directory")?
-        .join(".claude");
+pub async fn get_usage_stats(days: Option<u32>) -> Result<UsageStats, String> {
+    tokio::task::spawn_blocking(move || {
+        let claude_path = dirs::home_dir()
+            .ok_or("Failed to get home directory")?
+            .join(".claude");
 
-    let all_entries = get_all_usage_entries(&claude_path);
+        let all_entries = get_all_usage_entries(&claude_path);
 
     if all_entries.is_empty() {
         return Ok(UsageStats {
@@ -446,15 +423,19 @@ pub fn get_usage_stats(days: Option<u32>) -> Result<UsageStats, String> {
         by_date,
         by_project,
     })
+    })
+    .await
+    .map_err(|e| format!("Task failed: {}", e))?
 }
 
 #[command]
-pub fn get_usage_by_date_range(start_date: String, end_date: String) -> Result<UsageStats, String> {
-    let claude_path = dirs::home_dir()
-        .ok_or("Failed to get home directory")?
-        .join(".claude");
+pub async fn get_usage_by_date_range(start_date: String, end_date: String) -> Result<UsageStats, String> {
+    tokio::task::spawn_blocking(move || {
+        let claude_path = dirs::home_dir()
+            .ok_or("Failed to get home directory")?
+            .join(".claude");
 
-    let all_entries = get_all_usage_entries(&claude_path);
+        let all_entries = get_all_usage_entries(&claude_path);
 
     // Parse dates
     let start = NaiveDate::parse_from_str(&start_date, "%Y-%m-%d").or_else(|_| {
@@ -616,18 +597,22 @@ pub fn get_usage_by_date_range(start_date: String, end_date: String) -> Result<U
         by_date,
         by_project,
     })
+    })
+    .await
+    .map_err(|e| format!("Task failed: {}", e))?
 }
 
 #[command]
-pub fn get_usage_details(
+pub async fn get_usage_details(
     project_path: Option<String>,
     date: Option<String>,
 ) -> Result<Vec<UsageEntry>, String> {
-    let claude_path = dirs::home_dir()
-        .ok_or("Failed to get home directory")?
-        .join(".claude");
+    tokio::task::spawn_blocking(move || {
+        let claude_path = dirs::home_dir()
+            .ok_or("Failed to get home directory")?
+            .join(".claude");
 
-    let mut all_entries = get_all_usage_entries(&claude_path);
+        let mut all_entries = get_all_usage_entries(&claude_path);
 
     // Filter by project if specified
     if let Some(project) = project_path {
@@ -640,19 +625,23 @@ pub fn get_usage_details(
     }
 
     Ok(all_entries)
+    })
+    .await
+    .map_err(|e| format!("Task failed: {}", e))?
 }
 
 #[command]
-pub fn get_session_stats(
+pub async fn get_session_stats(
     since: Option<String>,
     until: Option<String>,
     order: Option<String>,
 ) -> Result<Vec<ProjectUsage>, String> {
-    let claude_path = dirs::home_dir()
-        .ok_or("Failed to get home directory")?
-        .join(".claude");
+    tokio::task::spawn_blocking(move || {
+        let claude_path = dirs::home_dir()
+            .ok_or("Failed to get home directory")?
+            .join(".claude");
 
-    let all_entries = get_all_usage_entries(&claude_path);
+        let all_entries = get_all_usage_entries(&claude_path);
 
     let since_date = since.and_then(|s| NaiveDate::parse_from_str(&s, "%Y%m%d").ok());
     let until_date = until.and_then(|s| NaiveDate::parse_from_str(&s, "%Y%m%d").ok());
@@ -711,4 +700,7 @@ pub fn get_session_stats(
     }
 
     Ok(by_session)
+    })
+    .await
+    .map_err(|e| format!("Task failed: {}", e))?
 }

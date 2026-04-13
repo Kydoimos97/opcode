@@ -24,6 +24,8 @@ interface UseTabStateReturn {
   createClaudeFileTab: (fileId: string, fileName: string) => string;
   createCreateAgentTab: () => string;
   createImportAgentTab: () => string;
+  createExplorerTab: () => string | null;
+  createLogsTab: () => string | null;
   closeTab: (id: string, force?: boolean) => Promise<boolean>;
   closeCurrentTab: () => Promise<boolean>;
   switchToTab: (id: string) => void;
@@ -252,6 +254,38 @@ export const useTabState = (): UseTabStateReturn => {
     });
   }, [addTab, tabs, setActiveTab]);
 
+  const createExplorerTab = useCallback((): string | null => {
+    const existingTab = tabs.find(tab => tab.type === 'claude-explorer');
+    if (existingTab) {
+      setActiveTab(existingTab.id);
+      return existingTab.id;
+    }
+
+    return addTab({
+      type: 'claude-explorer',
+      title: '.claude Explorer',
+      status: 'idle',
+      hasUnsavedChanges: false,
+      icon: 'folder-open'
+    });
+  }, [addTab, tabs, setActiveTab]);
+
+  const createLogsTab = useCallback((): string | null => {
+    const existingTab = tabs.find(tab => tab.type === 'session-logs');
+    if (existingTab) {
+      setActiveTab(existingTab.id);
+      return existingTab.id;
+    }
+
+    return addTab({
+      type: 'session-logs',
+      title: 'Session Logs',
+      status: 'idle',
+      hasUnsavedChanges: false,
+      icon: 'file-text'
+    });
+  }, [addTab, tabs, setActiveTab]);
+
   const closeTab = useCallback(async (id: string, force: boolean = false): Promise<boolean> => {
     const tab = getTabById(id);
     if (!tab) return true;
@@ -344,6 +378,8 @@ export const useTabState = (): UseTabStateReturn => {
     createClaudeFileTab,
     createCreateAgentTab,
     createImportAgentTab,
+    createExplorerTab,
+    createLogsTab,
     closeTab,
     closeCurrentTab,
     switchToTab: setActiveTab,

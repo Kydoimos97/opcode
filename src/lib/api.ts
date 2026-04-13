@@ -2,8 +2,8 @@ import { apiCall } from './apiAdapter';
 import type { HooksConfiguration } from '@/types/hooks';
 
 /** Process type for tracking in ProcessRegistry */
-export type ProcessType = 
-  | { AgentRun: { agent_id: number; agent_name: string } }
+export type ProcessType =
+  | { AgentRun: { agent_id: string; agent_name: string } }
   | { ClaudeSession: { session_id: string } };
 
 /** Information about a running process */
@@ -31,6 +31,10 @@ export interface Project {
   created_at: number;
   /** Unix timestamp of the most recent session (if any) */
   most_recent_session?: number;
+  /** Absolute path to the git repository root (undefined if not a git repo) */
+  git_root?: string;
+  /** Current git branch for this worktree (undefined if not a git repo) */
+  git_branch?: string;
 }
 
 /**
@@ -47,6 +51,8 @@ export interface Session {
   todo_data?: any;
   /** Unix timestamp when the session file was created */
   created_at: number;
+  /** Unix timestamp when the session file was last modified (reflects last activity) */
+  modified_at?: number;
   /** First user message content (if available) */
   first_message?: string;
   /** Timestamp of the first user message (if available) */
@@ -113,7 +119,7 @@ export interface ClaudeInstallation {
 
 // Agent API types
 export interface Agent {
-  id?: number;
+  id: string;
   name: string;
   icon: string;
   system_prompt: string;
@@ -147,7 +153,7 @@ export interface GitHubAgentFile {
 
 export interface AgentRun {
   id?: number;
-  agent_id: number;
+  agent_id: string;
   agent_name: string;
   agent_icon: string;
   task: string;
@@ -170,7 +176,7 @@ export interface AgentRunMetrics {
 
 export interface AgentRunWithMetrics {
   id?: number;
-  agent_id: number;
+  agent_id: string;
   agent_name: string;
   agent_icon: string;
   task: string;
@@ -186,6 +192,20 @@ export interface AgentRunWithMetrics {
   completed_at?: string;
   metrics?: AgentRunMetrics;
   output?: string; // Real-time JSONL content
+}
+
+export interface NativeAgent {
+  name: string;
+  path: string;
+  description: string;
+  model: string | null;
+  raw_content: string;
+}
+
+export interface SkillInfo {
+  name: string;
+  path: string;
+  description: string;
 }
 
 // Usage Dashboard types
@@ -442,6 +462,61 @@ export interface ImportServerResult {
   name: string;
   success: boolean;
   error?: string;
+}
+
+/**
+ * Git repository information
+ */
+export interface GitInfo {
+  repo_name: string;
+  branch: string;
+  is_git_repo: boolean;
+  remote_url?: string;
+}
+
+/**
+ * Git diff statistics
+ */
+export interface GitDiffStat {
+  additions: number;
+  deletions: number;
+}
+
+/**
+ * Information about a git worktree
+ */
+export interface WorktreeInfo {
+  path: string;
+  branch: string;
+  is_main: boolean;
+}
+
+/**
+ * Status of a JSONL session file for sidebar polling
+ */
+export interface SessionFileStatus {
+  last_type: string | null;
+  is_error: boolean;
+  lines_total: number;
+  modified_secs_ago: number;
+  awaiting_approval: boolean;
+  last_user_message: string | null;
+}
+
+export interface ClaudeEntry {
+  name: string;
+  path: string;
+  is_dir: boolean;
+  size: number;
+  modified: string;
+}
+
+export interface SessionLogEntry {
+  session_id: string;
+  project_path: string;
+  file_path: string;
+  modified: string;
+  size: number;
 }
 
 /**
@@ -737,8 +812,8 @@ export const api = {
    * @returns Promise resolving to the updated agent
    */
   async updateAgent(
-    id: number, 
-    name: string, 
+    id: string,
+    name: string,
     icon: string, 
     system_prompt: string, 
     default_task?: string, 
@@ -766,7 +841,7 @@ export const api = {
    * @param id - The agent ID to delete
    * @returns Promise resolving when the agent is deleted
    */
-  async deleteAgent(id: number): Promise<void> {
+  async deleteAgent(id: string): Promise<void> {
     try {
       return await apiCall('delete_agent', { id });
     } catch (error) {
@@ -780,7 +855,7 @@ export const api = {
    * @param id - The agent ID
    * @returns Promise resolving to the agent
    */
-  async getAgent(id: number): Promise<Agent> {
+  async getAgent(id: string): Promise<Agent> {
     try {
       return await apiCall<Agent>('get_agent', { id });
     } catch (error) {
@@ -794,7 +869,7 @@ export const api = {
    * @param id - The agent ID to export
    * @returns Promise resolving to the JSON string
    */
-  async exportAgent(id: number): Promise<string> {
+  async exportAgent(id: string): Promise<string> {
     try {
       return await apiCall<string>('export_agent', { id });
     } catch (error) {
@@ -839,7 +914,7 @@ export const api = {
    * @param model - Optional model override
    * @returns Promise resolving to the run ID when execution starts
    */
-  async executeAgent(agentId: number, projectPath: string, task: string, model?: string): Promise<number> {
+  async executeAgent(agentId: string, projectPath: string, task: string, model?: string): Promise<number> {
     try {
       return await apiCall<number>('execute_agent', { agentId, projectPath, task, model });
     } catch (error) {
@@ -854,7 +929,7 @@ export const api = {
    * @param agentId - Optional agent ID to filter runs
    * @returns Promise resolving to an array of agent runs
    */
-  async listAgentRuns(agentId?: number): Promise<AgentRunWithMetrics[]> {
+  async listAgentRuns(agentId?: string): Promise<AgentRunWithMetrics[]> {
     try {
       return await apiCall<AgentRunWithMetrics[]>('list_agent_runs', { agentId });
     } catch (error) {
@@ -869,7 +944,7 @@ export const api = {
    * @param agentId - Optional agent ID to filter runs
    * @returns Promise resolving to an array of agent runs with metrics
    */
-  async listAgentRunsWithMetrics(agentId?: number): Promise<AgentRunWithMetrics[]> {
+  async listAgentRunsWithMetrics(agentId?: string): Promise<AgentRunWithMetrics[]> {
     try {
       return await apiCall<AgentRunWithMetrics[]>('list_agent_runs_with_metrics', { agentId });
     } catch (error) {
@@ -1028,22 +1103,22 @@ export const api = {
   /**
    * Executes a new interactive Claude Code session with streaming output
    */
-  async executeClaudeCode(projectPath: string, prompt: string, model: string): Promise<void> {
-    return apiCall("execute_claude_code", { projectPath, prompt, model });
+  async executeClaudeCode(projectPath: string, prompt: string, model: string, permissionMode?: string): Promise<void> {
+    return apiCall("execute_claude_code", { projectPath, prompt, model, permissionMode });
   },
 
   /**
    * Continues an existing Claude Code conversation with streaming output
    */
-  async continueClaudeCode(projectPath: string, prompt: string, model: string): Promise<void> {
-    return apiCall("continue_claude_code", { projectPath, prompt, model });
+  async continueClaudeCode(projectPath: string, prompt: string, model: string, permissionMode?: string): Promise<void> {
+    return apiCall("continue_claude_code", { projectPath, prompt, model, permissionMode });
   },
 
   /**
    * Resumes an existing Claude Code session by ID with streaming output
    */
-  async resumeClaudeCode(projectPath: string, sessionId: string, prompt: string, model: string): Promise<void> {
-    return apiCall("resume_claude_code", { projectPath, sessionId, prompt, model });
+  async resumeClaudeCode(projectPath: string, sessionId: string, prompt: string, model: string, permissionMode?: string): Promise<void> {
+    return apiCall("resume_claude_code", { projectPath, sessionId, prompt, model, permissionMode });
   },
 
   /**
@@ -1596,200 +1671,6 @@ export const api = {
     }
   },
 
-  // Storage API methods
-
-  /**
-   * Lists all tables in the SQLite database
-   * @returns Promise resolving to an array of table information
-   */
-  async storageListTables(): Promise<any[]> {
-    try {
-      return await apiCall<any[]>("storage_list_tables");
-    } catch (error) {
-      console.error("Failed to list tables:", error);
-      throw error;
-    }
-  },
-
-  /**
-   * Reads table data with pagination
-   * @param tableName - Name of the table to read
-   * @param page - Page number (1-indexed)
-   * @param pageSize - Number of rows per page
-   * @param searchQuery - Optional search query
-   * @returns Promise resolving to table data with pagination info
-   */
-  async storageReadTable(
-    tableName: string,
-    page: number,
-    pageSize: number,
-    searchQuery?: string
-  ): Promise<any> {
-    try {
-      return await apiCall<any>("storage_read_table", {
-        tableName,
-        page,
-        pageSize,
-        searchQuery,
-      });
-    } catch (error) {
-      console.error("Failed to read table:", error);
-      throw error;
-    }
-  },
-
-  /**
-   * Updates a row in a table
-   * @param tableName - Name of the table
-   * @param primaryKeyValues - Map of primary key column names to values
-   * @param updates - Map of column names to new values
-   * @returns Promise resolving when the row is updated
-   */
-  async storageUpdateRow(
-    tableName: string,
-    primaryKeyValues: Record<string, any>,
-    updates: Record<string, any>
-  ): Promise<void> {
-    try {
-      return await apiCall<void>("storage_update_row", {
-        tableName,
-        primaryKeyValues,
-        updates,
-      });
-    } catch (error) {
-      console.error("Failed to update row:", error);
-      throw error;
-    }
-  },
-
-  /**
-   * Deletes a row from a table
-   * @param tableName - Name of the table
-   * @param primaryKeyValues - Map of primary key column names to values
-   * @returns Promise resolving when the row is deleted
-   */
-  async storageDeleteRow(
-    tableName: string,
-    primaryKeyValues: Record<string, any>
-  ): Promise<void> {
-    try {
-      return await apiCall<void>("storage_delete_row", {
-        tableName,
-        primaryKeyValues,
-      });
-    } catch (error) {
-      console.error("Failed to delete row:", error);
-      throw error;
-    }
-  },
-
-  /**
-   * Inserts a new row into a table
-   * @param tableName - Name of the table
-   * @param values - Map of column names to values
-   * @returns Promise resolving to the last insert row ID
-   */
-  async storageInsertRow(
-    tableName: string,
-    values: Record<string, any>
-  ): Promise<number> {
-    try {
-      return await apiCall<number>("storage_insert_row", {
-        tableName,
-        values,
-      });
-    } catch (error) {
-      console.error("Failed to insert row:", error);
-      throw error;
-    }
-  },
-
-  /**
-   * Executes a raw SQL query
-   * @param query - SQL query string
-   * @returns Promise resolving to query result
-   */
-  async storageExecuteSql(query: string): Promise<any> {
-    try {
-      return await apiCall<any>("storage_execute_sql", { query });
-    } catch (error) {
-      console.error("Failed to execute SQL:", error);
-      throw error;
-    }
-  },
-
-  /**
-   * Resets the entire database
-   * @returns Promise resolving when the database is reset
-   */
-  async storageResetDatabase(): Promise<void> {
-    try {
-      return await apiCall<void>("storage_reset_database");
-    } catch (error) {
-      console.error("Failed to reset database:", error);
-      throw error;
-    }
-  },
-
-  // Theme settings helpers
-
-  /**
-   * Gets a setting from the app_settings table
-   * @param key - The setting key to retrieve
-   * @returns Promise resolving to the setting value or null if not found
-   */
-  async getSetting(key: string): Promise<string | null> {
-    try {
-      // Fast path: check localStorage mirror to avoid startup flicker
-      if (typeof window !== 'undefined' && 'localStorage' in window) {
-        const cached = window.localStorage.getItem(`app_setting:${key}`);
-        if (cached !== null) {
-          return cached;
-        }
-      }
-      // Use storageReadTable to safely query the app_settings table
-      const result = await this.storageReadTable('app_settings', 1, 1000);
-      const setting = result?.data?.find((row: any) => row.key === key);
-      return setting?.value || null;
-    } catch (error) {
-      console.error(`Failed to get setting ${key}:`, error);
-      return null;
-    }
-  },
-
-  /**
-   * Saves a setting to the app_settings table (insert or update)
-   * @param key - The setting key
-   * @param value - The setting value
-   * @returns Promise resolving when the setting is saved
-   */
-  async saveSetting(key: string, value: string): Promise<void> {
-    try {
-      // Mirror to localStorage for instant availability on next startup
-      if (typeof window !== 'undefined' && 'localStorage' in window) {
-        try {
-          window.localStorage.setItem(`app_setting:${key}`, value);
-        } catch (_ignore) {
-          // best-effort; continue to persist in DB
-        }
-      }
-      // Try to update first
-      try {
-        await this.storageUpdateRow(
-          'app_settings',
-          { key },
-          { value }
-        );
-      } catch (updateError) {
-        // If update fails (row doesn't exist), insert new row
-        await this.storageInsertRow('app_settings', { key, value });
-      }
-    } catch (error) {
-      console.error(`Failed to save setting ${key}:`, error);
-      throw error;
-    }
-  },
-
   /**
    * Get hooks configuration for a specific scope
    * @param scope - The configuration scope: 'user', 'project', or 'local'
@@ -1857,6 +1738,89 @@ export const api = {
       return HooksManager.mergeConfigs(userHooks, projectHooks, localHooks);
     } catch (error) {
       console.error("Failed to get merged hooks config:", error);
+      throw error;
+    }
+  },
+
+  /**
+   * Gets git information for a given path
+   * @param path - The directory path to get git info for
+   * @returns Promise resolving to git information
+   */
+  async getGitInfo(path: string): Promise<GitInfo> {
+    try {
+      return await apiCall<GitInfo>("get_git_info", { path });
+    } catch (error) {
+      console.error("Failed to get git info:", error);
+      throw error;
+    }
+  },
+
+  /**
+   * Gets git diff statistics for a given path
+   * @param path - The directory path to get diff stat for
+   * @returns Promise resolving to diff statistics
+   */
+  async getGitDiffStat(path: string): Promise<GitDiffStat> {
+    try {
+      return await apiCall<GitDiffStat>("get_git_diff_stat", { path });
+    } catch (error) {
+      console.error("Failed to get git diff stat:", error);
+      throw error;
+    }
+  },
+
+  /**
+   * Gets list of git worktrees for a given path
+   * @param path - The directory path to get worktrees for
+   * @returns Promise resolving to array of worktree information
+   */
+  async getWorktrees(path: string): Promise<WorktreeInfo[]> {
+    try {
+      return await apiCall<WorktreeInfo[]>("get_worktrees", { path });
+    } catch (error) {
+      console.error("Failed to get worktrees:", error);
+      throw error;
+    }
+  },
+
+  /**
+   * Reads new lines from a JSONL session file starting at fromLine.
+   */
+  async pollSessionFile(sessionId: string, projectId: string, fromLine: number): Promise<any[]> {
+    try {
+      return await apiCall<any[]>("poll_session_file", {
+        session_id: sessionId,
+        project_id: projectId,
+        from_line: fromLine,
+      });
+    } catch (error) {
+      console.error("Failed to poll session file:", error);
+      throw error;
+    }
+  },
+
+  /**
+   * Returns the absolute filesystem path of a session JSONL file.
+   */
+  async getSessionFilePath(sessionId: string, projectId: string): Promise<string> {
+    return await apiCall<string>("get_session_file_path", {
+      session_id: sessionId,
+      project_id: projectId,
+    });
+  },
+
+  /**
+   * Gets lightweight status info about a session JSONL file for sidebar status dots.
+   */
+  async getSessionFileStatus(sessionId: string, projectId: string): Promise<SessionFileStatus> {
+    try {
+      return await apiCall<SessionFileStatus>("get_session_file_status", {
+        session_id: sessionId,
+        project_id: projectId,
+      });
+    } catch (error) {
+      console.error("Failed to get session file status:", error);
       throw error;
     }
   },
@@ -1940,6 +1904,203 @@ export const api = {
       console.error("Failed to delete slash command:", error);
       throw error;
     }
+  },
+
+  // Native Agent API methods
+
+  /**
+   * Lists all native agents from ~/.claude/agents/
+   * @returns Promise resolving to array of native agents
+   */
+  async listNativeAgents(): Promise<NativeAgent[]> {
+    try {
+      return await apiCall<NativeAgent[]>("list_native_agents");
+    } catch (error) {
+      console.error("Failed to list native agents:", error);
+      throw error;
+    }
+  },
+
+  /**
+   * Reads a single native agent by path
+   * @param path - The path to the agent file
+   * @returns Promise resolving to the native agent
+   */
+  async readNativeAgent(path: string): Promise<NativeAgent> {
+    try {
+      return await apiCall<NativeAgent>("read_native_agent", { path });
+    } catch (error) {
+      console.error("Failed to read native agent:", error);
+      throw error;
+    }
+  },
+
+  /**
+   * Writes a new native agent to disk
+   * @param name - The agent name (becomes filename without extension)
+   * @param content - The markdown content of the agent
+   * @returns Promise resolving to the path of the created agent
+   */
+  async writeNativeAgent(name: string, content: string): Promise<string> {
+    try {
+      return await apiCall<string>("write_native_agent", { name, content });
+    } catch (error) {
+      console.error("Failed to write native agent:", error);
+      throw error;
+    }
+  },
+
+  /**
+   * Deletes a native agent file
+   * @param path - The path to the agent file to delete
+   * @returns Promise resolving when the agent is deleted
+   */
+  async deleteNativeAgent(path: string): Promise<void> {
+    try {
+      return await apiCall<void>("delete_native_agent", { path });
+    } catch (error) {
+      console.error("Failed to delete native agent:", error);
+      throw error;
+    }
+  },
+
+  /**
+   * Lists all available skills
+   * @returns Promise resolving to array of skill info
+   */
+  async listSkills(): Promise<SkillInfo[]> {
+    try {
+      return await apiCall<SkillInfo[]>("list_skills");
+    } catch (error) {
+      console.error("Failed to list skills:", error);
+      throw error;
+    }
+  },
+
+  /**
+   * Gets global settings
+   * @returns Promise resolving to global settings object
+   */
+  async getGlobalSettings(): Promise<Record<string, any>> {
+    try {
+      return await apiCall<Record<string, any>>("get_global_settings");
+    } catch (error) {
+      console.error("Failed to get global settings:", error);
+      throw error;
+    }
+  },
+
+  /**
+   * Reads the commands.conf file
+   * @returns Promise resolving to the file content
+   */
+  async readCommandsConf(): Promise<string> {
+    try {
+      return await apiCall<string>("read_commands_conf");
+    } catch (error) {
+      console.error("Failed to read commands.conf:", error);
+      throw error;
+    }
+  },
+
+  /**
+   * Writes and verifies the commands.conf file
+   * @param content - The content to write
+   * @returns Promise resolving to the path of the written file
+   */
+  async writeAndVerifyCommandsConf(content: string): Promise<string> {
+    try {
+      return await apiCall<string>("write_and_verify_commands_conf", { content });
+    } catch (error) {
+      console.error("Failed to write and verify commands.conf:", error);
+      throw error;
+    }
+  },
+
+  /**
+   * Sets whether c-guard is enabled
+   * @param enabled - Whether c-guard should be enabled
+   * @returns Promise resolving when the setting is saved
+   */
+  async setCguardEnabled(enabled: boolean): Promise<void> {
+    try {
+      return await apiCall<void>("set_cguard_enabled", { enabled });
+    } catch (error) {
+      console.error("Failed to set c-guard enabled:", error);
+      throw error;
+    }
+  },
+
+  /**
+   * Runs the c-guard CLI
+   * @param args - Command line arguments to pass to c-guard
+   * @returns Promise resolving to the command output
+   */
+  async runCguardCli(args: string[]): Promise<string> {
+    try {
+      return await apiCall<string>("run_cguard_cli", { args });
+    } catch (error) {
+      console.error("Failed to run c-guard CLI:", error);
+      throw error;
+    }
+  },
+
+  async listClaudeDirectory(subpath: string): Promise<ClaudeEntry[]> {
+    try {
+      return await apiCall<ClaudeEntry[]>("list_claude_directory", { subpath });
+    } catch (error) {
+      console.error("Failed to list Claude directory:", error);
+      throw error;
+    }
+  },
+
+  async readClaudeFile(subpath: string): Promise<string> {
+    try {
+      return await apiCall<string>("read_claude_file", { subpath });
+    } catch (error) {
+      console.error("Failed to read Claude file:", error);
+      throw error;
+    }
+  },
+
+  async listSessionLogs(): Promise<SessionLogEntry[]> {
+    try {
+      return await apiCall<SessionLogEntry[]>("list_session_logs");
+    } catch (error) {
+      console.error("Failed to list session logs:", error);
+      throw error;
+    }
+  },
+
+  async readCcodeSettings(): Promise<Record<string, any>> {
+    try {
+      return await apiCall<Record<string, any>>("read_ccode_settings");
+    } catch (error) {
+      console.error("Failed to read ~/.ccode/settings.json:", error);
+      return {};
+    }
+  },
+
+  async writeCcodeSettings(settings: Record<string, any>): Promise<void> {
+    try {
+      return await apiCall<void>("write_ccode_settings", { settings });
+    } catch (error) {
+      console.error("Failed to write ~/.ccode/settings.json:", error);
+      throw error;
+    }
+  },
+
+  async readSessionStatus(sessionId: string): Promise<Record<string, any> | null> {
+    try {
+      const result = await apiCall<Record<string, any> | null>("read_session_status", { sessionId });
+      return result ?? null;
+    } catch {
+      return null;
+    }
+  },
+
+  async openPath(path: string): Promise<void> {
+    await apiCall<void>("open_path", { path });
   },
 
 };

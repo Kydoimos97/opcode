@@ -2,29 +2,29 @@ import { useState, useEffect } from "react";
 import { motion } from "framer-motion";
 import { Bot, FolderCode } from "lucide-react";
 import { api, type Project, type Session, type ClaudeMdFile } from "@/lib/api";
+import { ccodeSettings } from "@/lib/ccodeSettings";
 import { initializeWebMode } from "@/lib/apiAdapter";
 import { OutputCacheProvider } from "@/lib/outputCache";
 import { TabProvider } from "@/contexts/TabContext";
 import { ThemeProvider } from "@/contexts/ThemeContext";
+import { TooltipProvider } from "@/components/ui/tooltip-modern";
 import { Card } from "@/components/ui/card";
 import { ProjectList } from "@/components/ProjectList";
 import { FilePicker } from "@/components/FilePicker";
 import { SessionList } from "@/components/SessionList";
 import { CustomTitlebar } from "@/components/CustomTitlebar";
+import { Sidebar } from "@/components/Sidebar";
 import { MarkdownEditor } from "@/components/MarkdownEditor";
 import { ClaudeFileEditor } from "@/components/ClaudeFileEditor";
 import { Settings } from "@/components/Settings";
 import { CCAgents } from "@/components/CCAgents";
 import { UsageDashboard } from "@/components/UsageDashboard";
 import { MCPManager } from "@/components/MCPManager";
-import { NFOCredits } from "@/components/NFOCredits";
 import { ClaudeBinaryDialog } from "@/components/ClaudeBinaryDialog";
 import { Toast, ToastContainer } from "@/components/ui/toast";
 import { ProjectSettings } from '@/components/ProjectSettings';
-import { TabManager } from "@/components/TabManager";
 import { TabContent } from "@/components/TabContent";
 import { useTabState } from "@/hooks/useTabState";
-import { useAppLifecycle, useTrackEvent } from "@/hooks";
 import { StartupIntro } from "@/components/StartupIntro";
 
 type View = 
@@ -48,44 +48,25 @@ type View =
  */
 function AppContent() {
   const [view, setView] = useState<View>("tabs");
-  const { createClaudeMdTab, createSettingsTab, createUsageTab, createMCPTab, createAgentsTab } = useTabState();
+  const [sidebarOpen, setSidebarOpen] = useState(true);
+  const { } = useTabState();
   const [projects, setProjects] = useState<Project[]>([]);
   const [selectedProject, setSelectedProject] = useState<Project | null>(null);
   const [sessions, setSessions] = useState<Session[]>([]);
   const [editingClaudeFile, setEditingClaudeFile] = useState<ClaudeMdFile | null>(null);
   const [loading, setLoading] = useState(true);
   const [_error, setError] = useState<string | null>(null);
-  const [showNFO, setShowNFO] = useState(false);
   const [showClaudeBinaryDialog, setShowClaudeBinaryDialog] = useState(false);
   const [showProjectPicker, setShowProjectPicker] = useState(false);
   const [homeDirectory, setHomeDirectory] = useState<string>('/');
   const [toast, setToast] = useState<{ message: string; type: "success" | "error" | "info" } | null>(null);
   const [projectForSettings, setProjectForSettings] = useState<Project | null>(null);
   const [previousView] = useState<View>("welcome");
-  
-  // Initialize analytics lifecycle tracking
-  useAppLifecycle();
-  const trackEvent = useTrackEvent();
-  
-  // Track user journey milestones
-  const [hasTrackedFirstChat] = useState(false);
-  // const [hasTrackedFirstAgent] = useState(false);
-  
-  // Track when user reaches different journey stages
-  useEffect(() => {
-    if (view === "projects" && projects.length > 0 && !hasTrackedFirstChat) {
-      // User has projects - they're past onboarding
-      trackEvent.journeyMilestone({
-        journey_stage: 'onboarding',
-        milestone_reached: 'projects_created',
-        time_to_milestone_ms: Date.now() - performance.timing.navigationStart
-      });
-    }
-  }, [view, projects.length, hasTrackedFirstChat, trackEvent]);
 
   // Initialize web mode compatibility on mount
   useEffect(() => {
     initializeWebMode();
+    ccodeSettings.warmup();
   }, []);
 
   // Load projects on mount when in projects view
@@ -247,7 +228,7 @@ function AppContent() {
               >
                 <h1 className="text-4xl font-bold tracking-tight">
                   <span className="rotating-symbol"></span>
-                  Welcome to opcode
+                  Welcome to C-Code
                 </h1>
               </motion.div>
 
@@ -338,9 +319,9 @@ function AppContent() {
       
       case "tabs":
         return (
-          <div className="h-full flex flex-col">
-            <TabManager className="flex-shrink-0" />
-            <div className="flex-1 overflow-hidden">
+          <div className="h-full flex flex-row overflow-hidden">
+            <Sidebar isOpen={sidebarOpen} onToggle={() => setSidebarOpen(v => !v)} />
+            <div className="flex-1 min-w-0 overflow-hidden">
               <TabContent />
             </div>
           </div>
@@ -378,14 +359,7 @@ function AppContent() {
   return (
     <div className="h-screen flex flex-col">
       {/* Custom Titlebar */}
-      <CustomTitlebar
-        onAgentsClick={() => createAgentsTab()}
-        onUsageClick={() => createUsageTab()}
-        onClaudeClick={() => createClaudeMdTab()}
-        onMCPClick={() => createMCPTab()}
-        onSettingsClick={() => createSettingsTab()}
-        onInfoClick={() => setShowNFO(true)}
-      />
+      <CustomTitlebar sidebarOpen={sidebarOpen} onToggleSidebar={() => setSidebarOpen(v => !v)} />
       
       {/* Topbar - Commented out since navigation moved to titlebar */}
       {/* <Topbar
@@ -403,11 +377,7 @@ function AppContent() {
       <div className="flex-1 overflow-hidden">
         {renderContent()}
       </div>
-      
-      {/* NFO Credits Modal */}
-      {showNFO && <NFOCredits onClose={() => setShowNFO(false)} />}
-      
-      
+
       {/* Claude Binary Dialog */}
       <ClaudeBinaryDialog
         open={showClaudeBinaryDialog}
@@ -507,7 +477,8 @@ function App() {
     let timer: number | undefined;
     (async () => {
       try {
-        const pref = await api.getSetting('startup_intro_enabled');
+        const ccodeSettings = await api.readCcodeSettings().catch(() => ({} as Record<string, string>));
+        const pref: string | null = ccodeSettings['startup_intro_enabled'] ?? null;
         const enabled = pref === null ? true : pref === 'true';
         if (enabled) {
           // keep intro visible and hide after duration
@@ -528,12 +499,14 @@ function App() {
 
   return (
     <ThemeProvider>
-      <OutputCacheProvider>
-        <TabProvider>
-          <AppContent />
-          <StartupIntro visible={showIntro} />
-        </TabProvider>
-      </OutputCacheProvider>
+      <TooltipProvider>
+        <OutputCacheProvider>
+          <TabProvider>
+            <AppContent />
+            <StartupIntro visible={showIntro} />
+          </TabProvider>
+        </OutputCacheProvider>
+      </TooltipProvider>
     </ThemeProvider>
   );
 }

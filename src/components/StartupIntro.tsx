@@ -1,5 +1,5 @@
 import { AnimatePresence, motion } from "framer-motion";
-import opcodeLogo from "../../src-tauri/icons/icon.png";
+import opcodeLogo from "../assets/logo.png";
 import type { CSSProperties } from "react";
 
 /**
@@ -67,7 +67,7 @@ export function StartupIntro({ visible }: { visible: boolean }) {
                 />
                 <motion.img
                   src={opcodeLogo}
-                  alt="opcode"
+                  alt="C-Code"
                   className="h-20 w-20 rounded-lg shadow-sm"
                   transition={{ repeat: Infinity, repeatType: "loop", ease: "linear", duration: 0.5 }}
                 />
@@ -97,8 +97,8 @@ export default StartupIntro;
 function BrandText() {
   return (
     <div className="text-5xl font-extrabold tracking-tight brand-text">
-      <span className="brand-text-solid">opcode</span>
-      <span aria-hidden="true" className="brand-text-shimmer">opcode</span>
+      <span className="brand-text-solid">C-Code</span>
+      <span aria-hidden="true" className="brand-text-shimmer">C-Code</span>
     </div>
   );
 }

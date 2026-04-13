@@ -4,8 +4,9 @@
   "version": "0.2.1",
   "identifier": "opcode.asterisk.so",
   "build": {
-    "beforeDevCommand": "",
-    "beforeBuildCommand": "bun run build",
+    "beforeDevCommand": "pnpm run dev",
+    "devUrl": "http://localhost:1420",
+    "beforeBuildCommand": "pnpm run build",
     "frontendDist": "../dist"
   },
   "app": {
@@ -13,8 +14,10 @@
     "windows": [
       {
         "title": "opcode",
-        "width": 800,
-        "height": 600,
+        "width": 1280,
+        "height": 800,
+        "minWidth": 600,
+        "minHeight": 400,
         "decorations": false,
         "transparent": true,
         "shadow": true,

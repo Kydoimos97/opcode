@@ -19,7 +19,7 @@ interface AgentState {
   // Actions
   fetchAgentRuns: (forceRefresh?: boolean) => Promise<void>;
   fetchSessionOutput: (runId: number) => Promise<void>;
-  createAgentRun: (data: { agentId: number; projectPath: string; task: string; model?: string }) => Promise<AgentRunWithMetrics>;
+  createAgentRun: (data: { agentId: string; projectPath: string; task: string; model?: string }) => Promise<AgentRunWithMetrics>;
   cancelAgentRun: (runId: number) => Promise<void>;
   deleteAgentRun: (runId: number) => Promise<void>;
   clearError: () => void;
@@ -104,7 +104,7 @@ const agentStore: StateCreator<
     },
     
     // Create a new agent run
-    createAgentRun: async (data: { agentId: number; projectPath: string; task: string; model?: string }) => {
+    createAgentRun: async (data: { agentId: string; projectPath: string; task: string; model?: string }) => {
       try {
         const runId = await api.executeAgent(data.agentId, data.projectPath, data.task, data.model);
         

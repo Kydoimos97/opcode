@@ -1,11 +1,6 @@
 import React, { useState, useEffect } from "react";
-import { 
-  Terminal, 
-  User, 
-  Bot, 
-  AlertCircle, 
-  CheckCircle2
-} from "lucide-react";
+import { Terminal, User, Bot, AlertCircle, CheckCircle2, RefreshCw, GitPullRequest, PenLine, PenOff } from "lucide-react";
+import { api } from "@/lib/api";
 import { Card, CardContent } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
 import ReactMarkdown from "react-markdown";
@@ -38,63 +33,713 @@ import {
   LSResultWidget,
   ThinkingWidget,
   WebSearchWidget,
-  WebFetchWidget
+  WebFetchWidget,
 } from "./ToolWidgets";
+
+// ─── Types ───────────────────────────────────────────────────────────────────
 
 interface StreamMessageProps {
   message: ClaudeStreamMessage;
   className?: string;
   streamMessages: ClaudeStreamMessage[];
   onLinkDetected?: (url: string) => void;
+  variant?: 'default' | 'final';
 }
 
-/**
- * Component to render a single Claude Code stream message
- */
-const StreamMessageComponent: React.FC<StreamMessageProps> = ({ message, className, streamMessages, onLinkDetected }) => {
-  // State to track tool results mapped by tool call ID
+// ─── Helpers ─────────────────────────────────────────────────────────────────
+
+const TOOLS_WITH_DEDICATED_WIDGETS = new Set([
+  "task", "edit", "multiedit", "todowrite", "todoread",
+  "ls", "read", "glob", "bash", "write", "grep", "websearch", "webfetch",
+]);
+
+function useToolResults(streamMessages: ClaudeStreamMessage[]): Map<string, any> {
   const [toolResults, setToolResults] = useState<Map<string, any>>(new Map());
-  
-  // Get current theme
-  const { theme } = useTheme();
-  const syntaxTheme = getClaudeSyntaxTheme(theme);
-  
-  // Extract all tool results from stream messages
+
   useEffect(() => {
     const results = new Map<string, any>();
-    
-    // Iterate through all messages to find tool results
     streamMessages.forEach(msg => {
-      if (msg.type === "user" && msg.message?.content && Array.isArray(msg.message.content)) {
-        msg.message.content.forEach((content: any) => {
-          if (content.type === "tool_result" && content.tool_use_id) {
-            results.set(content.tool_use_id, content);
+      if (msg.type === "user" && Array.isArray(msg.message?.content)) {
+        msg.message.content.forEach((block: any) => {
+          if (block.type === "tool_result" && block.tool_use_id) {
+            results.set(block.tool_use_id, block);
           }
         });
       }
     });
-    
     setToolResults(results);
   }, [streamMessages]);
-  
-  // Helper to get tool result for a specific tool call ID
-  const getToolResult = (toolId: string | undefined): any => {
-    if (!toolId) return null;
-    return toolResults.get(toolId) || null;
-  };
-  
-  try {
-    // Skip rendering for meta messages that don't have meaningful content
-    if (message.isMeta && !message.leafUuid && !message.summary) {
-      return null;
-    }
 
-    // Handle summary messages
+  return toolResults;
+}
+
+function findToolUseById(streamMessages: ClaudeStreamMessage[], toolUseId: string): any | null {
+  for (let i = streamMessages.length - 1; i >= 0; i--) {
+    const msg = streamMessages[i];
+    if (msg.type === "assistant" && Array.isArray(msg.message?.content)) {
+      const found = msg.message.content.find(
+        (c: any) => c.type === "tool_use" && c.id === toolUseId
+      );
+      if (found) return found;
+    }
+  }
+  return null;
+}
+
+function extractToolResultText(content: any): string {
+  if (typeof content.content === "string") return content.content;
+  if (content.content && typeof content.content === "object") {
+    if (content.content.text) return content.content.text;
+    if (Array.isArray(content.content)) {
+      return content.content
+        .map((c: any) => (typeof c === "string" ? c : c.text ?? JSON.stringify(c)))
+        .join("\n");
+    }
+    return JSON.stringify(content.content, null, 2);
+  }
+  return "";
+}
+
+function hasDedicatedWidget(toolUse: any): boolean {
+  if (!toolUse) return false;
+  const name = toolUse.name?.toLowerCase();
+  return TOOLS_WITH_DEDICATED_WIDGETS.has(name) || toolUse.name?.startsWith("mcp__");
+}
+
+// ─── Shared UI primitives ─────────────────────────────────────────────────────
+
+interface MarkdownContentProps {
+  content: string;
+  syntaxTheme: any;
+  className?: string;
+}
+
+async function openExternalLink(href: string) {
+  try {
+    const { open } = await import('@tauri-apps/plugin-shell');
+    await open(href);
+  } catch {
+    window.open(href, '_blank', 'noopener,noreferrer');
+  }
+}
+
+// Matches Windows paths (C:\...) and Unix paths starting with common roots or ~/
+// Only outside of markdown code fences and inline code.
+const FILE_PATH_RE = /(?<![`([])(?:([A-Za-z]):\\(?:[^\s"'`\]<>\r\n\\][^\s"'`\]<>\r\n]*)?|(?:~|\/(?:home|Users|var|usr|opt|tmp|etc|mnt|srv|c|d|e))(?:\/[^\s"'`\]<>\r\n]*)+)/g;
+
+function linkifyFilePaths(content: string): string {
+  // Split on fenced and inline code blocks so we don't touch code
+  const parts = content.split(/(```[\s\S]*?```|`[^`\n]+`)/g);
+  return parts.map((part, i) => {
+    if (i % 2 === 1) return part; // inside code — leave as-is
+    return part.replace(FILE_PATH_RE, (match) => {
+      const encoded = encodeURIComponent(match);
+      return `[${match}](file-path://${encoded})`;
+    });
+  }).join('');
+}
+
+const MarkdownContent: React.FC<MarkdownContentProps> = ({ content, syntaxTheme, className }) => (
+  <div className={cn("prose prose-sm dark:prose-invert max-w-none", className)}>
+    <ReactMarkdown
+      remarkPlugins={[remarkGfm]}
+      components={{
+        code({ node, inline, className: codeClass, children, ...props }: any) {
+          const match = /language-(\w+)/.exec(codeClass || "");
+          return !inline && match ? (
+            <SyntaxHighlighter style={syntaxTheme} language={match[1]} PreTag="div" {...props}>
+              {String(children).replace(/\n$/, "")}
+            </SyntaxHighlighter>
+          ) : (
+            <code className={codeClass} {...props}>{children}</code>
+          );
+        },
+        a({ href, children, ...props }: any) {
+          const isFilePath = href?.startsWith('file-path://');
+          const target = isFilePath
+            ? decodeURIComponent(href.slice('file-path://'.length))
+            : href;
+          return (
+            <a
+              {...props}
+              href={href}
+              onClick={(e) => {
+                e.preventDefault();
+                if (target) openExternalLink(target);
+              }}
+              className={cn(
+                "cursor-pointer underline transition-colors",
+                isFilePath
+                  ? "decoration-amber-500/50 hover:decoration-amber-500 text-amber-600 dark:text-amber-400"
+                  : "decoration-primary/50 hover:decoration-primary"
+              )}
+              title={target}
+            >
+              {children}
+            </a>
+          );
+        },
+      }}
+    >
+      {linkifyFilePaths(content)}
+    </ReactMarkdown>
+  </div>
+);
+
+interface ResultHeaderProps {
+  isError?: boolean;
+  label: string;
+}
+
+const ResultHeader: React.FC<ResultHeaderProps> = ({ isError, label }) => (
+  <div className="flex items-center gap-2">
+    {isError
+      ? <AlertCircle className="h-4 w-4 text-destructive" />
+      : <CheckCircle2 className="h-4 w-4 text-green-500" />
+    }
+    <span className="text-sm font-medium">{label}</span>
+  </div>
+);
+
+// ─── ToolUseBlock — dispatches assistant tool_use content to widgets ──────────
+
+interface ToolUseBlockProps {
+  content: any;
+  toolResult: any;
+}
+
+const ToolUseBlock: React.FC<ToolUseBlockProps> = ({ content, toolResult }) => {
+  const toolName = content.name?.toLowerCase();
+  const input = content.input;
+
+  if (toolName === "task" && input)
+    return <TaskWidget description={input.description} prompt={input.prompt} result={toolResult} />;
+  if (toolName === "edit" && input?.file_path)
+    return <EditWidget {...input} result={toolResult} />;
+  if (toolName === "multiedit" && input?.file_path && input?.edits)
+    return <MultiEditWidget {...input} result={toolResult} />;
+  if (content.name?.startsWith("mcp__"))
+    return <MCPWidget toolName={content.name} input={input} result={toolResult} />;
+  if (toolName === "todowrite" && input?.todos)
+    return <TodoWidget todos={input.todos} result={toolResult} />;
+  if (toolName === "todoread")
+    return <TodoReadWidget todos={input?.todos} result={toolResult} />;
+  if (toolName === "ls" && input?.path)
+    return <LSWidget path={input.path} result={toolResult} />;
+  if (toolName === "read" && input?.file_path)
+    return <ReadWidget filePath={input.file_path} result={toolResult} />;
+  if (toolName === "glob" && input?.pattern)
+    return <GlobWidget pattern={input.pattern} result={toolResult} />;
+  if (toolName === "bash" && input?.command)
+    return <BashWidget command={input.command} description={input.description} result={toolResult} />;
+  if (toolName === "write" && input?.file_path && input?.content)
+    return <WriteWidget filePath={input.file_path} content={input.content} result={toolResult} />;
+  if (toolName === "grep" && input?.pattern)
+    return <GrepWidget pattern={input.pattern} include={input.include} path={input.path} exclude={input.exclude} result={toolResult} />;
+  if (toolName === "websearch" && input?.query)
+    return <WebSearchWidget query={input.query} result={toolResult} />;
+  if (toolName === "webfetch" && input?.url)
+    return <WebFetchWidget url={input.url} prompt={input.prompt} result={toolResult} />;
+
+  return (
+    <div className="space-y-2">
+      <div className="flex items-center gap-2">
+        <Terminal className="h-4 w-4 text-muted-foreground" />
+        <span className="text-sm font-medium">
+          Using tool: <code className="font-mono">{content.name}</code>
+        </span>
+      </div>
+      {input && (
+        <div className="ml-6 p-2 bg-background rounded-md border">
+          <pre className="text-xs font-mono overflow-x-auto">{JSON.stringify(input, null, 2)}</pre>
+        </div>
+      )}
+    </div>
+  );
+};
+
+// ─── ToolResultBlock — dispatches user tool_result content to renderers ───────
+
+interface ToolResultBlockProps {
+  content: any;
+  streamMessages: ClaudeStreamMessage[];
+}
+
+const ToolResultBlock: React.FC<ToolResultBlockProps> = ({ content, streamMessages }) => {
+  const originatingTool = content.tool_use_id
+    ? findToolUseById(streamMessages, content.tool_use_id)
+    : null;
+
+  // Skip — the assistant-side widget already shows this result inline
+  if (hasDedicatedWidget(originatingTool)) return null;
+
+  const contentText = extractToolResultText(content);
+
+  // System reminder embedded in result
+  const reminderMatch = contentText.match(/<system-reminder>(.*?)<\/system-reminder>/s);
+  if (reminderMatch) {
+    const before = contentText.substring(0, reminderMatch.index ?? 0).trim();
+    const after = contentText.substring((reminderMatch.index ?? 0) + reminderMatch[0].length).trim();
+    return (
+      <div className="space-y-2">
+        <ResultHeader label="Tool Result" />
+        {before && (
+          <div className="ml-6 p-2 bg-background rounded-md border">
+            <pre className="text-xs font-mono overflow-x-auto whitespace-pre-wrap">{before}</pre>
+          </div>
+        )}
+        <div className="ml-6">
+          <SystemReminderWidget message={reminderMatch[1].trim()} />
+        </div>
+        {after && (
+          <div className="ml-6 p-2 bg-background rounded-md border">
+            <pre className="text-xs font-mono overflow-x-auto whitespace-pre-wrap">{after}</pre>
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  // Edit result
+  if (contentText.includes("has been updated. Here's the result of running `cat -n`")) {
+    return (
+      <div className="space-y-2">
+        <ResultHeader label="Edit Result" />
+        <EditResultWidget content={contentText} />
+      </div>
+    );
+  }
+
+  // MultiEdit result
+  if (
+    contentText.includes("has been updated with multiple edits") ||
+    contentText.includes("MultiEdit completed successfully") ||
+    contentText.includes("Applied multiple edits to")
+  ) {
+    return (
+      <div className="space-y-2">
+        <ResultHeader label="MultiEdit Result" />
+        <MultiEditResultWidget content={contentText} />
+      </div>
+    );
+  }
+
+  // LS result — only if originating tool was ls and content looks like a tree
+  if (originatingTool?.name?.toLowerCase() === "ls") {
+    const lines = contentText.split("\n");
+    const looksLikeTree =
+      lines.some(l => /^\s*-\s+/.test(l)) ||
+      lines.some(l => l.trim().startsWith("NOTE: do any of the files"));
+    if (looksLikeTree) {
+      return (
+        <div className="space-y-2">
+          <ResultHeader label="Directory Contents" />
+          <LSResultWidget content={contentText} />
+        </div>
+      );
+    }
+  }
+
+  // Read result — only if originating tool was read and content has line numbers
+  if (
+    originatingTool?.name?.toLowerCase() === "read" &&
+    /^\s*\d+→/.test(contentText)
+  ) {
+    return (
+      <div className="space-y-2">
+        <ResultHeader label="Read Result" />
+        <ReadResultWidget content={contentText} filePath={originatingTool?.input?.file_path} />
+      </div>
+    );
+  }
+
+  // Empty result
+  if (!contentText || contentText.trim() === "") {
+    return (
+      <div className="space-y-2">
+        <ResultHeader label="Tool Result" />
+        <div className="ml-6 p-3 bg-muted/50 rounded-md border text-sm text-muted-foreground italic">
+          Tool did not return any output
+        </div>
+      </div>
+    );
+  }
+
+  // Generic result
+  return (
+    <div className="space-y-2">
+      <ResultHeader isError={content.is_error} label="Tool Result" />
+      <div className="ml-6 p-2 bg-background rounded-md border">
+        <pre className="text-xs font-mono overflow-x-auto whitespace-pre-wrap">{contentText}</pre>
+      </div>
+    </div>
+  );
+};
+
+// ─── AssistantMessage ─────────────────────────────────────────────────────────
+
+interface AssistantMessageProps {
+  message: ClaudeStreamMessage;
+  className?: string;
+  getToolResult: (toolId: string | undefined) => any;
+  syntaxTheme: any;
+  variant?: 'default' | 'final';
+}
+
+const AssistantMessage: React.FC<AssistantMessageProps> = ({
+  message, className, getToolResult, syntaxTheme, variant = 'default',
+}) => {
+  const msg = message.message!;
+  const blocks: any[] = Array.isArray(msg.content) ? msg.content : [];
+
+  const renderableBlocks = blocks.filter(
+    b => b.type === "text" || b.type === "thinking" || b.type === "tool_use"
+  );
+  if (renderableBlocks.length === 0) return null;
+
+  const hasTextOrThinking = renderableBlocks.some(b => b.type === "text" || b.type === "thinking");
+  const isToolOnly = !hasTextOrThinking;
+
+  // Tool-only messages render inline without a card wrapper.
+  // Only messages with text/thinking content (and final responses) get the full card.
+  if (isToolOnly) {
+    return (
+      <div className={cn("space-y-1.5 py-0.5", className)}>
+        {renderableBlocks.map((block: any, idx: number) => {
+          if (block.type === "tool_use") {
+            return <ToolUseBlock key={idx} content={block} toolResult={getToolResult(block.id)} />;
+          }
+          return null;
+        })}
+      </div>
+    );
+  }
+
+  const getCardStyle = () => {
+    if (variant === 'final') {
+      return {
+        borderColor: 'var(--chat-final-border)',
+        backgroundColor: 'var(--chat-final-bg)',
+      };
+    }
+    return {
+      borderColor: 'var(--chat-agent-border)',
+      backgroundColor: 'var(--chat-agent-bg)',
+    };
+  };
+
+  return (
+    <Card className={cn("border", className)} style={getCardStyle()}>
+      <CardContent className="p-4">
+        <div className="flex items-start gap-3">
+          <Bot className="h-5 w-5 mt-0.5 text-accent" />
+          <div className="flex-1 space-y-2 min-w-0">
+            {renderableBlocks.map((block: any, idx: number) => {
+              if (block.type === "text") {
+                const text = typeof block.text === "string"
+                  ? block.text
+                  : block.text?.text ?? JSON.stringify(block.text ?? block);
+                return <MarkdownContent key={idx} content={text} syntaxTheme={syntaxTheme} />;
+              }
+              if (block.type === "thinking") {
+                return <ThinkingWidget key={idx} thinking={block.thinking ?? ""} signature={block.signature} />;
+              }
+              if (block.type === "tool_use") {
+                return <ToolUseBlock key={idx} content={block} toolResult={getToolResult(block.id)} />;
+              }
+              return null;
+            })}
+            {msg.usage && (
+              <div className="text-xs text-muted-foreground mt-2">
+                Tokens: {msg.usage.input_tokens} in, {msg.usage.output_tokens} out
+              </div>
+            )}
+          </div>
+        </div>
+      </CardContent>
+    </Card>
+  );
+};
+
+// ─── UserMessage ──────────────────────────────────────────────────────────────
+
+interface UserStringContentProps {
+  content: string;
+  onLinkDetected?: (url: string) => void;
+}
+
+const UserStringContent: React.FC<UserStringContentProps> = ({ content, onLinkDetected }) => {
+  if (content.trim() === "") return null;
+
+  const commandMatch = content.match(
+    /<command-name>(.+?)<\/command-name>[\s\S]*?<command-message>(.+?)<\/command-message>[\s\S]*?<command-args>(.*?)<\/command-args>/
+  );
+  if (commandMatch) {
+    const [, commandName, commandMessage, commandArgs] = commandMatch;
+    return (
+      <CommandWidget
+        commandName={commandName.trim()}
+        commandMessage={commandMessage.trim()}
+        commandArgs={commandArgs?.trim()}
+      />
+    );
+  }
+
+  const stdoutMatch = content.match(/<local-command-stdout>([\s\S]*?)<\/local-command-stdout>/);
+  if (stdoutMatch) {
+    return <CommandOutputWidget output={stdoutMatch[1]} onLinkDetected={onLinkDetected} />;
+  }
+
+  return <div className="text-sm">{content}</div>;
+};
+
+const COMPACTION_PREFIX = "This session is being continued from a previous conversation that ran out of context.";
+
+const ContextCompactedMessage: React.FC<{ text: string; className?: string }> = ({ text, className }) => {
+  const [expanded, setExpanded] = useState(false);
+  const summaryStart = text.indexOf("Summary:");
+  const body = summaryStart >= 0 ? text.slice(summaryStart + 8).trim() : text;
+  const truncated = body.length > 400;
+  const preview = truncated ? body.slice(0, 400) : body;
+
+  return (
+    <div className={cn("rounded-lg border border-amber-500/30 bg-amber-500/5 p-3 text-xs", className)}>
+      <div className="flex items-center gap-2 text-amber-600 dark:text-amber-400 font-medium mb-2">
+        <RefreshCw className="h-3.5 w-3.5 flex-shrink-0" />
+        Context compacted — conversation continued from summary
+      </div>
+      <div className="text-muted-foreground leading-relaxed whitespace-pre-wrap">
+        {expanded ? body : preview}
+        {truncated && (
+          <button
+            onClick={() => setExpanded(v => !v)}
+            className="ml-1.5 text-accent underline underline-offset-2"
+          >
+            {expanded ? "collapse" : "show more"}
+          </button>
+        )}
+      </div>
+    </div>
+  );
+};
+
+const PrLinkMessage: React.FC<{ message: any; className?: string }> = ({ message, className }) => {
+  const handleOpen = async (e: React.MouseEvent) => {
+    e.preventDefault();
+    try {
+      await api.openPath(message.prUrl);
+    } catch {
+      /* ignore */
+    }
+  };
+
+  return (
+    <div className={cn("rounded-lg border border-green-500/30 bg-green-500/5 p-3", className)}>
+      <div className="flex items-center gap-2 text-green-600 dark:text-green-400 text-xs font-medium">
+        <GitPullRequest className="h-3.5 w-3.5 flex-shrink-0" />
+        Pull request created
+        <button
+          onClick={handleOpen}
+          className="ml-1 underline underline-offset-2 hover:opacity-80 cursor-pointer font-mono"
+        >
+          {message.prRepository}#{message.prNumber}
+        </button>
+      </div>
+    </div>
+  );
+};
+
+const PlanModeMessage: React.FC<{ entering: boolean; className?: string }> = ({ entering, className }) => (
+  <div className={cn("flex items-center gap-2 py-0.5 text-xs text-muted-foreground/70", className)}>
+    {entering
+      ? <PenLine className="h-3 w-3 text-blue-400" />
+      : <PenOff className="h-3 w-3 text-muted-foreground/50" />
+    }
+    {entering ? "Entered plan mode" : "Exited plan mode"}
+  </div>
+);
+
+interface UserMessageProps {
+  message: ClaudeStreamMessage;
+  className?: string;
+  streamMessages: ClaudeStreamMessage[];
+  onLinkDetected?: (url: string) => void;
+}
+
+const UserMessage: React.FC<UserMessageProps> = ({
+  message, className, streamMessages, onLinkDetected,
+}) => {
+  if (message.isMeta) return null;
+
+  const msg = message.message || message;
+  const isStringContent =
+    typeof msg.content === "string" || (msg.content && !Array.isArray(msg.content));
+  const arrayBlocks: any[] = Array.isArray(msg.content) ? msg.content : [];
+  const contentStr = isStringContent ? String(msg.content ?? "") : "";
+
+  // Compaction summary — detect by prefix and render as a special card
+  if (contentStr.startsWith(COMPACTION_PREFIX)) {
+    return <ContextCompactedMessage text={contentStr} className={className} />;
+  }
+  const firstTextBlock = arrayBlocks.find(b => b.type === "text");
+  if (firstTextBlock && typeof firstTextBlock.text === "string" && firstTextBlock.text.startsWith(COMPACTION_PREFIX)) {
+    return <ContextCompactedMessage text={firstTextBlock.text} className={className} />;
+  }
+
+  // Determine whether anything will actually render before mounting the card
+  const hasRenderableString = isStringContent && contentStr.trim() !== "";
+  const hasRenderableArrayBlock = arrayBlocks.some(block => {
+    if (block.type === "text") return true;
+    if (block.type === "tool_result") {
+      const originatingTool = block.tool_use_id
+        ? findToolUseById(streamMessages, block.tool_use_id)
+        : null;
+      return !hasDedicatedWidget(originatingTool);
+    }
+    return false;
+  });
+
+  if (!hasRenderableString && !hasRenderableArrayBlock) return null;
+
+  return (
+    <Card className={cn("border-muted-foreground/20 bg-muted/20", className)}>
+      <CardContent className="p-4">
+        <div className="flex items-start gap-3">
+          <User className="h-5 w-5 text-muted-foreground mt-0.5" />
+          <div className="flex-1 space-y-2 min-w-0">
+            {isStringContent && (
+              <UserStringContent content={contentStr} onLinkDetected={onLinkDetected} />
+            )}
+            {arrayBlocks.map((block: any, idx: number) => {
+              if (block.type === "tool_result") {
+                return <ToolResultBlock key={idx} content={block} streamMessages={streamMessages} />;
+              }
+              if (block.type === "text") {
+                const text = typeof block.text === "string"
+                  ? block.text
+                  : JSON.stringify(block.text);
+                return <div key={idx} className="text-sm">{text}</div>;
+              }
+              return null;
+            })}
+          </div>
+        </div>
+      </CardContent>
+    </Card>
+  );
+};
+
+// ─── ResultMessage ────────────────────────────────────────────────────────────
+
+interface ResultMessageProps {
+  message: ClaudeStreamMessage;
+  className?: string;
+  syntaxTheme: any;
+}
+
+const ResultMessage: React.FC<ResultMessageProps> = ({ message, className, syntaxTheme }) => {
+  const isError = message.is_error || message.subtype?.includes("error");
+
+  const cardStyle = isError
+    ? {
+        borderColor: 'var(--chat-result-err-border)',
+        backgroundColor: 'var(--chat-result-err-bg)',
+      }
+    : {
+        borderColor: 'var(--chat-result-ok-border)',
+        backgroundColor: 'var(--chat-result-ok-bg)',
+      };
+
+  return (
+    <Card className={cn("border", className)} style={cardStyle}>
+      <CardContent className="p-4">
+        <div className="flex items-start gap-3">
+          {isError
+            ? <AlertCircle className="h-5 w-5 text-destructive mt-0.5" />
+            : <CheckCircle2 className="h-5 w-5 text-green-500 mt-0.5" />
+          }
+          <div className="flex-1 space-y-2">
+            <h4 className="font-semibold text-sm">
+              {isError ? "Execution Failed" : "Execution Complete"}
+            </h4>
+            {message.result && (
+              <MarkdownContent content={message.result} syntaxTheme={syntaxTheme} />
+            )}
+            {message.error && (
+              <div className="text-sm text-destructive">{message.error}</div>
+            )}
+            <div className="text-xs text-muted-foreground space-y-1 mt-2">
+              {(message.cost_usd !== undefined || message.total_cost_usd !== undefined) && (
+                <div>Cost: ${((message.cost_usd || message.total_cost_usd)!).toFixed(4)} USD</div>
+              )}
+              {message.duration_ms !== undefined && (
+                <div>Duration: {(message.duration_ms / 1000).toFixed(2)}s</div>
+              )}
+              {message.num_turns !== undefined && (
+                <div>Turns: {message.num_turns}</div>
+              )}
+              {message.usage && (
+                <div>
+                  Total tokens: {message.usage.input_tokens + message.usage.output_tokens}
+                  {" "}({message.usage.input_tokens} in, {message.usage.output_tokens} out)
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      </CardContent>
+    </Card>
+  );
+};
+
+// ─── RenderError ──────────────────────────────────────────────────────────────
+
+interface RenderErrorProps {
+  error: unknown;
+  className?: string;
+}
+
+const RenderError: React.FC<RenderErrorProps> = ({ error, className }) => (
+  <Card
+    className={cn("border", className)}
+    style={{
+      borderColor: 'var(--chat-result-err-border)',
+      backgroundColor: 'var(--chat-result-err-bg)',
+    }}
+  >
+    <CardContent className="p-4">
+      <div className="flex items-start gap-3">
+        <AlertCircle className="h-5 w-5 text-destructive mt-0.5" />
+        <div className="flex-1">
+          <p className="text-sm font-medium">Error rendering message</p>
+          <p className="text-xs text-muted-foreground mt-1">
+            {error instanceof Error ? error.message : "Unknown error"}
+          </p>
+        </div>
+      </div>
+    </CardContent>
+  </Card>
+);
+
+// ─── StreamMessage (dispatcher) ───────────────────────────────────────────────
+
+const StreamMessageComponent: React.FC<StreamMessageProps> = ({
+  message, className, streamMessages, onLinkDetected, variant = 'default',
+}) => {
+  const toolResults = useToolResults(streamMessages);
+  const { theme } = useTheme();
+  const syntaxTheme = getClaudeSyntaxTheme(theme);
+
+  const getToolResult = (toolId: string | undefined): any =>
+    toolId ? toolResults.get(toolId) ?? null : null;
+
+  try {
+    if (message.isMeta && !message.leafUuid && !message.summary) return null;
+
     if (message.leafUuid && message.summary && (message as any).type === "summary") {
       return <SummaryWidget summary={message.summary} leafUuid={message.leafUuid} />;
     }
 
-    // System initialization message
     if (message.type === "system" && message.subtype === "init") {
       return (
         <SystemInitializedWidget
@@ -106,633 +751,57 @@ const StreamMessageComponent: React.FC<StreamMessageProps> = ({ message, classNa
       );
     }
 
-    // Assistant message
     if (message.type === "assistant" && message.message) {
-      const msg = message.message;
-      
-      let renderedSomething = false;
-      
-      const renderedCard = (
-        <Card className={cn("border-primary/20 bg-primary/5", className)}>
-          <CardContent className="p-4">
-            <div className="flex items-start gap-3">
-              <Bot className="h-5 w-5 text-primary mt-0.5" />
-              <div className="flex-1 space-y-2 min-w-0">
-                {msg.content && Array.isArray(msg.content) && msg.content.map((content: any, idx: number) => {
-                  // Text content - render as markdown
-                  if (content.type === "text") {
-                    // Ensure we have a string to render
-                    const textContent = typeof content.text === 'string' 
-                      ? content.text 
-                      : (content.text?.text || JSON.stringify(content.text || content));
-                    
-                    renderedSomething = true;
-                    return (
-                      <div key={idx} className="prose prose-sm dark:prose-invert max-w-none">
-                        <ReactMarkdown
-                          remarkPlugins={[remarkGfm]}
-                          components={{
-                            code({ node, inline, className, children, ...props }: any) {
-                              const match = /language-(\w+)/.exec(className || '');
-                              return !inline && match ? (
-                                <SyntaxHighlighter
-                                  style={syntaxTheme}
-                                  language={match[1]}
-                                  PreTag="div"
-                                  {...props}
-                                >
-                                  {String(children).replace(/\n$/, '')}
-                                </SyntaxHighlighter>
-                              ) : (
-                                <code className={className} {...props}>
-                                  {children}
-                                </code>
-                              );
-                            }
-                          }}
-                        >
-                          {textContent}
-                        </ReactMarkdown>
-                      </div>
-                    );
-                  }
-                  
-                  // Thinking content - render with ThinkingWidget
-                  if (content.type === "thinking") {
-                    renderedSomething = true;
-                    return (
-                      <div key={idx}>
-                        <ThinkingWidget 
-                          thinking={content.thinking || ''} 
-                          signature={content.signature}
-                        />
-                      </div>
-                    );
-                  }
-                  
-                  // Tool use - render custom widgets based on tool name
-                  if (content.type === "tool_use") {
-                    const toolName = content.name?.toLowerCase();
-                    const input = content.input;
-                    const toolId = content.id;
-                    
-                    // Get the tool result if available
-                    const toolResult = getToolResult(toolId);
-                    
-                    // Function to render the appropriate tool widget
-                    const renderToolWidget = () => {
-                      // Task tool - for sub-agent tasks
-                      if (toolName === "task" && input) {
-                        renderedSomething = true;
-                        return <TaskWidget description={input.description} prompt={input.prompt} result={toolResult} />;
-                      }
-                      
-                      // Edit tool
-                      if (toolName === "edit" && input?.file_path) {
-                        renderedSomething = true;
-                        return <EditWidget {...input} result={toolResult} />;
-                      }
-                      
-                      // MultiEdit tool
-                      if (toolName === "multiedit" && input?.file_path && input?.edits) {
-                        renderedSomething = true;
-                        return <MultiEditWidget {...input} result={toolResult} />;
-                      }
-                      
-                      // MCP tools (starting with mcp__)
-                      if (content.name?.startsWith("mcp__")) {
-                        renderedSomething = true;
-                        return <MCPWidget toolName={content.name} input={input} result={toolResult} />;
-                      }
-                      
-                      // TodoWrite tool
-                      if (toolName === "todowrite" && input?.todos) {
-                        renderedSomething = true;
-                        return <TodoWidget todos={input.todos} result={toolResult} />;
-                      }
-                      
-                      // TodoRead tool
-                      if (toolName === "todoread") {
-                        renderedSomething = true;
-                        return <TodoReadWidget todos={input?.todos} result={toolResult} />;
-                      }
-                      
-                      // LS tool
-                      if (toolName === "ls" && input?.path) {
-                        renderedSomething = true;
-                        return <LSWidget path={input.path} result={toolResult} />;
-                      }
-                      
-                      // Read tool
-                      if (toolName === "read" && input?.file_path) {
-                        renderedSomething = true;
-                        return <ReadWidget filePath={input.file_path} result={toolResult} />;
-                      }
-                      
-                      // Glob tool
-                      if (toolName === "glob" && input?.pattern) {
-                        renderedSomething = true;
-                        return <GlobWidget pattern={input.pattern} result={toolResult} />;
-                      }
-                      
-                      // Bash tool
-                      if (toolName === "bash" && input?.command) {
-                        renderedSomething = true;
-                        return <BashWidget command={input.command} description={input.description} result={toolResult} />;
-                      }
-                      
-                      // Write tool
-                      if (toolName === "write" && input?.file_path && input?.content) {
-                        renderedSomething = true;
-                        return <WriteWidget filePath={input.file_path} content={input.content} result={toolResult} />;
-                      }
-                      
-                      // Grep tool
-                      if (toolName === "grep" && input?.pattern) {
-                        renderedSomething = true;
-                        return <GrepWidget pattern={input.pattern} include={input.include} path={input.path} exclude={input.exclude} result={toolResult} />;
-                      }
-                      
-                      // WebSearch tool
-                      if (toolName === "websearch" && input?.query) {
-                        renderedSomething = true;
-                        return <WebSearchWidget query={input.query} result={toolResult} />;
-                      }
-                      
-                      // WebFetch tool
-                      if (toolName === "webfetch" && input?.url) {
-                        renderedSomething = true;
-                        return <WebFetchWidget url={input.url} prompt={input.prompt} result={toolResult} />;
-                      }
-                      
-                      // Default - return null
-                      return null;
-                    };
-                    
-                    // Render the tool widget
-                    const widget = renderToolWidget();
-                    if (widget) {
-                      renderedSomething = true;
-                      return <div key={idx}>{widget}</div>;
-                    }
-                    
-                    // Fallback to basic tool display
-                    renderedSomething = true;
-                    return (
-                      <div key={idx} className="space-y-2">
-                        <div className="flex items-center gap-2">
-                          <Terminal className="h-4 w-4 text-muted-foreground" />
-                          <span className="text-sm font-medium">
-                            Using tool: <code className="font-mono">{content.name}</code>
-                          </span>
-                        </div>
-                        {content.input && (
-                          <div className="ml-6 p-2 bg-background rounded-md border">
-                            <pre className="text-xs font-mono overflow-x-auto">
-                              {JSON.stringify(content.input, null, 2)}
-                            </pre>
-                          </div>
-                        )}
-                      </div>
-                    );
-                  }
-                  
-                  return null;
-                })}
-                
-                {msg.usage && (
-                  <div className="text-xs text-muted-foreground mt-2">
-                    Tokens: {msg.usage.input_tokens} in, {msg.usage.output_tokens} out
-                  </div>
-                )}
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-      );
-      
-      if (!renderedSomething) return null;
-      return renderedCard;
-    }
-
-    // User message - handle both nested and direct content structures
-    if (message.type === "user") {
-      // Don't render meta messages, which are for system use
-      if (message.isMeta) return null;
-
-      // Handle different message structures
-      const msg = message.message || message;
-      
-      let renderedSomething = false;
-      
-      const renderedCard = (
-        <Card className={cn("border-muted-foreground/20 bg-muted/20", className)}>
-          <CardContent className="p-4">
-            <div className="flex items-start gap-3">
-              <User className="h-5 w-5 text-muted-foreground mt-0.5" />
-              <div className="flex-1 space-y-2 min-w-0">
-                {/* Handle content that is a simple string (e.g. from user commands) */}
-                {(typeof msg.content === 'string' || (msg.content && !Array.isArray(msg.content))) && (
-                  (() => {
-                    const contentStr = typeof msg.content === 'string' ? msg.content : String(msg.content);
-                    if (contentStr.trim() === '') return null;
-                    renderedSomething = true;
-                    
-                    // Check if it's a command message
-                    const commandMatch = contentStr.match(/<command-name>(.+?)<\/command-name>[\s\S]*?<command-message>(.+?)<\/command-message>[\s\S]*?<command-args>(.*?)<\/command-args>/);
-                    if (commandMatch) {
-                      const [, commandName, commandMessage, commandArgs] = commandMatch;
-                      return (
-                        <CommandWidget 
-                          commandName={commandName.trim()} 
-                          commandMessage={commandMessage.trim()}
-                          commandArgs={commandArgs?.trim()}
-                        />
-                      );
-                    }
-                    
-                    // Check if it's command output
-                    const stdoutMatch = contentStr.match(/<local-command-stdout>([\s\S]*?)<\/local-command-stdout>/);
-                    if (stdoutMatch) {
-                      const [, output] = stdoutMatch;
-                      return <CommandOutputWidget output={output} onLinkDetected={onLinkDetected} />;
-                    }
-                    
-                    // Otherwise render as plain text
-                    return (
-                      <div className="text-sm">
-                        {contentStr}
-                      </div>
-                    );
-                  })()
-                )}
-
-                {/* Handle content that is an array of parts */}
-                {Array.isArray(msg.content) && msg.content.map((content: any, idx: number) => {
-                  // Tool result
-                  if (content.type === "tool_result") {
-                    // Skip duplicate tool_result if a dedicated widget is present
-                    let hasCorrespondingWidget = false;
-                    if (content.tool_use_id && streamMessages) {
-                      for (let i = streamMessages.length - 1; i >= 0; i--) {
-                        const prevMsg = streamMessages[i];
-                        if (prevMsg.type === 'assistant' && prevMsg.message?.content && Array.isArray(prevMsg.message.content)) {
-                          const toolUse = prevMsg.message.content.find((c: any) => c.type === 'tool_use' && c.id === content.tool_use_id);
-                          if (toolUse) {
-                            const toolName = toolUse.name?.toLowerCase();
-                            const toolsWithWidgets = ['task','edit','multiedit','todowrite','todoread','ls','read','glob','bash','write','grep','websearch','webfetch'];
-                            if (toolsWithWidgets.includes(toolName) || toolUse.name?.startsWith('mcp__')) {
-                              hasCorrespondingWidget = true;
-                            }
-                            break;
-                          }
-                        }
-                      }
-                    }
-
-                    if (hasCorrespondingWidget) {
-                      return null;
-                    }
-                    // Extract the actual content string
-                    let contentText = '';
-                    if (typeof content.content === 'string') {
-                      contentText = content.content;
-                    } else if (content.content && typeof content.content === 'object') {
-                      // Handle object with text property
-                      if (content.content.text) {
-                        contentText = content.content.text;
-                      } else if (Array.isArray(content.content)) {
-                        // Handle array of content blocks
-                        contentText = content.content
-                          .map((c: any) => (typeof c === 'string' ? c : c.text || JSON.stringify(c)))
-                          .join('\n');
-                      } else {
-                        // Fallback to JSON stringify
-                        contentText = JSON.stringify(content.content, null, 2);
-                      }
-                    }
-                    
-                    // Always show system reminders regardless of widget status
-                    const reminderMatch = contentText.match(/<system-reminder>(.*?)<\/system-reminder>/s);
-                    if (reminderMatch) {
-                      const reminderMessage = reminderMatch[1].trim();
-                      const beforeReminder = contentText.substring(0, reminderMatch.index || 0).trim();
-                      const afterReminder = contentText.substring((reminderMatch.index || 0) + reminderMatch[0].length).trim();
-                      
-                      renderedSomething = true;
-                      return (
-                        <div key={idx} className="space-y-2">
-                          <div className="flex items-center gap-2">
-                            <CheckCircle2 className="h-4 w-4 text-green-500" />
-                            <span className="text-sm font-medium">Tool Result</span>
-                          </div>
-                          
-                          {beforeReminder && (
-                            <div className="ml-6 p-2 bg-background rounded-md border">
-                              <pre className="text-xs font-mono overflow-x-auto whitespace-pre-wrap">
-                                {beforeReminder}
-                              </pre>
-                            </div>
-                          )}
-                          
-                          <div className="ml-6">
-                            <SystemReminderWidget message={reminderMessage} />
-                          </div>
-                          
-                          {afterReminder && (
-                            <div className="ml-6 p-2 bg-background rounded-md border">
-                              <pre className="text-xs font-mono overflow-x-auto whitespace-pre-wrap">
-                                {afterReminder}
-                              </pre>
-                            </div>
-                          )}
-                        </div>
-                      );
-                    }
-                    
-                    // Check if this is an Edit tool result
-                    const isEditResult = contentText.includes("has been updated. Here's the result of running `cat -n`");
-                    
-                    if (isEditResult) {
-                      renderedSomething = true;
-                      return (
-                        <div key={idx} className="space-y-2">
-                          <div className="flex items-center gap-2">
-                            <CheckCircle2 className="h-4 w-4 text-green-500" />
-                            <span className="text-sm font-medium">Edit Result</span>
-                          </div>
-                          <EditResultWidget content={contentText} />
-                        </div>
-                      );
-                    }
-                    
-                    // Check if this is a MultiEdit tool result
-                    const isMultiEditResult = contentText.includes("has been updated with multiple edits") || 
-                                             contentText.includes("MultiEdit completed successfully") ||
-                                             contentText.includes("Applied multiple edits to");
-                    
-                    if (isMultiEditResult) {
-                      renderedSomething = true;
-                      return (
-                        <div key={idx} className="space-y-2">
-                          <div className="flex items-center gap-2">
-                            <CheckCircle2 className="h-4 w-4 text-green-500" />
-                            <span className="text-sm font-medium">MultiEdit Result</span>
-                          </div>
-                          <MultiEditResultWidget content={contentText} />
-                        </div>
-                      );
-                    }
-                    
-                    // Check if this is an LS tool result (directory tree structure)
-                    const isLSResult = (() => {
-                      if (!content.tool_use_id || typeof contentText !== 'string') return false;
-                      
-                      // Check if this result came from an LS tool by looking for the tool call
-                      let isFromLSTool = false;
-                      
-                      // Search in previous assistant messages for the matching tool_use
-                      if (streamMessages) {
-                        for (let i = streamMessages.length - 1; i >= 0; i--) {
-                          const prevMsg = streamMessages[i];
-                          // Only check assistant messages
-                          if (prevMsg.type === 'assistant' && prevMsg.message?.content && Array.isArray(prevMsg.message.content)) {
-                            const toolUse = prevMsg.message.content.find((c: any) => 
-                              c.type === 'tool_use' && 
-                              c.id === content.tool_use_id &&
-                              c.name?.toLowerCase() === 'ls'
-                            );
-                            if (toolUse) {
-                              isFromLSTool = true;
-                              break;
-                            }
-                          }
-                        }
-                      }
-                      
-                      // Only proceed if this is from an LS tool
-                      if (!isFromLSTool) return false;
-                      
-                      // Additional validation: check for tree structure pattern
-                      const lines = contentText.split('\n');
-                      const hasTreeStructure = lines.some(line => /^\s*-\s+/.test(line));
-                      const hasNoteAtEnd = lines.some(line => line.trim().startsWith('NOTE: do any of the files'));
-                      
-                      return hasTreeStructure || hasNoteAtEnd;
-                    })();
-                    
-                    if (isLSResult) {
-                      renderedSomething = true;
-                      return (
-                        <div key={idx} className="space-y-2">
-                          <div className="flex items-center gap-2">
-                            <CheckCircle2 className="h-4 w-4 text-green-500" />
-                            <span className="text-sm font-medium">Directory Contents</span>
-                          </div>
-                          <LSResultWidget content={contentText} />
-                        </div>
-                      );
-                    }
-                    
-                    // Check if this is a Read tool result (contains line numbers with arrow separator)
-                    const isReadResult = content.tool_use_id && typeof contentText === 'string' && 
-                      /^\s*\d+→/.test(contentText);
-                    
-                    if (isReadResult) {
-                      // Try to find the corresponding Read tool call to get the file path
-                      let filePath: string | undefined;
-                      
-                      // Search in previous assistant messages for the matching tool_use
-                      if (streamMessages) {
-                        for (let i = streamMessages.length - 1; i >= 0; i--) {
-                          const prevMsg = streamMessages[i];
-                          // Only check assistant messages
-                          if (prevMsg.type === 'assistant' && prevMsg.message?.content && Array.isArray(prevMsg.message.content)) {
-                            const toolUse = prevMsg.message.content.find((c: any) => 
-                              c.type === 'tool_use' && 
-                              c.id === content.tool_use_id &&
-                              c.name?.toLowerCase() === 'read'
-                            );
-                            if (toolUse?.input?.file_path) {
-                              filePath = toolUse.input.file_path;
-                              break;
-                            }
-                          }
-                        }
-                      }
-                      
-                      renderedSomething = true;
-                      return (
-                        <div key={idx} className="space-y-2">
-                          <div className="flex items-center gap-2">
-                            <CheckCircle2 className="h-4 w-4 text-green-500" />
-                            <span className="text-sm font-medium">Read Result</span>
-                          </div>
-                          <ReadResultWidget content={contentText} filePath={filePath} />
-                        </div>
-                      );
-                    }
-                    
-                    // Handle empty tool results
-                    if (!contentText || contentText.trim() === '') {
-                      renderedSomething = true;
-                      return (
-                        <div key={idx} className="space-y-2">
-                          <div className="flex items-center gap-2">
-                            <CheckCircle2 className="h-4 w-4 text-green-500" />
-                            <span className="text-sm font-medium">Tool Result</span>
-                          </div>
-                          <div className="ml-6 p-3 bg-muted/50 rounded-md border text-sm text-muted-foreground italic">
-                            Tool did not return any output
-                          </div>
-                        </div>
-                      );
-                    }
-                    
-                    renderedSomething = true;
-                    return (
-                      <div key={idx} className="space-y-2">
-                        <div className="flex items-center gap-2">
-                          {content.is_error ? (
-                            <AlertCircle className="h-4 w-4 text-destructive" />
-                          ) : (
-                            <CheckCircle2 className="h-4 w-4 text-green-500" />
-                          )}
-                          <span className="text-sm font-medium">Tool Result</span>
-                        </div>
-                        <div className="ml-6 p-2 bg-background rounded-md border">
-                          <pre className="text-xs font-mono overflow-x-auto whitespace-pre-wrap">
-                            {contentText}
-                          </pre>
-                        </div>
-                      </div>
-                    );
-                  }
-                  
-                  // Text content
-                  if (content.type === "text") {
-                    // Handle both string and object formats
-                    const textContent = typeof content.text === 'string' 
-                      ? content.text 
-                      : (content.text?.text || JSON.stringify(content.text));
-                    
-                    renderedSomething = true;
-                    return (
-                      <div key={idx} className="text-sm">
-                        {textContent}
-                      </div>
-                    );
-                  }
-                  
-                  return null;
-                })}
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-      );
-      if (!renderedSomething) return null;
-      return renderedCard;
-    }
-
-    // Result message - render with markdown
-    if (message.type === "result") {
-      const isError = message.is_error || message.subtype?.includes("error");
-      
       return (
-        <Card className={cn(
-          isError ? "border-destructive/20 bg-destructive/5" : "border-green-500/20 bg-green-500/5",
-          className
-        )}>
-          <CardContent className="p-4">
-            <div className="flex items-start gap-3">
-              {isError ? (
-                <AlertCircle className="h-5 w-5 text-destructive mt-0.5" />
-              ) : (
-                <CheckCircle2 className="h-5 w-5 text-green-500 mt-0.5" />
-              )}
-              <div className="flex-1 space-y-2">
-                <h4 className="font-semibold text-sm">
-                  {isError ? "Execution Failed" : "Execution Complete"}
-                </h4>
-                
-                {message.result && (
-                  <div className="prose prose-sm dark:prose-invert max-w-none">
-                    <ReactMarkdown
-                      remarkPlugins={[remarkGfm]}
-                      components={{
-                        code({ node, inline, className, children, ...props }: any) {
-                          const match = /language-(\w+)/.exec(className || '');
-                          return !inline && match ? (
-                            <SyntaxHighlighter
-                              style={syntaxTheme}
-                              language={match[1]}
-                              PreTag="div"
-                              {...props}
-                            >
-                              {String(children).replace(/\n$/, '')}
-                            </SyntaxHighlighter>
-                          ) : (
-                            <code className={className} {...props}>
-                              {children}
-                            </code>
-                          );
-                        }
-                      }}
-                    >
-                      {message.result}
-                    </ReactMarkdown>
-                  </div>
-                )}
-                
-                {message.error && (
-                  <div className="text-sm text-destructive">{message.error}</div>
-                )}
-                
-                <div className="text-xs text-muted-foreground space-y-1 mt-2">
-                  {(message.cost_usd !== undefined || message.total_cost_usd !== undefined) && (
-                    <div>Cost: ${((message.cost_usd || message.total_cost_usd)!).toFixed(4)} USD</div>
-                  )}
-                  {message.duration_ms !== undefined && (
-                    <div>Duration: {(message.duration_ms / 1000).toFixed(2)}s</div>
-                  )}
-                  {message.num_turns !== undefined && (
-                    <div>Turns: {message.num_turns}</div>
-                  )}
-                  {message.usage && (
-                    <div>
-                      Total tokens: {message.usage.input_tokens + message.usage.output_tokens} 
-                      ({message.usage.input_tokens} in, {message.usage.output_tokens} out)
-                    </div>
-                  )}
-                </div>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
+        <AssistantMessage
+          message={message}
+          className={className}
+          getToolResult={getToolResult}
+          syntaxTheme={syntaxTheme}
+          variant={variant}
+        />
       );
     }
 
-    // Skip rendering if no meaningful content
+    if (message.type === "user") {
+      return (
+        <UserMessage
+          message={message}
+          className={className}
+          streamMessages={streamMessages}
+          onLinkDetected={onLinkDetected}
+        />
+      );
+    }
+
+    if (message.type === "result") {
+      return (
+        <ResultMessage
+          message={message}
+          className={className}
+          syntaxTheme={syntaxTheme}
+        />
+      );
+    }
+
+    if ((message as any).type === "pr-link") {
+      return <PrLinkMessage message={message} className={className} />;
+    }
+
+    if ((message as any).type === "attachment") {
+      const att = (message as any).attachment;
+      if (att?.type === "plan_mode") {
+        return <PlanModeMessage entering={true} className={className} />;
+      }
+      if (att?.type === "plan_mode_exit") {
+        return <PlanModeMessage entering={false} className={className} />;
+      }
+    }
+
     return null;
   } catch (error) {
-    // If any error occurs during rendering, show a safe error message
     console.error("Error rendering stream message:", error, message);
-    return (
-      <Card className={cn("border-destructive/20 bg-destructive/5", className)}>
-        <CardContent className="p-4">
-          <div className="flex items-start gap-3">
-            <AlertCircle className="h-5 w-5 text-destructive mt-0.5" />
-            <div className="flex-1">
-              <p className="text-sm font-medium">Error rendering message</p>
-              <p className="text-xs text-muted-foreground mt-1">
-                {error instanceof Error ? error.message : 'Unknown error'}
-              </p>
-            </div>
-          </div>
-        </CardContent>
-      </Card>
-    );
+    return <RenderError error={error} className={className} />;
   }
 };
 
