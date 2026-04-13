@@ -6,8 +6,9 @@ import type { CSSProperties } from "react";
  * StartupIntro - a lightweight startup overlay shown on app launch.
  * - Non-interactive; auto-fades after parent hides it via the `visible` prop.
  * - Uses existing shimmer/rotating-symbol styles from shimmer.css.
+ * - `progress` (0-100): drives the thin loading bar at the bottom.
  */
-export function StartupIntro({ visible }: { visible: boolean }) {
+export function StartupIntro({ visible, progress = 0 }: { visible: boolean; progress?: number }) {
   // Simple entrance animations only
   return (
     <AnimatePresence>
@@ -86,6 +87,16 @@ export function StartupIntro({ visible }: { visible: boolean }) {
 
 
           </motion.div>
+
+          {/* Progress bar — thin bar at the very bottom of the overlay */}
+          <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-border/30">
+            <motion.div
+              className="h-full bg-primary"
+              initial={{ width: '0%' }}
+              animate={{ width: `${progress}%` }}
+              transition={{ duration: 0.25, ease: 'easeOut' }}
+            />
+          </div>
         </motion.div>
       )}
     </AnimatePresence>

@@ -461,28 +461,54 @@ function App() {
     } catch (_ignore) {}
     return true; // default if no cache
   });
+  const [introProgress, setIntroProgress] = useState(0);
 
   useEffect(() => {
-    let timer: number | undefined;
+    let dismissed = false;
+    const dismiss = () => {
+      if (!dismissed) {
+        dismissed = true;
+        setIntroProgress(100);
+        // Brief pause so the bar reaches 100% before fading out
+        setTimeout(() => setShowIntro(false), 150);
+      }
+    };
+
+    // Hard timeout: always dismiss after 3s regardless of hydration state
+    const hardTimeout = window.setTimeout(dismiss, 3000);
+
     (async () => {
       try {
-        const ccodeSettings = await api.readCcodeSettings().catch(() => ({} as Record<string, string>));
-        const pref: string | null = ccodeSettings['startup_intro_enabled'] ?? null;
+        // Step 1: check startup intro preference (20%)
+        const settingsData = await api.readCcodeSettings().catch(() => ({} as Record<string, string>));
+        const pref: string | null = settingsData['startup_intro_enabled'] ?? null;
         const enabled = pref === null ? true : pref === 'true';
-        if (enabled) {
-          // keep intro visible and hide after duration
-          timer = window.setTimeout(() => setShowIntro(false), 2000);
-        } else {
-          // user disabled intro: hide immediately to avoid any overlay delay
-          setShowIntro(false);
-        }
-      } catch (err) {
-        // On failure, show intro once to keep UX consistent
-        timer = window.setTimeout(() => setShowIntro(false), 2000);
+        if (!enabled) { dismiss(); return; }
+        setIntroProgress(20);
+
+        // Step 2: warm ccodeSettings cache (40%)
+        ccodeSettings.warmup();
+        setIntroProgress(40);
+
+        // Step 3: check hook bridge installation status (60%)
+        await api.checkHookBridgeInstalled().catch(() => false);
+        setIntroProgress(60);
+
+        // Step 4: check Claude binary version (80%)
+        await api.checkClaudeVersion().catch(() => null);
+        setIntroProgress(80);
+
+        // Step 5: check cguard status (100% driven by dismiss)
+        await api.checkCguardInstalled().catch(() => false);
+
+        dismiss();
+      } catch {
+        dismiss();
       }
     })();
+
     return () => {
-      if (timer) window.clearTimeout(timer);
+      window.clearTimeout(hardTimeout);
     };
   }, []);
 
@@ -492,7 +518,7 @@ function App() {
         <OutputCacheProvider>
           <TabProvider>
             <AppContent />
-            <StartupIntro visible={showIntro} />
+            <StartupIntro visible={showIntro} progress={introProgress} />
           </TabProvider>
         </OutputCacheProvider>
       </TooltipProvider>
