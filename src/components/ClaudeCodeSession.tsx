@@ -157,6 +157,14 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
   const [historyExpanded, setHistoryExpanded] = useState(false);
   const [showLoadHistory, setShowLoadHistory] = useState(false);
 
+  const latestInputTokens = useMemo(() => {
+    for (let i = messages.length - 1; i >= 0; i--) {
+      const tokens = messages[i]?.message?.usage?.input_tokens;
+      if (typeof tokens === "number" && tokens > 0) return tokens;
+    }
+    return 0;
+  }, [messages]);
+
   const parentRef = useRef<HTMLDivElement>(null);
   const unlistenRefs = useRef<UnlistenFn[]>([]);
   const hasActiveSessionRef = useRef(false);
@@ -1481,6 +1489,7 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
         <div className="flex-shrink-0 border-t border-border/50">
           <SessionStatusBar
             sessionId={claudeSessionId ?? session?.id ?? null}
+            inputTokens={latestInputTokens}
           />
           <AnimatePresence>
             {hookState.subagentActive && (

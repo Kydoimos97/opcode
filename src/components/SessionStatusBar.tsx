@@ -7,6 +7,7 @@ import { TooltipSimple } from "@/components/ui/tooltip-modern";
 interface SessionStatusBarProps {
   sessionId: string | null;
   className?: string;
+  inputTokens?: number;
 }
 
 function getModelShort(modelId: string): string {
@@ -33,20 +34,6 @@ function formatCost(usd: number): string {
 }
 
 
-function getCtxBarColor(pct: number): string {
-  if (pct >= 90) return "bg-red-400";
-  if (pct >= 75) return "bg-orange-400";
-  if (pct >= 50) return "bg-yellow-400";
-  return "bg-green-400";
-}
-
-function getCtxTextColor(pct: number): string {
-  if (pct >= 90) return "text-red-400";
-  if (pct >= 75) return "text-orange-400";
-  if (pct >= 50) return "text-yellow-400";
-  return "text-green-400";
-}
-
 function getRateLimitColor(pct: number): string {
   if (pct >= 85) return "text-red-400";
   if (pct >= 65) return "text-yellow-400";
@@ -67,6 +54,7 @@ function isCguardActive(settings: any): boolean {
 export const SessionStatusBar: React.FC<SessionStatusBarProps> = ({
   sessionId,
   className,
+  inputTokens,
 }) => {
   const [statusData, setStatusData] = useState<Record<string, any> | null>(null);
   const [cguardActive, setCguardActive] = useState(false);
@@ -155,20 +143,51 @@ export const SessionStatusBar: React.FC<SessionStatusBarProps> = ({
 
       <span className="text-border shrink-0">·</span>
 
-      {/* Context progress bar */}
-      <span className="flex items-center gap-1.5 shrink-0">
-        <span className="text-muted-foreground/60">ctx</span>
-        <span className="relative h-1.5 w-20 rounded-full bg-muted overflow-hidden">
-          <span
-            className={cn(
-              "absolute inset-y-0 left-0 rounded-full transition-all duration-1000",
-              getCtxBarColor(ctxPct)
-            )}
-            style={{ width: `${ctxPct}%` }}
-          />
-        </span>
-        <span className={getCtxTextColor(ctxPct)}>{ctxPct}%</span>
-      </span>
+      {/* Context progress bar — scaled to 83% threshold = visual 100% */}
+      {(ctxPct > 0 || inputTokens) && (() => {
+        const CONTEXT_MAX = 200_000;
+        const COMPACT_THRESHOLD = 0.83;
+        const rawPct = inputTokens
+          ? (inputTokens / CONTEXT_MAX) * 100
+          : ctxPct;
+        const visualPct = Math.min(100, (rawPct / (COMPACT_THRESHOLD * 100)) * 100);
+        const overThreshold = rawPct >= COMPACT_THRESHOLD * 100;
+        const barColor = overThreshold
+          ? "bg-red-400"
+          : visualPct >= 70
+          ? "bg-amber-400"
+          : "bg-green-400";
+        const textColor = overThreshold
+          ? "text-red-400"
+          : visualPct >= 70
+          ? "text-amber-400"
+          : "text-green-400";
+        const label = inputTokens
+          ? `${Math.round(rawPct)}%`
+          : `${ctxPct}%`;
+        const tooltipText = inputTokens
+          ? `${inputTokens.toLocaleString()} / 200,000 tokens (auto-compact at 83%)`
+          : `Context: ${ctxPct}% used (auto-compact at 83%)`;
+        return (
+          <TooltipSimple content={tooltipText} side="top">
+            <span className="flex items-center gap-1.5 shrink-0 cursor-default">
+              <span className="text-muted-foreground/60">ctx</span>
+              <span className="relative h-1.5 w-20 rounded-full bg-muted overflow-hidden">
+                <span
+                  className={cn(
+                    "absolute inset-y-0 left-0 rounded-full transition-all duration-1000",
+                    barColor
+                  )}
+                  style={{ width: `${visualPct}%` }}
+                />
+                {/* Tick mark at 75% visual (≈ 62% actual) as a subtle warning reference */}
+                <span className="absolute inset-y-0 w-px bg-foreground/10" style={{ left: "75%" }} />
+              </span>
+              <span className={textColor}>{label}</span>
+            </span>
+          </TooltipSimple>
+        );
+      })()}
 
       {/* Spacer */}
       <span className="flex-1" />
