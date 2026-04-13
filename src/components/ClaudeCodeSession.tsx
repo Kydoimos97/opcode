@@ -539,6 +539,14 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
       fileLineCountRef.current = history.length;
       byteOffsetRef.current = 0;
 
+      // Seek to end of file so polling only picks up NEW lines
+      try {
+        const seekResult = await api.readSessionTail(session.id, session.project_id, 0);
+        byteOffsetRef.current = seekResult.newOffset;
+      } catch {
+        byteOffsetRef.current = 0;
+      }
+
       // After loading history, we're continuing a conversation
       setIsFirstPrompt(false);
       
@@ -580,12 +588,12 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
         
         if (activeSession) {
           setClaudeSessionId(session.id);
-          
+
           // Don't add buffered messages here - they've already been loaded by loadSessionHistory
           // Just set up listeners for new messages
-          
+
           // Set up listeners for the active session
-          reconnectToSession(session.id);
+          reconnectToSession(session.id, false);
         }
       } catch (err) {
         console.error('Failed to check for active sessions:', err);
@@ -593,7 +601,7 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
     }
   };
 
-  const reconnectToSession = async (sessionId: string) => {
+  const reconnectToSession = async (sessionId: string, markAsLoading = true) => {
     if (isListeningRef.current) return;
 
     unlistenRefs.current.forEach(unlisten => unlisten());
@@ -632,9 +640,9 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
     });
 
     unlistenRefs.current = [outputUnlisten, errorUnlisten, completeUnlisten];
-    
-    // Mark as loading to show the session is active
-    if (isMountedRef.current) {
+
+    // Mark as loading to show the session is active (only for C-Code-originated sessions)
+    if (markAsLoading && isMountedRef.current) {
       setIsLoading(true);
       hasActiveSessionRef.current = true;
     }
