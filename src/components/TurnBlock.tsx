@@ -225,9 +225,12 @@ const TurnBlockComponent: React.FC<TurnBlockProps> = ({ turn, streamMessages, is
   // text-bearing assistant work item to an implicit final response rendered
   // outside (and after) the collapsible work block.
   const implicitFinalResponse = useMemo(() => {
-    if (isStreaming || turn.result) return null;
+    // Only promote to "final" (green) when the turn is fully complete.
+    // External sessions that are still running have isComplete=false (no result
+    // message yet), so we must not green-highlight mid-session assistant messages.
+    if (isStreaming || turn.result || !turn.isComplete) return null;
     return findLastTextWorkItem(turn.workItems);
-  }, [isStreaming, turn.result, turn.workItems]);
+  }, [isStreaming, turn.result, turn.workItems, turn.isComplete]);
 
   const bodyWorkItems = useMemo(
     () =>

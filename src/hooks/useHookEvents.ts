@@ -182,6 +182,16 @@ export function useHookEvents(sessionId: string | null): HookState {
       try {
         const lines = await api.getHookEvents(sessionId);
         if (lines.length !== lastCountRef.current) {
+          const newLines = lines.slice(lastCountRef.current);
+          console.log(`[hook-events] ${sessionId}: +${newLines.length} event(s) (total ${lines.length})`);
+          newLines.forEach((line, i) => {
+            try {
+              const entry = JSON.parse(line);
+              console.log(`[hook-events]   [${lastCountRef.current + i}] ${entry.hook_type} @ ${entry.ts}`);
+            } catch {
+              console.log(`[hook-events]   [${lastCountRef.current + i}] (unparseable)`);
+            }
+          });
           lastCountRef.current = lines.length;
           linesRef.current = lines;
           setHookState(deriveHookState(lines));

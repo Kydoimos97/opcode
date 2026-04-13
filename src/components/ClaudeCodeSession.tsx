@@ -457,8 +457,10 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
         async (event) => {
           if (event.payload.session_id !== sessionId || event.payload.project_id !== projectId) return;
           if (!isMountedRef.current) return;
+          console.log(`[session-tail] event for ${sessionId} — offset ${byteOffsetRef.current}`);
           try {
             const tailResult = await api.readSessionTail(sessionId, projectId, byteOffsetRef.current);
+            console.log(`[session-tail] got ${tailResult.lines.length} new line(s), new_offset=${tailResult.newOffset}`);
             if (!isMountedRef.current) return;
 
             if (tailResult.newOffset === 0 && byteOffsetRef.current > 0) {
