@@ -12,10 +12,10 @@ use commands::agents::{
     export_agent_to_file, fetch_github_agent_content, fetch_github_agents, get_agent,
     get_agent_run, get_agent_run_with_real_time_metrics, get_claude_binary_path,
     get_live_session_output, get_session_output, get_session_status, import_agent,
-    import_agent_from_file, import_agent_from_github, init_database, kill_agent_session,
+    import_agent_from_file, import_agent_from_github, kill_agent_session,
     list_agent_runs, list_agent_runs_with_metrics, list_agents, list_claude_installations,
     list_running_sessions, load_agent_session_history, set_claude_binary_path,
-    stream_session_output, update_agent, AgentDb,
+    stream_session_output, update_agent,
 };
 use commands::claude::{
     cancel_claude_execution, check_auto_checkpoint, check_claude_version, cleanup_old_checkpoints,
@@ -34,7 +34,7 @@ use commands::claude::{
     write_and_verify_commands_conf, write_native_agent, ClaudeProcessState,
     list_claude_directory, read_claude_file, list_session_logs,
     poll_session_file, get_session_file_status, get_session_file_path,
-    read_ccode_settings, write_ccode_settings,
+    read_ccode_settings, write_ccode_settings, read_session_status, open_path,
 };
 use commands::mcp::{
     mcp_add, mcp_add_from_claude_desktop, mcp_add_json, mcp_get, mcp_get_server_status, mcp_list,
@@ -42,16 +42,11 @@ use commands::mcp::{
     mcp_serve, mcp_test_connection,
 };
 
-use commands::proxy::{apply_proxy_settings, get_proxy_settings, save_proxy_settings};
-use commands::storage::{
-    storage_delete_row, storage_execute_sql, storage_insert_row, storage_list_tables,
-    storage_read_table, storage_reset_database, storage_update_row,
-};
+use commands::proxy::{apply_proxy_settings, get_proxy_settings, load_proxy_at_startup, save_proxy_settings};
 use commands::usage::{
     get_session_stats, get_usage_by_date_range, get_usage_details, get_usage_stats,
 };
 use process::ProcessRegistryState;
-use std::sync::Mutex;
 use tauri::Manager;
 
 #[cfg(target_os = "macos")]
@@ -66,66 +61,9 @@ fn main() {
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_window_state::Builder::default().build())
         .setup(|app| {
-            // Initialize agents database
-            let conn = init_database(&app.handle()).expect("Failed to initialize agents database");
-
-            // Load and apply proxy settings from the database
-            {
-                let db = AgentDb(Mutex::new(conn));
-                let proxy_settings = match db.0.lock() {
-                    Ok(conn) => {
-                        // Directly query proxy settings from the database
-                        let mut settings = commands::proxy::ProxySettings::default();
-
-                        let keys = vec![
-                            ("proxy_enabled", "enabled"),
-                            ("proxy_http", "http_proxy"),
-                            ("proxy_https", "https_proxy"),
-                            ("proxy_no", "no_proxy"),
-                            ("proxy_all", "all_proxy"),
-                        ];
-
-                        for (db_key, field) in keys {
-                            if let Ok(value) = conn.query_row(
-                                "SELECT value FROM app_settings WHERE key = ?1",
-                                rusqlite::params![db_key],
-                                |row| row.get::<_, String>(0),
-                            ) {
-                                match field {
-                                    "enabled" => settings.enabled = value == "true",
-                                    "http_proxy" => {
-                                        settings.http_proxy = Some(value).filter(|s| !s.is_empty())
-                                    }
-                                    "https_proxy" => {
-                                        settings.https_proxy = Some(value).filter(|s| !s.is_empty())
-                                    }
-                                    "no_proxy" => {
-                                        settings.no_proxy = Some(value).filter(|s| !s.is_empty())
-                                    }
-                                    "all_proxy" => {
-                                        settings.all_proxy = Some(value).filter(|s| !s.is_empty())
-                                    }
-                                    _ => {}
-                                }
-                            }
-                        }
-
-                        log::info!("Loaded proxy settings: enabled={}", settings.enabled);
-                        settings
-                    }
-                    Err(e) => {
-                        log::warn!("Failed to lock database for proxy settings: {}", e);
-                        commands::proxy::ProxySettings::default()
-                    }
-                };
-
-                // Apply the proxy settings
-                apply_proxy_settings(&proxy_settings);
-            }
-
-            // Re-open the connection for the app to manage
-            let conn = init_database(&app.handle()).expect("Failed to initialize agents database");
-            app.manage(AgentDb(Mutex::new(conn)));
+            // Load and apply proxy settings from ~/.ccode/settings.json
+            let proxy_settings = load_proxy_at_startup();
+            apply_proxy_settings(&proxy_settings);
 
             // Initialize checkpoint state
             let checkpoint_state = CheckpointState::new();
@@ -283,14 +221,6 @@ fn main() {
             mcp_get_server_status,
             mcp_read_project_config,
             mcp_save_project_config,
-            // Storage Management
-            storage_list_tables,
-            storage_read_table,
-            storage_update_row,
-            storage_delete_row,
-            storage_insert_row,
-            storage_execute_sql,
-            storage_reset_database,
             // Slash Commands
             commands::slash_commands::slash_commands_list,
             commands::slash_commands::slash_command_get,
@@ -320,6 +250,8 @@ fn main() {
             get_session_file_path,
             read_ccode_settings,
             write_ccode_settings,
+            read_session_status,
+            open_path,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
