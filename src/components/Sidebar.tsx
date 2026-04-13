@@ -169,7 +169,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onToggle }) => {
           if (status.last_type === 'result') {
             newStatus = status.is_error ? 'error' : 'complete';
           } else if (status.awaiting_approval) {
-            newStatus = 'idle';
+            newStatus = 'waiting';
           } else if (status.modified_secs_ago < 30) {
             newStatus = 'running';
           } else {
@@ -205,7 +205,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onToggle }) => {
           if (status.last_type === 'result') {
             newStatus = status.is_error ? 'error' : 'complete';
           } else if (status.awaiting_approval) {
-            newStatus = 'idle';
+            newStatus = 'waiting';
           } else if (status.modified_secs_ago < 30) {
             newStatus = 'running';
           } else {
@@ -257,6 +257,10 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onToggle }) => {
       case 'running': return 'bg-blue-500 animate-pulse';
       case 'error': return 'bg-red-500';
       case 'complete': return 'bg-green-500';
+      case 'waiting': {
+        const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+        return reduced ? 'bg-amber-400' : 'bg-amber-400 animate-pulse';
+      }
       default: return 'bg-muted-foreground/40';
     }
   };

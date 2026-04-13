@@ -80,7 +80,7 @@ export class TabPersistenceService {
         projectPath: tab.projectPath,
         claudeSessionId: tab.claudeSessionId,
         claudeProjectId: tab.claudeProjectId,
-        status: tab.status === 'running' ? 'idle' : tab.status, // Reset running status
+        status: (tab.status === 'running' || tab.status === 'waiting') ? 'idle' : tab.status, // Reset running and waiting status
         hasUnsavedChanges: false, // Reset unsaved changes
         order: tab.order,
         icon: tab.icon,
@@ -125,7 +125,7 @@ export class TabPersistenceService {
         updatedAt: new Date(serialized.updatedAt),
         sessionData: undefined, // Will be loaded when tab is activated
         agentData: undefined, // Will be loaded when tab is activated
-        status: serialized.status === 'running' ? 'idle' : serialized.status // Ensure no running status
+        status: (serialized.status === 'running' || serialized.status === 'waiting') ? 'idle' : serialized.status // Ensure no running or waiting status
       }));
 
       // Validate and filter out any invalid tabs
