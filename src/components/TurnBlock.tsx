@@ -1,216 +1,76 @@
-import React, { useState, useMemo, useEffect } from 'react';
-import { ChevronDown, ChevronRight, Loader2, OctagonX } from 'lucide-react';
-import { StreamMessage } from './StreamMessage';
+import React, { useMemo } from 'react';
 import type { Turn } from '@/hooks/useGroupedMessages';
 import type { ClaudeStreamMessage } from './AgentExecution';
+import { useNarrationGroups } from '@/hooks/useNarrationGroups';
+import { ThreadEntry } from './thread/ThreadEntry';
+import { UserMessage } from './thread/messages/UserMessage';
+import { AgentMessage } from './thread/messages/AgentMessage';
+import { ProcessMessage } from './thread/messages/ProcessMessage';
+import { ReadTool } from './thread/tools/ReadTool';
+import { EditTool } from './thread/tools/EditTool';
+import { BashTool } from './thread/tools/BashTool';
+import { GrepTool } from './thread/tools/GrepTool';
+import { GlobTool } from './thread/tools/GlobTool';
+import { WriteTool } from './thread/tools/WriteTool';
+import { ThinkingTool } from './thread/tools/ThinkingTool';
+import { WebSearchTool } from './thread/tools/WebSearchTool';
+import { WebFetchTool } from './thread/tools/WebFetchTool';
+import { TodoTool } from './thread/tools/TodoTool';
+import { LSTool } from './thread/tools/LSTool';
+import { MCPTool } from './thread/tools/MCPTool';
+import { TaskTool } from './thread/tools/TaskTool';
 
-const INTERRUPT_TEXT = '[Request interrupted by user]';
+function extractFinalText(message: ClaudeStreamMessage): string {
+  const content = message.message?.content;
+  if (typeof content === 'string') return content;
+  if (!Array.isArray(content)) return '';
+  return content
+    .filter((b: any) => b.type === 'text')
+    .map((b: any) => (typeof b.text === 'string' ? b.text : b.text?.text ?? ''))
+    .join('\n\n');
+}
 
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
-
-function extractUserText(message: ClaudeStreamMessage): string {
+function extractUserContent(message: ClaudeStreamMessage): { text: string; images: Array<{ mediaType: string; data: string }> } {
   const msg = message.message || message;
+  const content = typeof msg.content === 'string'
+    ? [{ type: 'text', text: msg.content }]
+    : Array.isArray(msg.content) ? msg.content : [];
 
-  if (typeof msg.content === 'string') return msg.content;
+  const text = content
+    .filter((c: any) => c.type === 'text')
+    .map((c: any) => c.text as string)
+    .join('\n');
 
-  if (Array.isArray(msg.content)) {
-    return msg.content
-      .filter((c: any) => c.type === 'text' && typeof c.text === 'string')
-      .map((c: any) => c.text as string)
-      .join('\n');
-  }
+  const images = content
+    .filter((c: any) => c.type === 'image' && c.source?.data)
+    .map((c: any) => ({ mediaType: c.source.media_type ?? 'image/png', data: c.source.data as string }));
 
-  return '';
+  return { text, images };
 }
 
-function findLastTextWorkItem(workItems: ClaudeStreamMessage[]): ClaudeStreamMessage | null {
-  for (let i = workItems.length - 1; i >= 0; i--) {
-    const item = workItems[i];
-    if (item.type === 'assistant' && Array.isArray(item.message?.content)) {
-      const hasText = item.message.content.some((c: any) => c.type === 'text');
-      if (hasText) return item;
-    }
-  }
-  return null;
-}
+function renderToolCall(toolUseBlock: any, toolResult: any, key: string): React.ReactNode {
+  const name = toolUseBlock.name?.toLowerCase() ?? '';
+  const input = toolUseBlock.input ?? {};
 
-// ---------------------------------------------------------------------------
-// InterruptedBubble
-// ---------------------------------------------------------------------------
-
-const InterruptedBubble: React.FC = () => (
-  <div className="flex justify-end mb-2">
-    <div
-      className="flex items-center gap-2 px-4 py-2.5 rounded-2xl rounded-br-sm border text-sm"
-      style={{
-        borderColor: 'var(--chat-interrupt-border)',
-        backgroundColor: 'var(--chat-interrupt-bg)',
-        color: 'var(--chat-interrupt-fg)',
-      }}
-    >
-      <OctagonX className="h-3.5 w-3.5 flex-shrink-0" />
-      <span>Request interrupted by user</span>
-    </div>
-  </div>
-);
-
-// ---------------------------------------------------------------------------
-// UserBubble
-// ---------------------------------------------------------------------------
-
-interface UserBubbleProps {
-  message: ClaudeStreamMessage;
-}
-
-const UserBubble: React.FC<UserBubbleProps> = ({ message }) => {
-  const text = useMemo(() => extractUserText(message), [message]);
-
-  if (text.trim() === INTERRUPT_TEXT) {
-    return <InterruptedBubble />;
-  }
+  if (name === 'read') return <ReadTool key={key} filePath={input.file_path ?? ''} result={toolResult} />;
+  if (name === 'edit') return <EditTool key={key} filePath={input.file_path ?? ''} oldString={input.old_string} newString={input.new_string} result={toolResult} />;
+  if (name === 'multiedit') return <EditTool key={key} filePath={input.file_path ?? ''} result={toolResult} />;
+  if (name === 'bash') return <BashTool key={key} command={input.command ?? ''} description={input.description} result={toolResult} />;
+  if (name === 'grep') return <GrepTool key={key} pattern={input.pattern ?? ''} path={input.path} include={input.include} result={toolResult} />;
+  if (name === 'glob') return <GlobTool key={key} pattern={input.pattern ?? ''} path={input.path} result={toolResult} />;
+  if (name === 'write') return <WriteTool key={key} filePath={input.file_path ?? ''} content={input.content ?? ''} result={toolResult} />;
+  if (name === 'websearch') return <WebSearchTool key={key} query={input.query ?? ''} result={toolResult} />;
+  if (name === 'webfetch') return <WebFetchTool key={key} url={input.url ?? ''} prompt={input.prompt} result={toolResult} />;
+  if (name === 'todowrite') return <TodoTool key={key} todos={input.todos ?? []} result={toolResult} />;
+  if (name === 'todoread') return <TodoTool key={key} todos={input.todos ?? []} result={toolResult} />;
+  if (name === 'ls') return <LSTool key={key} path={input.path ?? ''} result={toolResult} />;
+  if (name === 'task') return <TaskTool key={key} description={input.description} prompt={input.prompt} result={toolResult} />;
+  if (toolUseBlock.name?.startsWith('mcp__')) return <MCPTool key={key} toolName={toolUseBlock.name} input={input} result={toolResult} />;
 
   return (
-    <div className="flex justify-end mb-2">
-      <div
-        className="max-w-[75%] px-4 py-2.5 rounded-2xl rounded-br-sm border text-sm"
-        style={{
-          borderColor: 'var(--chat-user-border)',
-          backgroundColor: 'var(--chat-user-bg)',
-        }}
-      >
-        {text}
-      </div>
-    </div>
+    <MCPTool key={key} toolName={toolUseBlock.name ?? 'unknown'} input={input} result={toolResult} />
   );
-};
-
-// ---------------------------------------------------------------------------
-// WorkBlockHeader
-// ---------------------------------------------------------------------------
-
-interface WorkBlockHeaderProps {
-  isWorking: boolean;
-  isExpanded: boolean;
-  stepCount: number;
-  onToggle: () => void;
 }
-
-const WorkBlockHeader: React.FC<WorkBlockHeaderProps> = ({
-  isWorking,
-  isExpanded,
-  stepCount,
-  onToggle,
-}) => {
-  if (isWorking) {
-    return (
-      <div className="flex items-center gap-1.5 text-xs text-muted-foreground mb-1">
-        <Loader2 className="h-3 w-3 animate-spin" />
-        <span>Working...</span>
-      </div>
-    );
-  }
-
-  return (
-    <button
-      onClick={onToggle}
-      className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground cursor-pointer mb-1 select-none transition-colors"
-    >
-      {isExpanded ? (
-        <ChevronDown className="h-3 w-3" />
-      ) : (
-        <ChevronRight className="h-3 w-3" />
-      )}
-      <span>{stepCount} steps</span>
-    </button>
-  );
-};
-
-// ---------------------------------------------------------------------------
-// WorkItemList
-// ---------------------------------------------------------------------------
-
-interface WorkItemListProps {
-  turnId: string;
-  items: ClaudeStreamMessage[];
-  streamMessages: ClaudeStreamMessage[];
-}
-
-const WorkItemList: React.FC<WorkItemListProps> = ({ turnId, items, streamMessages }) => (
-  <div className="space-y-1">
-    {items.map((item, idx) => (
-      <div key={`${turnId}-work-${idx}`} className="mb-1 opacity-90 scale-[0.99]">
-        <StreamMessage message={item} streamMessages={streamMessages} />
-      </div>
-    ))}
-  </div>
-);
-
-// ---------------------------------------------------------------------------
-// WorkBlock
-// ---------------------------------------------------------------------------
-
-interface WorkBlockProps {
-  turnId: string;
-  workItems: ClaudeStreamMessage[];
-  streamMessages: ClaudeStreamMessage[];
-  isStreaming: boolean;
-  isComplete: boolean;
-  collapseSignal?: number;
-  expandSignal?: number;
-}
-
-const WorkBlock: React.FC<WorkBlockProps> = ({
-  turnId,
-  workItems,
-  streamMessages,
-  isStreaming,
-  isComplete,
-  collapseSignal,
-  expandSignal,
-}) => {
-  const [isExpanded, setIsExpanded] = useState(true);
-
-  useEffect(() => {
-    if ((collapseSignal ?? 0) > 0) setIsExpanded(false);
-  }, [collapseSignal]);
-
-  useEffect(() => {
-    if ((expandSignal ?? 0) > 0) setIsExpanded(true);
-  }, [expandSignal]);
-
-  const isWorking = !isComplete && isStreaming && workItems.length === 0;
-
-  if (workItems.length === 0 && !isWorking) {
-    return null;
-  }
-
-  return (
-    <div
-      className="relative pl-6 border-l-2 mb-3 ml-4"
-      style={{ borderColor: 'var(--chat-work-border)' }}
-    >
-      <WorkBlockHeader
-        isWorking={isWorking}
-        isExpanded={isExpanded}
-        stepCount={workItems.length}
-        onToggle={() => setIsExpanded((prev) => !prev)}
-      />
-      {isExpanded && (
-        <WorkItemList
-          turnId={turnId}
-          items={workItems}
-          streamMessages={streamMessages}
-        />
-      )}
-    </div>
-  );
-};
-
-// ---------------------------------------------------------------------------
-// TurnBlock
-// ---------------------------------------------------------------------------
 
 interface TurnBlockProps {
   turn: Turn;
@@ -220,51 +80,78 @@ interface TurnBlockProps {
   expandSignal?: number;
 }
 
-const TurnBlockComponent: React.FC<TurnBlockProps> = ({ turn, streamMessages, isStreaming, collapseSignal, expandSignal }) => {
-  // When not streaming and there is no explicit result message, promote the last
-  // text-bearing assistant work item to an implicit final response rendered
-  // outside (and after) the collapsible work block.
-  const implicitFinalResponse = useMemo(() => {
-    // Only promote to "final" (green) when the turn is fully complete.
-    // External sessions that are still running have isComplete=false (no result
-    // message yet), so we must not green-highlight mid-session assistant messages.
-    if (isStreaming || turn.result || !turn.isComplete) return null;
-    return findLastTextWorkItem(turn.workItems);
-  }, [isStreaming, turn.result, turn.workItems, turn.isComplete]);
+const TurnBlockComponent: React.FC<TurnBlockProps> = ({ turn, isStreaming }) => {
+  const narrationGroups = useNarrationGroups(turn.workItems);
 
-  const bodyWorkItems = useMemo(
-    () =>
-      implicitFinalResponse
-        ? turn.workItems.filter((item) => item !== implicitFinalResponse)
-        : turn.workItems,
-    [implicitFinalResponse, turn.workItems],
-  );
+  const { displayGroups, implicitFinalText } = useMemo(() => {
+    if (isStreaming || turn.result || narrationGroups.length === 0) {
+      return { displayGroups: narrationGroups, implicitFinalText: null };
+    }
+    const lastGroup = narrationGroups[narrationGroups.length - 1];
+    if (lastGroup.textBlocks.length > 0 && lastGroup.toolCalls.length === 0 && lastGroup.thinkingBlocks.length === 0) {
+      const text = lastGroup.textBlocks.map(b => b.text).join('\n\n');
+      return {
+        displayGroups: narrationGroups.slice(0, -1),
+        implicitFinalText: text,
+      };
+    }
+    return { displayGroups: narrationGroups, implicitFinalText: null };
+  }, [narrationGroups, isStreaming, turn.result]);
+
+  const userContent = turn.userMessage ? extractUserContent(turn.userMessage) : null;
 
   return (
-    <div className="space-y-3 max-w-3xl mx-auto w-full">
-      {turn.userMessage && <UserBubble message={turn.userMessage} />}
-
-      <WorkBlock
-        turnId={turn.id}
-        workItems={bodyWorkItems}
-        streamMessages={streamMessages}
-        isStreaming={isStreaming}
-        isComplete={turn.isComplete}
-        collapseSignal={collapseSignal}
-        expandSignal={expandSignal}
-      />
-
-      {implicitFinalResponse && (
-        <StreamMessage
-          message={implicitFinalResponse}
-          streamMessages={streamMessages}
-          variant="final"
-        />
+    <div className="space-y-2 w-full">
+      {userContent && (
+        <ThreadEntry depth={0}>
+          <UserMessage text={userContent.text} images={userContent.images} />
+        </ThreadEntry>
       )}
 
-      {turn.result && (
-        <StreamMessage message={turn.result} streamMessages={streamMessages} />
+      {displayGroups.map((group) => (
+        <div key={group.id} className="space-y-1">
+          {group.thinkingBlocks.map((tb, i) => (
+            <ThreadEntry key={`${group.id}-think-${i}`} depth={2}>
+              <ThinkingTool thinking={tb.thinking} signature={tb.signature} />
+            </ThreadEntry>
+          ))}
+
+          {group.textBlocks.length > 0 && (
+            <ThreadEntry depth={1}>
+              <ProcessMessage text={group.textBlocks.map(b => b.text).join('\n\n')} />
+            </ThreadEntry>
+          )}
+
+          {group.toolCalls.map((tc) => (
+            <ThreadEntry key={tc.id} depth={2}>
+              {renderToolCall(tc.toolUseBlock, tc.toolResult, tc.id)}
+            </ThreadEntry>
+          ))}
+        </div>
+      ))}
+
+      {isStreaming && !turn.result && (
+        <div className="flex items-center gap-1.5 px-2 py-1 ml-6">
+          <div className="h-1.5 w-1.5 rounded-full bg-muted-foreground/40 animate-pulse" />
+          <div className="h-1.5 w-1.5 rounded-full bg-muted-foreground/40 animate-pulse [animation-delay:150ms]" />
+          <div className="h-1.5 w-1.5 rounded-full bg-muted-foreground/40 animate-pulse [animation-delay:300ms]" />
+        </div>
       )}
+
+      {implicitFinalText && (
+        <ThreadEntry depth={0}>
+          <AgentMessage text={implicitFinalText} />
+        </ThreadEntry>
+      )}
+
+      {turn.result && (() => {
+        const text = extractFinalText(turn.result);
+        return text ? (
+          <ThreadEntry depth={0}>
+            <AgentMessage text={text} />
+          </ThreadEntry>
+        ) : null;
+      })()}
     </div>
   );
 };

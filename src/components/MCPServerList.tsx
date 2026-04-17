@@ -9,7 +9,6 @@ import {
   CheckCircle,
   AlertCircle,
   Circle,
-  Loader2,
   RefreshCw,
   FolderOpen,
   User,
@@ -18,6 +17,7 @@ import {
   ChevronUp,
   Copy
 } from "lucide-react";
+import { BreathingDots } from "@/components/ui/spinner";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
@@ -336,7 +336,7 @@ export const MCPServerList: React.FC<MCPServerListProps> = ({
                 className="hover:bg-green-500/10 hover:text-green-600"
               >
                 {testingServer === server.name ? (
-                  <Loader2 className="h-4 w-4 animate-spin" />
+                  <BreathingDots className="h-4 w-4" />
                 ) : (
                   <Play className="h-4 w-4" />
                 )}
@@ -349,7 +349,7 @@ export const MCPServerList: React.FC<MCPServerListProps> = ({
                 className="hover:bg-destructive/10 hover:text-destructive"
               >
                 {removingServer === server.name ? (
-                  <Loader2 className="h-4 w-4 animate-spin" />
+                  <BreathingDots className="h-4 w-4" />
                 ) : (
                   <Trash2 className="h-4 w-4" />
                 )}
@@ -457,7 +457,7 @@ export const MCPServerList: React.FC<MCPServerListProps> = ({
   if (loading) {
     return (
       <div className="flex items-center justify-center h-64">
-        <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+        <BreathingDots className="h-8 w-8 text-muted-foreground" />
       </div>
     );
   }

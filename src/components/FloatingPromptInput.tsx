@@ -24,6 +24,7 @@ import { FilePicker } from "./FilePicker";
 import { SlashCommandPicker } from "./SlashCommandPicker";
 import { ImagePreview } from "./ImagePreview";
 import { type FileEntry, type SlashCommand } from "@/lib/api";
+import { BreathingDots } from "@/components/ui/spinner";
 
 // Conditional import for Tauri webview window
 let tauriGetCurrentWebviewWindow: any;
@@ -278,13 +279,40 @@ const FloatingPromptInputInner = (
   const [slashCommandQuery, setSlashCommandQuery] = useState("");
   const [cursorPosition, setCursorPosition] = useState(0);
   const [embeddedImages, setEmbeddedImages] = useState<string[]>([]);
+  const [pastedImages, setPastedImages] = useState<string[]>([]);
   const [dragActive, setDragActive] = useState(false);
 
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const expandedTextareaRef = useRef<HTMLTextAreaElement>(null);
   const unlistenDragDropRef = useRef<(() => void) | null>(null);
   const [textareaHeight, setTextareaHeight] = useState<number>(48);
+  const [inputMinHeight, setInputMinHeight] = useState<number>(48);
+  const dragHandleRef = useRef<HTMLDivElement>(null);
+  const dragStartYRef = useRef<number>(0);
+  const dragStartHeightRef = useRef<number>(48);
   const isIMEComposingRef = useRef(false);
+
+  const handleResizeDragStart = (e: React.MouseEvent) => {
+    e.preventDefault();
+    dragStartYRef.current = e.clientY;
+    dragStartHeightRef.current = Math.max(textareaHeight, inputMinHeight);
+
+    const onMove = (ev: MouseEvent) => {
+      const delta = dragStartYRef.current - ev.clientY;
+      const newMin = Math.max(48, Math.min(400, dragStartHeightRef.current + delta));
+      setInputMinHeight(newMin);
+      setTextareaHeight(h => Math.max(h, newMin));
+      if (textareaRef.current) {
+        textareaRef.current.style.height = `${Math.max(textareaRef.current.scrollHeight, newMin)}px`;
+      }
+    };
+    const onUp = () => {
+      window.removeEventListener('mousemove', onMove);
+      window.removeEventListener('mouseup', onUp);
+    };
+    window.addEventListener('mousemove', onMove);
+    window.addEventListener('mouseup', onUp);
+  };
 
   // Expose a method to add images programmatically
   React.useImperativeHandle(
@@ -394,7 +422,7 @@ const FloatingPromptInputInner = (
     if (textareaRef.current && !isExpanded) {
       textareaRef.current.style.height = 'auto';
       const scrollHeight = textareaRef.current.scrollHeight;
-      const newHeight = Math.min(Math.max(scrollHeight, 48), 240);
+      const newHeight = Math.min(Math.max(scrollHeight, inputMinHeight), 400);
       setTextareaHeight(newHeight);
       textareaRef.current.style.height = `${newHeight}px`;
     }
@@ -497,7 +525,7 @@ const FloatingPromptInputInner = (
       textareaRef.current.style.height = 'auto';
       const scrollHeight = textareaRef.current.scrollHeight;
       // Set min height to 48px and max to 240px (about 10 lines)
-      const newHeight = Math.min(Math.max(scrollHeight, 48), 240);
+      const newHeight = Math.min(Math.max(scrollHeight, inputMinHeight), 400);
       setTextareaHeight(newHeight);
       textareaRef.current.style.height = `${newHeight}px`;
     }
@@ -739,8 +767,13 @@ const FloatingPromptInputInner = (
       return;
     }
 
-    if (prompt.trim() && !disabled) {
+    if ((prompt.trim() || pastedImages.length > 0) && !disabled) {
       let finalPrompt = prompt.trim();
+
+      // Append pasted (clipboard) images as @mentions — kept out of textarea text
+      for (const dataUrl of pastedImages) {
+        finalPrompt += (finalPrompt ? ' ' : '') + `@"${dataUrl}"`;
+      }
 
       // Append thinking phrase if not auto mode
       const thinkingMode = THINKING_MODES.find(m => m.id === selectedThinkingMode);
@@ -750,8 +783,8 @@ const FloatingPromptInputInner = (
 
       onSend(finalPrompt, selectedModel, selectedPermissionMode);
       setPrompt("");
-      setEmbeddedImages([]);
-      setTextareaHeight(48); // Reset height after sending
+      setPastedImages([]);
+      setTextareaHeight(inputMinHeight);
     }
   };
 
@@ -796,43 +829,25 @@ const FloatingPromptInputInner = (
     const items = e.clipboardData?.items;
     if (!items) return;
 
-    for (const item of items) {
+    for (const item of Array.from(items)) {
       if (item.type.startsWith('image/')) {
         e.preventDefault();
-        
-        // Get the image blob
         const blob = item.getAsFile();
         if (!blob) continue;
-
         try {
-          // Convert blob to base64
           const reader = new FileReader();
           reader.onload = () => {
-            const base64Data = reader.result as string;
-            
-            // Add the base64 data URL directly to the prompt
-            setPrompt(currentPrompt => {
-              // Use the data URL directly as the image reference
-              const mention = `@"${base64Data}"`;
-              const newPrompt = currentPrompt + (currentPrompt.endsWith(' ') || currentPrompt === '' ? '' : ' ') + mention + ' ';
-              
-              // Focus the textarea and move cursor to end
-              setTimeout(() => {
-                const target = isExpanded ? expandedTextareaRef.current : textareaRef.current;
-                target?.focus();
-                target?.setSelectionRange(newPrompt.length, newPrompt.length);
-              }, 0);
-
-              return newPrompt;
-            });
+            const dataUrl = reader.result as string;
+            setPastedImages(prev => [...prev, dataUrl]);
           };
-          
           reader.readAsDataURL(blob);
         } catch (error) {
           console.error('Failed to paste image:', error);
         }
+        return;
       }
     }
+    // Non-image paste — let the browser handle it normally
   };
 
   // Browser drag and drop handlers - just prevent default behavior
@@ -850,39 +865,29 @@ const FloatingPromptInputInner = (
   };
 
   const handleRemoveImage = (index: number) => {
-    // Remove the corresponding @mention from the prompt
-    const imagePath = embeddedImages[index];
-    
-    // For data URLs, we need to handle them specially since they're always quoted
-    if (imagePath.startsWith('data:')) {
-      // Simply remove the exact quoted data URL
-      const quotedPath = `@"${imagePath}"`;
-      const newPrompt = prompt.replace(quotedPath, '').trim();
-      setPrompt(newPrompt);
+    // Pasted images come after file-embedded images in the combined list
+    if (index >= embeddedImages.length) {
+      const pastedIndex = index - embeddedImages.length;
+      setPastedImages(prev => prev.filter((_, i) => i !== pastedIndex));
       return;
     }
-    
-    // For file paths, use the original logic
+
+    const imagePath = embeddedImages[index];
+
     const escapedPath = imagePath.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
     const escapedRelativePath = imagePath.replace(projectPath + '/', '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-    
-    // Create patterns for both quoted and unquoted mentions
+
     const patterns = [
-      // Quoted full path
       new RegExp(`@"${escapedPath}"\\s?`, 'g'),
-      // Unquoted full path
       new RegExp(`@${escapedPath}\\s?`, 'g'),
-      // Quoted relative path
       new RegExp(`@"${escapedRelativePath}"\\s?`, 'g'),
-      // Unquoted relative path
-      new RegExp(`@${escapedRelativePath}\\s?`, 'g')
+      new RegExp(`@${escapedRelativePath}\\s?`, 'g'),
     ];
 
     let newPrompt = prompt;
     for (const pattern of patterns) {
       newPrompt = newPrompt.replace(pattern, '');
     }
-
     setPrompt(newPrompt.trim());
   };
 
@@ -929,9 +934,9 @@ const FloatingPromptInputInner = (
               </div>
 
               {/* Image previews in expanded mode */}
-              {embeddedImages.length > 0 && (
+              {(embeddedImages.length > 0 || pastedImages.length > 0) && (
                 <ImagePreview
-                  images={embeddedImages}
+                  images={[...embeddedImages, ...pastedImages]}
                   onRemove={handleRemoveImage}
                   className="border-t border-border pt-2"
                 />
@@ -1083,7 +1088,7 @@ const FloatingPromptInputInner = (
                       className="min-w-[60px]"
                     >
                       {isLoading ? (
-                        <div className="rotating-symbol text-primary-foreground" />
+                        <BreathingDots className="h-4 w-4 text-primary-foreground" />
                       ) : (
                         <Send className="h-4 w-4" />
                       )}
@@ -1108,9 +1113,16 @@ const FloatingPromptInputInner = (
         onDragOver={handleDrag}
         onDrop={handleDrop}
       >
+        {/* Resize handle — drag upward to make the input taller */}
+        <div
+          ref={dragHandleRef}
+          onMouseDown={handleResizeDragStart}
+          className="h-1 w-full cursor-ns-resize hover:bg-border/60 transition-colors"
+          title="Drag to resize"
+        />
         <div>
           {/* Image previews */}
-          {embeddedImages.length > 0 && (
+          {(embeddedImages.length > 0 || pastedImages.length > 0) && (
             <ImagePreview
               images={embeddedImages}
               onRemove={handleRemoveImage}
@@ -1263,11 +1275,11 @@ const FloatingPromptInputInner = (
                   className={cn(
                     "resize-none pr-20 pl-3 py-2.5 transition-all duration-150",
                     dragActive && "border-primary",
-                    textareaHeight >= 240 && "overflow-y-auto scrollbar-thin"
+                    textareaHeight >= 200 && "overflow-y-auto scrollbar-thin"
                   )}
                   style={{
                     height: `${textareaHeight}px`,
-                    overflowY: textareaHeight >= 240 ? 'auto' : 'hidden'
+                    overflowY: textareaHeight >= 200 ? 'auto' : 'hidden'
                   }}
                 />
 

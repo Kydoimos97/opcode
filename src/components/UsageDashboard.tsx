@@ -7,12 +7,12 @@ import { api, type UsageStats, type ProjectUsage } from "@/lib/api";
 import {
   Calendar,
   Filter,
-  Loader2,
   Briefcase,
   ChevronLeft,
   ChevronRight,
   RefreshCw
 } from "lucide-react";
+import { BreathingDots } from "@/components/ui/spinner";
 
 interface UsageDashboardProps {
   /**
@@ -307,7 +307,7 @@ export const UsageDashboard: React.FC<UsageDashboardProps> = ({ }) => {
                 disabled={refreshing}
                 className="h-8 text-xs"
               >
-                {refreshing ? <Loader2 className="h-3 w-3 animate-spin mr-1" /> : <RefreshCw className="h-3 w-3 mr-1" />}
+                {refreshing ? <BreathingDots className="h-3 w-3 mr-1" /> : <RefreshCw className="h-3 w-3 mr-1" />}
                 {refreshing ? "Loading..." : "Refresh"}
               </Button>
             </div>
@@ -318,7 +318,7 @@ export const UsageDashboard: React.FC<UsageDashboardProps> = ({ }) => {
         <div className="flex-1 overflow-y-auto p-6">
           {loading && !stats ? (
             <div className="flex items-center justify-center h-64">
-              <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+              <BreathingDots className="h-8 w-8 text-muted-foreground" />
             </div>
           ) : error ? (
             <div className="mb-4 p-3 rounded-lg bg-destructive/10 border border-destructive/50 text-body-small text-destructive">

@@ -5,12 +5,12 @@ import { Card } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
 import { api, type UsageStats, type ProjectUsage } from "@/lib/api";
-import { 
-  Calendar, 
+import {
+  Calendar,
   Filter,
-  Loader2,
   Briefcase
 } from "lucide-react";
+import { BreathingDots } from "@/components/ui/spinner";
 
 interface UsageDashboardProps {
   /**
@@ -151,7 +151,7 @@ export const UsageDashboard: React.FC<UsageDashboardProps> = ({ }) => {
         <div className="flex-1 overflow-y-auto p-6">
           {loading ? (
             <div className="flex items-center justify-center h-64">
-              <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+              <BreathingDots className="h-8 w-8 text-muted-foreground" />
             </div>
           ) : error ? (
             <motion.div

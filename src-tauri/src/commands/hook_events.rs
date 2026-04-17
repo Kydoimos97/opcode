@@ -2,7 +2,7 @@ use std::path::PathBuf;
 
 /// Returns the path to the hook events file for a session.
 fn hook_events_path(session_id: &str) -> Option<PathBuf> {
-    let base = dirs::home_dir()?.join(".ccode").join("hook-events");
+    let base = dirs::home_dir()?.join(".ccode").join("states").join("hooks");
     Some(base.join(format!("{}.jsonl", session_id)))
 }
 
@@ -33,7 +33,7 @@ pub fn check_hook_bridge_installed() -> u8 {
     };
 
     // If the script file doesn't exist, not installed at all
-    if !home.join(".claude").join("hooks").join("hook-event-bridge.sh").exists() {
+    if !home.join(".ccode").join("hooks").join("c-bridge").join("c-bridge.sh").exists() {
         return 0;
     }
 
@@ -48,7 +48,7 @@ pub fn check_hook_bridge_installed() -> u8 {
         Err(_) => return 1,
     };
 
-    let bridge_command = "bash $HOME/.claude/hooks/hook-event-bridge.sh";
+    let bridge_command = "bash $HOME/.ccode/hooks/c-bridge/c-bridge.sh";
     let hook_types = [
         "UserPromptSubmit", "PreToolUse", "PostToolUse", "PostToolUseFailure",
         "Stop", "Notification", "SubagentStart", "SubagentStop",
@@ -81,32 +81,32 @@ pub fn check_hook_bridge_installed() -> u8 {
 }
 
 /// Installs the hook event bridge:
-/// 1. Creates ~/.ccode/hook-events/ directory
-/// 2. Writes hook-event-bridge.py to ~/.claude/hooks/
-/// 3. Writes hook-event-bridge.sh to ~/.claude/hooks/
+/// 1. Creates ~/.ccode/states/hooks/ directory
+/// 2. Writes c-bridge.py to ~/.ccode/hooks/c-bridge/
+/// 3. Writes c-bridge.sh to ~/.ccode/hooks/c-bridge/
 /// 4. Adds bridge hook entries to ~/.claude/settings.json for the listed hook types
 #[tauri::command]
 pub fn install_hook_bridge() -> Result<(), String> {
     let home = dirs::home_dir().ok_or("Could not find home directory")?;
 
-    // Create ~/.ccode/hook-events/
-    let events_dir = home.join(".ccode").join("hook-events");
+    // Create ~/.ccode/states/hooks/
+    let events_dir = home.join(".ccode").join("states").join("hooks");
     std::fs::create_dir_all(&events_dir)
         .map_err(|e| format!("Failed to create hook-events dir: {}", e))?;
 
-    let hooks_dir = home.join(".claude").join("hooks");
+    let hooks_dir = home.join(".ccode").join("hooks").join("c-bridge");
     std::fs::create_dir_all(&hooks_dir)
         .map_err(|e| format!("Failed to ensure hooks dir: {}", e))?;
 
     // Write Python bridge script
     std::fs::write(
-        hooks_dir.join("hook-event-bridge.py"),
+        hooks_dir.join("c-bridge.py"),
         BRIDGE_PY_CONTENT,
     ).map_err(|e| format!("Failed to write bridge py: {}", e))?;
 
     // Write shell wrapper
     std::fs::write(
-        hooks_dir.join("hook-event-bridge.sh"),
+        hooks_dir.join("c-bridge.sh"),
         BRIDGE_SH_CONTENT,
     ).map_err(|e| format!("Failed to write bridge sh: {}", e))?;
 
@@ -114,10 +114,10 @@ pub fn install_hook_bridge() -> Result<(), String> {
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
-        let mut perms = std::fs::metadata(hooks_dir.join("hook-event-bridge.sh"))
+        let mut perms = std::fs::metadata(hooks_dir.join("c-bridge.sh"))
             .map_err(|e| e.to_string())?.permissions();
         perms.set_mode(0o755);
-        std::fs::set_permissions(hooks_dir.join("hook-event-bridge.sh"), perms)
+        std::fs::set_permissions(hooks_dir.join("c-bridge.sh"), perms)
             .map_err(|e| e.to_string())?;
     }
 
@@ -141,7 +141,7 @@ pub fn install_hook_bridge() -> Result<(), String> {
         .as_object_mut()
         .ok_or("hooks is not an object")?;
 
-    let bridge_command = "bash $HOME/.claude/hooks/hook-event-bridge.sh";
+    let bridge_command = "bash $HOME/.ccode/hooks/c-bridge/c-bridge.sh";
     let hook_types = [
         "UserPromptSubmit",
         "PreToolUse",
@@ -200,7 +200,7 @@ pub fn install_hook_bridge() -> Result<(), String> {
 pub fn remove_hook_bridge() -> Result<(), String> {
     let home = dirs::home_dir().ok_or("Could not find home directory")?;
 
-    let bridge_command = "bash $HOME/.claude/hooks/hook-event-bridge.sh";
+    let bridge_command = "bash $HOME/.ccode/hooks/c-bridge/c-bridge.sh";
     let settings_path = home.join(".claude").join("settings.json");
 
     if settings_path.exists() {
@@ -231,16 +231,16 @@ pub fn remove_hook_bridge() -> Result<(), String> {
     }
 
     // Remove script files
-    let hooks_dir = home.join(".claude").join("hooks");
-    let _ = std::fs::remove_file(hooks_dir.join("hook-event-bridge.py"));
-    let _ = std::fs::remove_file(hooks_dir.join("hook-event-bridge.sh"));
+    let hooks_dir = home.join(".ccode").join("hooks").join("c-bridge");
+    let _ = std::fs::remove_file(hooks_dir.join("c-bridge.py"));
+    let _ = std::fs::remove_file(hooks_dir.join("c-bridge.sh"));
 
     Ok(())
 }
 
 const BRIDGE_SH_CONTENT: &str = r#"#!/bin/bash
-# hook-event-bridge.sh — C-Code hook event bridge.
-# Writes hook events to ~/.ccode/hook-events/<session_id>.jsonl for real-time UI enrichment.
+# c-bridge.sh — C-Code hook event bridge.
+# Writes hook events to ~/.ccode/states/hooks/<session_id>.jsonl for real-time UI enrichment.
 # Never blocks; always exits 0.
 
 HOOKS_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -256,15 +256,15 @@ if [ -z "$PYTHON" ]; then
   exit 0
 fi
 
-"$PYTHON" "$HOOKS_DIR/hook-event-bridge.py"
+"$PYTHON" "$HOOKS_DIR/c-bridge.py"
 exit 0
 "#;
 
 const BRIDGE_PY_CONTENT: &str = r#"#!/usr/bin/env python3
-"""hook-event-bridge.py — C-Code hook event bridge.
+"""c-bridge.py — C-Code hook event bridge.
 
 Reads the hook payload from stdin and appends it to
-~/.ccode/hook-events/<session_id>.jsonl so the C-Code app can
+~/.ccode/states/hooks/<session_id>.jsonl so the C-Code app can
 provide real-time enrichment (live tool indicators, auto-title, etc).
 
 Always exits 0 and never blocks Claude Code.
@@ -292,7 +292,7 @@ def main() -> None:
 
     hook_type = payload.get("hook_event_name", "unknown")
 
-    out_dir = Path.home() / ".ccode" / "hook-events"
+    out_dir = Path.home() / ".ccode" / "states" / "hooks"
     out_dir.mkdir(parents=True, exist_ok=True)
 
     entry = {
@@ -323,7 +323,8 @@ mod tests {
         assert!(path.is_some());
         let p = path.unwrap();
         assert!(p.to_string_lossy().contains("test-session-123.jsonl"));
-        assert!(p.to_string_lossy().contains("hook-events"));
+        assert!(p.to_string_lossy().contains("states"));
+        assert!(p.to_string_lossy().contains("hooks"));
     }
 
     #[test]

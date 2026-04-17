@@ -1,13 +1,13 @@
 import React, { useState, useEffect } from "react";
 import { motion } from "framer-motion";
-import { 
+import {
   Wrench,
   Save,
   Trash2,
   HardDrive,
-  AlertCircle,
-  Loader2
+  AlertCircle
 } from "lucide-react";
+import { BreathingDots } from "@/components/ui/spinner";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
@@ -235,7 +235,7 @@ export const CheckpointSettings: React.FC<CheckpointSettingsProps> = ({
           >
             {isSaving ? (
               <>
-                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                <BreathingDots className="h-4 w-4 mr-2" />
                 Saving...
               </>
             ) : (

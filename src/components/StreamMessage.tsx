@@ -8,6 +8,7 @@ import remarkGfm from "remark-gfm";
 import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
 import { getClaudeSyntaxTheme } from "@/lib/claudeSyntaxTheme";
 import { useTheme } from "@/hooks";
+import { useDebugMode } from "@/hooks/useDebugMode";
 import type { ClaudeStreamMessage } from "./AgentExecution";
 import {
   TodoWidget,
@@ -59,8 +60,15 @@ function useToolResults(streamMessages: ClaudeStreamMessage[]): Map<string, any>
   useEffect(() => {
     const results = new Map<string, any>();
     streamMessages.forEach(msg => {
-      if (msg.type === "user" && Array.isArray(msg.message?.content)) {
-        msg.message.content.forEach((block: any) => {
+      if (msg.type === "user") {
+        // Content may be on msg.message.content or directly on msg.content
+        const content = Array.isArray(msg.message?.content)
+          ? msg.message!.content
+          : Array.isArray((msg as any).content)
+            ? (msg as any).content
+            : null;
+        if (!content) return;
+        content.forEach((block: any) => {
           if (block.type === "tool_result" && block.tool_use_id) {
             results.set(block.tool_use_id, block);
           }
@@ -76,10 +84,14 @@ function useToolResults(streamMessages: ClaudeStreamMessage[]): Map<string, any>
 function findToolUseById(streamMessages: ClaudeStreamMessage[], toolUseId: string): any | null {
   for (let i = streamMessages.length - 1; i >= 0; i--) {
     const msg = streamMessages[i];
-    if (msg.type === "assistant" && Array.isArray(msg.message?.content)) {
-      const found = msg.message.content.find(
-        (c: any) => c.type === "tool_use" && c.id === toolUseId
-      );
+    if (msg.type === "assistant") {
+      const content = Array.isArray(msg.message?.content)
+        ? msg.message!.content
+        : Array.isArray((msg as any).content)
+          ? (msg as any).content
+          : null;
+      if (!content) continue;
+      const found = content.find((c: any) => c.type === "tool_use" && c.id === toolUseId);
       if (found) return found;
     }
   }
@@ -432,7 +444,9 @@ const AssistantMessage: React.FC<AssistantMessageProps> = ({
     <Card className={cn("border", className)} style={getCardStyle()}>
       <CardContent className="p-4">
         <div className="flex items-start gap-3">
-          <Bot className="h-5 w-5 mt-0.5 text-accent" />
+          <span className="flex h-6 w-6 mt-0.5 shrink-0 items-center justify-center rounded-full bg-accent/20">
+            <Bot className="h-3.5 w-3.5 text-accent" />
+          </span>
           <div className="flex-1 space-y-2 min-w-0">
             {renderableBlocks.map((block: any, idx: number) => {
               if (block.type === "text") {
@@ -499,8 +513,8 @@ const ContextCompactedMessage: React.FC<{ text: string; className?: string }> = 
   const [expanded, setExpanded] = useState(false);
   const summaryStart = text.indexOf("Summary:");
   const body = summaryStart >= 0 ? text.slice(summaryStart + 8).trim() : text;
-  const truncated = body.length > 400;
-  const preview = truncated ? body.slice(0, 400) : body;
+  const truncated = true; // always collapsed by default; user expands on demand
+  const preview = body.slice(0, 300);
 
   return (
     <div className={cn("rounded-lg border border-amber-500/30 bg-amber-500/5 p-3 text-xs", className)}>
@@ -729,73 +743,124 @@ const StreamMessageComponent: React.FC<StreamMessageProps> = ({
   const toolResults = useToolResults(streamMessages);
   const { theme } = useTheme();
   const syntaxTheme = getClaudeSyntaxTheme(theme);
+  const { debugMode } = useDebugMode();
 
   const getToolResult = (toolId: string | undefined): any =>
     toolId ? toolResults.get(toolId) ?? null : null;
 
+  const withDebug = (content: React.ReactElement | null, label: string): React.ReactElement | null => {
+    if (!content || !debugMode) return content;
+    return (
+      <>
+        {content}
+        <div className="flex items-center gap-2 mt-0.5 px-1">
+          <span className="text-[9px] font-mono text-muted-foreground/40 select-none">{label}</span>
+          <button
+            className="text-[9px] font-mono text-muted-foreground/40 hover:text-muted-foreground transition-colors select-none"
+            onClick={() => navigator.clipboard.writeText(JSON.stringify(message, null, 2))}
+          >
+            [copy src]
+          </button>
+        </div>
+      </>
+    );
+  };
+
   try {
+    if (debugMode) console.debug('[opcode:StreamMessage]', message);
+
     if (message.isMeta && !message.leafUuid && !message.summary) return null;
 
     if (message.leafUuid && message.summary && (message as any).type === "summary") {
-      return <SummaryWidget summary={message.summary} leafUuid={message.leafUuid} />;
+      return withDebug(
+        <SummaryWidget summary={message.summary} leafUuid={message.leafUuid} />,
+        "Summary"
+      );
     }
 
     if (message.type === "system" && message.subtype === "init") {
-      return (
+      return withDebug(
         <SystemInitializedWidget
           sessionId={message.session_id}
           model={message.model}
           cwd={message.cwd}
           tools={message.tools}
-        />
+        />,
+        "SystemInit"
       );
     }
 
     if (message.type === "assistant" && message.message) {
-      return (
+      const _msg = message.message;
+      const _blocks: any[] = Array.isArray(_msg.content) ? _msg.content : [];
+      const _toolBlocks = _blocks.filter((b: any) => b.type === 'tool_use');
+      const _stopReason = _msg.stop_reason ?? '?';
+      let _debugLabel: string;
+      if (_toolBlocks.length > 0) {
+        _debugLabel = `ToolCall[${_toolBlocks.map((b: any) => b.name).join('+')}]`;
+      } else if (variant === 'final') {
+        _debugLabel = 'FinalResponse';
+      } else {
+        _debugLabel = `AssistantText[${_stopReason}]`;
+      }
+      return withDebug(
         <AssistantMessage
           message={message}
           className={className}
           getToolResult={getToolResult}
           syntaxTheme={syntaxTheme}
           variant={variant}
-        />
+        />,
+        _debugLabel
       );
     }
 
     if (message.type === "user") {
-      return (
+      return withDebug(
         <UserMessage
           message={message}
           className={className}
           streamMessages={streamMessages}
           onLinkDetected={onLinkDetected}
-        />
+        />,
+        "UserMessage"
       );
     }
 
     if (message.type === "result") {
-      return (
+      return withDebug(
         <ResultMessage
           message={message}
           className={className}
           syntaxTheme={syntaxTheme}
-        />
+        />,
+        "ResultMessage"
       );
     }
 
     if ((message as any).type === "pr-link") {
-      return <PrLinkMessage message={message} className={className} />;
+      return withDebug(
+        <PrLinkMessage message={message} className={className} />,
+        "PrLink"
+      );
     }
 
     if ((message as any).type === "attachment") {
       const att = (message as any).attachment;
       if (att?.type === "plan_mode") {
-        return <PlanModeMessage entering={true} className={className} />;
+        return withDebug(
+          <PlanModeMessage entering={true} className={className} />,
+          "PlanMode"
+        );
       }
       if (att?.type === "plan_mode_exit") {
-        return <PlanModeMessage entering={false} className={className} />;
+        return withDebug(
+          <PlanModeMessage entering={false} className={className} />,
+          "PlanMode"
+        );
       }
+      // Unrecognised attachment subtype — nothing to render
+      return null;
     }
 
     // High-frequency internal types that produce no user-visible content — silently ignored.
@@ -809,7 +874,7 @@ const StreamMessageComponent: React.FC<StreamMessageProps> = ({
     // Fallback: truly unknown type — show a collapsed raw JSON block.
     // Excludes system/* subtypes (init is already handled; others are internal markers).
     if (msgType && msgType !== 'system') {
-      return (
+      return withDebug(
         <details className="text-xs text-muted-foreground border border-border/30 rounded p-2 my-1">
           <summary className="cursor-pointer select-none">
             Unknown message type: <code className="font-mono">{msgType}</code>
@@ -818,7 +883,8 @@ const StreamMessageComponent: React.FC<StreamMessageProps> = ({
           <pre className="mt-2 overflow-auto max-h-40 text-xs font-mono whitespace-pre-wrap">
             {JSON.stringify(message, null, 2)}
           </pre>
-        </details>
+        </details>,
+        "UnknownType"
       );
     }
 

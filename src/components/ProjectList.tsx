@@ -266,7 +266,7 @@ const ConsolidatedProjectRow: React.FC<ConsolidatedProjectRowProps> = ({
   };
 
   const primaryProject = projects[0];
-  const branches = projects.map(p => p.git_branch).filter(Boolean) as string[];
+  const branches = [...new Set(projects.map(p => p.git_branch).filter(Boolean) as string[])];
 
   const openFolder = async (e: React.MouseEvent) => {
     e.stopPropagation();

@@ -7,7 +7,6 @@ import { TooltipSimple } from "@/components/ui/tooltip-modern";
 interface SessionStatusBarProps {
   sessionId: string | null;
   className?: string;
-  inputTokens?: number;
   sessionStatus?: {
     session_id?: string;
     cwd?: string;
@@ -65,21 +64,34 @@ function getRateLimitColor(pct: number): string {
   return "text-green-400";
 }
 
+function formatResetCountdown(resetsAtUnix: number): string {
+  const nowSec = Date.now() / 1000;
+  const diffSec = resetsAtUnix - nowSec;
+  if (diffSec <= 0) return "now";
+  const h = Math.floor(diffSec / 3600);
+  const m = Math.floor((diffSec % 3600) / 60);
+  if (h > 0 && m > 0) return `${h}h${m}m`;
+  if (h > 0) return `${h}h`;
+  return `${m}m`;
+}
+
 function isCguardActive(settings: any): boolean {
   const hooks = settings?.hooks?.PreToolUse;
   if (!Array.isArray(hooks)) return false;
   return hooks.some((h: any) =>
     typeof h === "string"
-      ? h.includes("hook-dispatcher")
-      : h?.command?.includes("hook-dispatcher") ||
-        h?.hooks?.some?.((inner: any) => inner?.command?.includes("hook-dispatcher"))
+      ? h.includes("c-guard.sh") || h.includes("c-guard.py")
+      : h?.command?.includes("c-guard.sh") ||
+        h?.command?.includes("c-guard.py") ||
+        h?.hooks?.some?.((inner: any) =>
+          inner?.command?.includes("c-guard.sh") || inner?.command?.includes("c-guard.py")
+        )
   );
 }
 
 export const SessionStatusBar: React.FC<SessionStatusBarProps> = ({
   sessionId,
   className,
-  inputTokens,
   sessionStatus,
 }) => {
   const [statusData, setStatusData] = useState<Record<string, any> | null>(null);
@@ -113,7 +125,7 @@ export const SessionStatusBar: React.FC<SessionStatusBarProps> = ({
     };
   }, [sessionId]);
 
-  const effectiveStatusData = sessionStatus || statusData;
+  const effectiveStatusData = statusData || sessionStatus;
   if (!effectiveStatusData) return null;
 
   const model = effectiveStatusData.model;
@@ -136,6 +148,8 @@ export const SessionStatusBar: React.FC<SessionStatusBarProps> = ({
   const ctxPct: number = Math.round(ctx?.used_percentage ?? 0);
   const fiveHrPct: number | null = rateLimits?.five_hour?.used_percentage != null ? Math.round(rateLimits.five_hour.used_percentage) : null;
   const sevenDayPct: number | null = rateLimits?.seven_day?.used_percentage != null ? Math.round(rateLimits.seven_day.used_percentage) : null;
+  const fiveHrReset: number | null = rateLimits?.five_hour?.resets_at ?? null;
+  const sevenDayReset: number | null = rateLimits?.seven_day?.resets_at ?? null;
   const hasRateLimits = fiveHrPct !== null || sevenDayPct !== null;
 
   return (
@@ -170,45 +184,32 @@ export const SessionStatusBar: React.FC<SessionStatusBarProps> = ({
 
       <span className="text-border shrink-0">·</span>
 
-      {/* Context progress bar — scaled to 83% threshold = visual 100% */}
-      {(ctxPct > 0 || inputTokens) && (() => {
-        const CONTEXT_MAX = 200_000;
+      {/* Context progress bar — scaled so 83% actual = 100% visual width */}
+      {ctxPct > 0 && (() => {
         const COMPACT_THRESHOLD = 0.83;
-        const rawPct = inputTokens
-          ? (inputTokens / CONTEXT_MAX) * 100
-          : ctxPct;
-        const visualPct = Math.min(100, (rawPct / (COMPACT_THRESHOLD * 100)) * 100);
-        const overThreshold = rawPct >= COMPACT_THRESHOLD * 100;
-        const barColor = overThreshold
-          ? "bg-red-400"
-          : visualPct >= 70
-          ? "bg-amber-400"
-          : "bg-green-400";
-        const textColor = overThreshold
-          ? "text-red-400"
-          : visualPct >= 70
-          ? "text-amber-400"
-          : "text-green-400";
-        const label = inputTokens
-          ? `${Math.round(rawPct)}%`
-          : `${ctxPct}%`;
-        const tooltipText = inputTokens
-          ? `${inputTokens.toLocaleString()} / 200,000 tokens (auto-compact at 83%)`
-          : `Context: ${ctxPct}% used (auto-compact at 83%)`;
+        const visualPct = (ctxPct / (COMPACT_THRESHOLD * 100)) * 100;
+        const barColor = visualPct >= 100 ? "bg-red-400" : visualPct >= 70 ? "bg-amber-400" : "bg-green-400";
+        const textColor = visualPct >= 100 ? "text-red-400" : visualPct >= 70 ? "text-amber-400" : "text-green-400";
+        const label = `${Math.round(visualPct)}%`;
+        const tooltipText = `Context: ${ctxPct}% used — 100% triggers auto-compact`;
         return (
           <TooltipSimple content={tooltipText} side="top">
             <span className="flex items-center gap-1.5 shrink-0 cursor-default">
               <span className="text-muted-foreground/60">ctx</span>
-              <span className="relative h-1.5 w-20 rounded-full bg-muted overflow-hidden">
+              {/* Extra right margin absorbs bar overflow so the label never overlaps */}
+              <span className="relative h-1.5 w-20 mr-4 rounded-full bg-muted overflow-visible">
                 <span
                   className={cn(
                     "absolute inset-y-0 left-0 rounded-full transition-all duration-1000",
                     barColor
                   )}
-                  style={{ width: `${visualPct}%` }}
+                  style={{ width: `${Math.min(visualPct, 100)}%` }}
                 />
-                {/* Tick mark at 75% visual (≈ 62% actual) as a subtle warning reference */}
-                <span className="absolute inset-y-0 w-px bg-foreground/10" style={{ left: "75%" }} />
+                {/* Compact threshold marker — 83% actual = 100% visual */}
+                <span
+                  className="absolute top-1/2 -translate-y-1/2 w-px h-3 bg-foreground/40 rounded-full"
+                  style={{ left: "100%" }}
+                />
               </span>
               <span className={textColor}>{label}</span>
             </span>
@@ -224,16 +225,32 @@ export const SessionStatusBar: React.FC<SessionStatusBarProps> = ({
         <>
           <span className="flex items-center gap-3 shrink-0">
             {fiveHrPct !== null && (
-              <span>
-                <span className="text-muted-foreground/60">5h </span>
-                <span className={getRateLimitColor(fiveHrPct)}>{fiveHrPct}%</span>
-              </span>
+              <TooltipSimple
+                content={fiveHrReset ? `Resets in ${formatResetCountdown(fiveHrReset)}` : "5-hour rolling limit"}
+                side="top"
+              >
+                <span className="cursor-default">
+                  <span className="text-muted-foreground/60">5h </span>
+                  <span className={getRateLimitColor(fiveHrPct)}>{fiveHrPct}%</span>
+                  {fiveHrReset && (
+                    <span className="text-muted-foreground/40 ml-1">↺{formatResetCountdown(fiveHrReset)}</span>
+                  )}
+                </span>
+              </TooltipSimple>
             )}
             {sevenDayPct !== null && (
-              <span>
-                <span className="text-muted-foreground/60">7d </span>
-                <span className={getRateLimitColor(sevenDayPct)}>{sevenDayPct}%</span>
-              </span>
+              <TooltipSimple
+                content={sevenDayReset ? `Resets in ${formatResetCountdown(sevenDayReset)}` : "7-day rolling limit"}
+                side="top"
+              >
+                <span className="cursor-default">
+                  <span className="text-muted-foreground/60">7d </span>
+                  <span className={getRateLimitColor(sevenDayPct)}>{sevenDayPct}%</span>
+                  {sevenDayReset && (
+                    <span className="text-muted-foreground/40 ml-1">↺{formatResetCountdown(sevenDayReset)}</span>
+                  )}
+                </span>
+              </TooltipSimple>
             )}
           </span>
           <span className="text-border shrink-0">·</span>

@@ -5,7 +5,6 @@ import {
   Trash2,
   Save,
   AlertCircle,
-  Loader2,
   Check,
   RefreshCw,
   Code,
@@ -25,7 +24,11 @@ import {
   ChevronDown,
   ChevronRight,
   BookOpen,
+  Bot,
+  FileText,
+  FolderSearch,
 } from "lucide-react";
+import { BreathingDots } from "@/components/ui/spinner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -49,7 +52,12 @@ import { ClaudeVersionSelector } from "./ClaudeVersionSelector";
 import { HooksEditor } from "./HooksEditor";
 import { SlashCommandsManager } from "./SlashCommandsManager";
 import { ProxySettings } from "./ProxySettings";
+import { MCPManager } from "./MCPManager";
+import { Agents } from "./Agents";
+import { MarkdownEditor } from "./MarkdownEditor";
+import { ClaudeExplorer } from "./ClaudeExplorer";
 import { useTheme } from "@/hooks";
+import { useDebugMode } from "@/hooks/useDebugMode";
 import { TabPersistenceService } from "@/services/tabPersistence";
 import { ccodeSettings } from "@/lib/ccodeSettings";
 import { startupCache } from "@/lib/startupCache";
@@ -93,6 +101,10 @@ const CLAUDE_NAV_ITEMS = [
   { id: 'cguard', label: 'c-guard', icon: ShieldCheck },
   { id: 'skills', label: 'Skills', icon: Package },
   { id: 'plugins', label: 'Plugins', icon: Package2 },
+  { id: 'mcp', label: 'MCP Servers', icon: Network },
+  { id: 'agents', label: 'Agents', icon: Bot },
+  { id: 'claude-md', label: 'CLAUDE.md', icon: FileText },
+  { id: 'claude-explorer', label: '.claude Explorer', icon: FolderSearch },
 ] as const;
 
 type SectionId = typeof CCODE_NAV_ITEMS[number]['id'] | typeof CLAUDE_NAV_ITEMS[number]['id'];
@@ -112,6 +124,108 @@ ALLOW cargo *
 DENY rm -rf /
 DENY format *
 `;
+
+// ─── Color picker helpers ─────────────────────────────────────────────────────
+
+function toHexColor(color: string): string {
+  const rgba = color.match(/rgba?\((\d+),\s*(\d+),\s*(\d+)/);
+  if (rgba) {
+    return '#' + [rgba[1], rgba[2], rgba[3]]
+      .map(n => parseInt(n).toString(16).padStart(2, '0'))
+      .join('');
+  }
+  if (/^#[0-9a-f]{3,8}$/i.test(color)) return color.slice(0, 7).padEnd(7, '0');
+  return '#808080';
+}
+
+function applyHexPreservingAlpha(current: string, hex: string): string {
+  const r = parseInt(hex.slice(1, 3), 16);
+  const g = parseInt(hex.slice(3, 5), 16);
+  const b = parseInt(hex.slice(5, 7), 16);
+  const alphaMatch = current.match(/rgba?\([^)]+,\s*([\d.]+)\)/);
+  if (alphaMatch) return `rgba(${r}, ${g}, ${b}, ${alphaMatch[1]})`;
+  return hex;
+}
+
+interface ColorFieldProps {
+  id: string;
+  label: string;
+  value: string;
+  onChange: (value: string) => void;
+  placeholder?: string;
+}
+
+const ColorField: React.FC<ColorFieldProps> = ({ id, label, value, onChange, placeholder }) => (
+  <div className="space-y-2">
+    <Label htmlFor={id} className="text-caption">{label}</Label>
+    <div className="flex gap-2">
+      <Input
+        id={id}
+        type="text"
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        placeholder={placeholder}
+        className="font-mono text-xs flex-1"
+      />
+      <div className="relative w-10 h-10 rounded border flex-shrink-0 overflow-hidden cursor-pointer">
+        <div className="absolute inset-0" style={{ backgroundColor: value }} />
+        <input
+          type="color"
+          value={toHexColor(value)}
+          onChange={(e) => onChange(applyHexPreservingAlpha(value, e.target.value))}
+          className="absolute inset-0 opacity-0 cursor-pointer w-full h-full"
+          title={value}
+        />
+      </div>
+    </div>
+  </div>
+);
+
+const ChatPreview: React.FC = () => (
+  <div className="rounded-lg border border-border/40 overflow-hidden text-xs">
+    <div className="px-3 py-1.5 border-b border-border/40 text-muted-foreground/60 font-medium">Preview</div>
+    <div className="p-4 space-y-3 bg-background">
+      {/* User message */}
+      <div className="flex justify-end items-end gap-2">
+        <div className="px-3 py-2 rounded-xl rounded-br-sm border max-w-[70%]"
+          style={{ borderColor: 'var(--chat-user-border)', backgroundColor: 'var(--chat-user-bg)' }}>
+          How do I fix this bug in my code?
+        </div>
+        <div className="h-5 w-5 rounded-full bg-muted border border-border flex items-center justify-center shrink-0 text-[9px] text-muted-foreground">U</div>
+      </div>
+
+      {/* Work block */}
+      <div className="pl-3 border-l-2 space-y-1.5 ml-2" style={{ borderColor: 'var(--chat-work-border)' }}>
+        <div className="text-muted-foreground/50">2 steps</div>
+        <div className="rounded border px-2 py-1.5" style={{ borderColor: 'var(--chat-agent-border)', backgroundColor: 'var(--chat-agent-bg)' }}>
+          <span className="text-muted-foreground/60">Reading file: </span><span className="font-mono">main.ts</span>
+        </div>
+        <div className="rounded border px-2 py-1.5" style={{ borderColor: 'var(--chat-agent-border)', backgroundColor: 'var(--chat-agent-bg)' }}>
+          <span className="font-mono text-green-400">$ </span><span className="font-mono">npm test</span>
+        </div>
+      </div>
+
+      {/* Final response */}
+      <div className="rounded-lg border p-3 space-y-1" style={{ borderColor: 'var(--chat-final-border)', backgroundColor: 'var(--chat-final-bg)' }}>
+        <div className="flex items-center gap-1.5">
+          <div className="h-4 w-4 rounded-full flex items-center justify-center text-[9px]" style={{ backgroundColor: 'var(--chat-final-border)' }}>A</div>
+          <span className="font-medium">Answer</span>
+        </div>
+        <div className="text-muted-foreground">The issue is on line 42 — you're calling <code className="font-mono bg-muted px-1 rounded">map()</code> on a nullable value.</div>
+      </div>
+
+      {/* Result ok */}
+      <div className="rounded border px-2 py-1.5 flex items-center gap-1.5" style={{ borderColor: 'var(--chat-result-ok-border)', backgroundColor: 'var(--chat-result-ok-bg)' }}>
+        <span className="text-green-400">✓</span> Session complete · 3 steps
+      </div>
+
+      {/* Result error */}
+      <div className="rounded border px-2 py-1.5 flex items-center gap-1.5" style={{ borderColor: 'var(--chat-result-err-border)', backgroundColor: 'var(--chat-result-err-bg)' }}>
+        <span className="text-red-400">✗</span> Error: command failed with exit code 1
+      </div>
+    </div>
+  </div>
+);
 
 /**
  * Comprehensive Settings UI for managing Claude Code settings
@@ -143,7 +257,10 @@ export const Settings: React.FC<SettingsProps> = ({
   
   // Theme hook
   const { theme, setTheme, customColors, setCustomColors } = useTheme();
-  
+
+  // Debug mode hook
+  const { debugMode, setDebugMode } = useDebugMode();
+
   // Proxy state
   const [proxySettingsChanged, setProxySettingsChanged] = useState(false);
   const saveProxySettings = React.useRef<(() => Promise<void>) | null>(null);
@@ -177,6 +294,14 @@ export const Settings: React.FC<SettingsProps> = ({
   const [commandsConfContent, setCommandsConfContent] = useState("");
   const [commandsConfExists, setCommandsConfExists] = useState(false);
   const [commandsConfLoading, setCommandsConfLoading] = useState(false);
+
+  // Collapsible custom color sections
+  const [colorSectionOpen, setColorSectionOpen] = useState<Record<string, boolean>>({
+    surface: true,
+    text: true,
+    interactive: true,
+    chat: true,
+  });
   const [commandsConfVerifyOutput, setCommandsConfVerifyOutput] = useState("");
   const [cguardInstalled, setCguardInstalled] = useState<{ script_exists: boolean; hook_wired: boolean; installed: boolean } | null>(null);
   const [cguardAuditInput, setCguardAuditInput] = useState("");
@@ -305,6 +430,18 @@ export const Settings: React.FC<SettingsProps> = ({
     }
   }, [activeSection]);
 
+  useEffect(() => {
+    if (activeSection === 'skills') {
+      loadSkills();
+    }
+  }, [activeSection]);
+
+  useEffect(() => {
+    if (activeSection === 'commands') {
+      loadCommandsConf();
+    }
+  }, [activeSection]);
+
   const handleFontSansChange = async (value: string) => {
     setFontSans(value);
     if (value) {
@@ -380,7 +517,7 @@ export const Settings: React.FC<SettingsProps> = ({
       const isCguardEnabled = Array.isArray(preToolUseHooks) &&
         preToolUseHooks.some((hook: any) =>
           typeof hook === 'object' && hook.hook_dispatcher &&
-          hook.hook_dispatcher.includes('hook-dispatcher')
+          (hook.hook_dispatcher.includes('c-guard.sh') || hook.hook_dispatcher.includes('c-guard.py'))
         );
       setCguardEnabled(isCguardEnabled);
     } catch (err) {
@@ -784,7 +921,7 @@ export const Settings: React.FC<SettingsProps> = ({
           </nav>
           <div className="p-3 border-t border-border/50 flex-shrink-0">
             <Button onClick={saveSettings} disabled={saving} className="w-full" size="sm">
-              {saving ? <Loader2 className="h-3 w-3 animate-spin mr-1" /> : <Save className="h-3 w-3 mr-1" />}
+              {saving ? <BreathingDots className="h-3 w-3 mr-1" /> : <Save className="h-3 w-3 mr-1" />}
               Save
             </Button>
           </div>
@@ -811,7 +948,7 @@ export const Settings: React.FC<SettingsProps> = ({
           {/* Content */}
           {loading ? (
             <div className="flex-1 flex items-center justify-center">
-              <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+              <BreathingDots className="h-8 w-8 text-muted-foreground" />
             </div>
           ) : (
             <div className="flex-1 overflow-y-auto">
@@ -1105,7 +1242,7 @@ export const Settings: React.FC<SettingsProps> = ({
                       }
                     }}
                   >
-                    {doctorLoading ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
+                    {doctorLoading ? <BreathingDots className="h-4 w-4 mr-2" /> : null}
                     Run Health Check
                   </Button>
                 </div>
@@ -1242,205 +1379,94 @@ export const Settings: React.FC<SettingsProps> = ({
               </Card>
 
               {theme === 'custom' && (
-              <Card className="p-6 space-y-6">
-                <div>
-                  <h3 className="text-heading-4 mb-4">Custom Colors</h3>
+              <Card className="p-6 space-y-4">
+                <h3 className="text-heading-4">Custom Colors</h3>
 
-                  <div className="space-y-6">
-                    <div>
-                      <h4 className="text-label mb-4">Surface</h4>
-                      <div className="grid grid-cols-2 gap-4">
-                        <div className="space-y-2">
-                          <Label htmlFor="color-background" className="text-caption">Background</Label>
-                          <div className="flex gap-2">
-                            <Input
-                              id="color-background"
-                              type="text"
-                              value={customColors.background}
-                              onChange={(e) => setCustomColors({ background: e.target.value })}
-                              placeholder="oklch(0.12 0.01 240)"
-                              className="font-mono text-xs flex-1"
-                            />
-                            <div
-                              className="w-10 h-10 rounded border flex-shrink-0"
-                              style={{ backgroundColor: customColors.background }}
-                            />
-                          </div>
-                        </div>
-
-                        <div className="space-y-2">
-                          <Label htmlFor="color-card" className="text-caption">Card</Label>
-                          <div className="flex gap-2">
-                            <Input
-                              id="color-card"
-                              type="text"
-                              value={customColors.card}
-                              onChange={(e) => setCustomColors({ card: e.target.value })}
-                              placeholder="oklch(0.14 0.01 240)"
-                              className="font-mono text-xs flex-1"
-                            />
-                            <div
-                              className="w-10 h-10 rounded border flex-shrink-0"
-                              style={{ backgroundColor: customColors.card }}
-                            />
-                          </div>
-                        </div>
-
-                        <div className="space-y-2">
-                          <Label htmlFor="color-muted" className="text-caption">Muted</Label>
-                          <div className="flex gap-2">
-                            <Input
-                              id="color-muted"
-                              type="text"
-                              value={customColors.muted}
-                              onChange={(e) => setCustomColors({ muted: e.target.value })}
-                              placeholder="oklch(0.11 0.01 240)"
-                              className="font-mono text-xs flex-1"
-                            />
-                            <div
-                              className="w-10 h-10 rounded border flex-shrink-0"
-                              style={{ backgroundColor: customColors.muted }}
-                            />
-                          </div>
-                        </div>
-
-                        <div className="space-y-2">
-                          <Label htmlFor="color-accent" className="text-caption">Accent</Label>
-                          <div className="flex gap-2">
-                            <Input
-                              id="color-accent"
-                              type="text"
-                              value={customColors.accent}
-                              onChange={(e) => setCustomColors({ accent: e.target.value })}
-                              placeholder="oklch(0.16 0.01 240)"
-                              className="font-mono text-xs flex-1"
-                            />
-                            <div
-                              className="w-10 h-10 rounded border flex-shrink-0"
-                              style={{ backgroundColor: customColors.accent }}
-                            />
-                          </div>
-                        </div>
-
-                        <div className="space-y-2">
-                          <Label htmlFor="color-border" className="text-caption">Border</Label>
-                          <div className="flex gap-2">
-                            <Input
-                              id="color-border"
-                              type="text"
-                              value={customColors.border}
-                              onChange={(e) => setCustomColors({ border: e.target.value })}
-                              placeholder="oklch(0.18 0.01 240)"
-                              className="font-mono text-xs flex-1"
-                            />
-                            <div
-                              className="w-10 h-10 rounded border flex-shrink-0"
-                              style={{ backgroundColor: customColors.border }}
-                            />
-                          </div>
-                        </div>
+                <div className="space-y-3">
+                  {/* Surface section */}
+                  <div className="border border-border rounded-md overflow-hidden">
+                    <button
+                      className="w-full flex items-center justify-between px-4 py-2.5 text-sm font-medium bg-muted/40 hover:bg-muted/60 transition-colors"
+                      onClick={() => setColorSectionOpen(s => ({ ...s, surface: !s.surface }))}
+                    >
+                      <span>Surface</span>
+                      {colorSectionOpen.surface ? <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" /> : <ChevronRight className="h-3.5 w-3.5 text-muted-foreground" />}
+                    </button>
+                    {colorSectionOpen.surface && (
+                      <div className="p-4 grid grid-cols-2 gap-4">
+                        <ColorField id="color-background" label="Background" value={customColors.background} onChange={(v) => setCustomColors({ background: v })} placeholder="rgba(22,24,30,1)" />
+                        <ColorField id="color-card" label="Card" value={customColors.card} onChange={(v) => setCustomColors({ card: v })} placeholder="rgba(30,32,40,1)" />
+                        <ColorField id="color-muted" label="Muted" value={customColors.muted} onChange={(v) => setCustomColors({ muted: v })} placeholder="rgba(34,36,45,1)" />
+                        <ColorField id="color-accent" label="Accent" value={customColors.accent} onChange={(v) => setCustomColors({ accent: v })} placeholder="rgba(38,41,50,1)" />
+                        <ColorField id="color-border" label="Border" value={customColors.border} onChange={(v) => setCustomColors({ border: v })} placeholder="rgba(44,47,57,1)" />
                       </div>
-                    </div>
+                    )}
+                  </div>
 
-                    <div>
-                      <h4 className="text-label mb-4">Text</h4>
-                      <div className="grid grid-cols-2 gap-4">
-                        <div className="space-y-2">
-                          <Label htmlFor="color-foreground" className="text-caption">Foreground</Label>
-                          <div className="flex gap-2">
-                            <Input
-                              id="color-foreground"
-                              type="text"
-                              value={customColors.foreground}
-                              onChange={(e) => setCustomColors({ foreground: e.target.value })}
-                              placeholder="oklch(0.98 0.01 240)"
-                              className="font-mono text-xs flex-1"
-                            />
-                            <div
-                              className="w-10 h-10 rounded border flex-shrink-0"
-                              style={{ backgroundColor: customColors.foreground }}
-                            />
-                          </div>
-                        </div>
-
-                        <div className="space-y-2">
-                          <Label htmlFor="color-mutedForeground" className="text-caption">Muted Foreground</Label>
-                          <div className="flex gap-2">
-                            <Input
-                              id="color-mutedForeground"
-                              type="text"
-                              value={customColors.mutedForeground}
-                              onChange={(e) => setCustomColors({ mutedForeground: e.target.value })}
-                              placeholder="oklch(0.7 0.01 240)"
-                              className="font-mono text-xs flex-1"
-                            />
-                            <div
-                              className="w-10 h-10 rounded border flex-shrink-0"
-                              style={{ backgroundColor: customColors.mutedForeground }}
-                            />
-                          </div>
-                        </div>
+                  {/* Text section */}
+                  <div className="border border-border rounded-md overflow-hidden">
+                    <button
+                      className="w-full flex items-center justify-between px-4 py-2.5 text-sm font-medium bg-muted/40 hover:bg-muted/60 transition-colors"
+                      onClick={() => setColorSectionOpen(s => ({ ...s, text: !s.text }))}
+                    >
+                      <span>Text</span>
+                      {colorSectionOpen.text ? <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" /> : <ChevronRight className="h-3.5 w-3.5 text-muted-foreground" />}
+                    </button>
+                    {colorSectionOpen.text && (
+                      <div className="p-4 grid grid-cols-2 gap-4">
+                        <ColorField id="color-foreground" label="Foreground" value={customColors.foreground} onChange={(v) => setCustomColors({ foreground: v })} placeholder="rgba(238,241,247,1)" />
+                        <ColorField id="color-mutedForeground" label="Muted Foreground" value={customColors.mutedForeground} onChange={(v) => setCustomColors({ mutedForeground: v })} placeholder="rgba(148,153,171,1)" />
                       </div>
-                    </div>
+                    )}
+                  </div>
 
-                    <div>
-                      <h4 className="text-label mb-4">Interactive</h4>
-                      <div className="grid grid-cols-2 gap-4">
-                        <div className="space-y-2">
-                          <Label htmlFor="color-primary" className="text-caption">Primary</Label>
-                          <div className="flex gap-2">
-                            <Input
-                              id="color-primary"
-                              type="text"
-                              value={customColors.primary}
-                              onChange={(e) => setCustomColors({ primary: e.target.value })}
-                              placeholder="oklch(0.98 0.01 240)"
-                              className="font-mono text-xs flex-1"
-                            />
-                            <div
-                              className="w-10 h-10 rounded border flex-shrink-0"
-                              style={{ backgroundColor: customColors.primary }}
-                            />
-                          </div>
-                        </div>
-
-                        <div className="space-y-2">
-                          <Label htmlFor="color-destructive" className="text-caption">Destructive</Label>
-                          <div className="flex gap-2">
-                            <Input
-                              id="color-destructive"
-                              type="text"
-                              value={customColors.destructive}
-                              onChange={(e) => setCustomColors({ destructive: e.target.value })}
-                              placeholder="oklch(0.6 0.2 25)"
-                              className="font-mono text-xs flex-1"
-                            />
-                            <div
-                              className="w-10 h-10 rounded border flex-shrink-0"
-                              style={{ backgroundColor: customColors.destructive }}
-                            />
-                          </div>
-                        </div>
-
-                        <div className="space-y-2">
-                          <Label htmlFor="color-ring" className="text-caption">Ring</Label>
-                          <div className="flex gap-2">
-                            <Input
-                              id="color-ring"
-                              type="text"
-                              value={customColors.ring}
-                              onChange={(e) => setCustomColors({ ring: e.target.value })}
-                              placeholder="oklch(0.62 0.2 29)"
-                              className="font-mono text-xs flex-1"
-                            />
-                            <div
-                              className="w-10 h-10 rounded border flex-shrink-0"
-                              style={{ backgroundColor: customColors.ring }}
-                            />
-                          </div>
-                        </div>
+                  {/* Interactive section */}
+                  <div className="border border-border rounded-md overflow-hidden">
+                    <button
+                      className="w-full flex items-center justify-between px-4 py-2.5 text-sm font-medium bg-muted/40 hover:bg-muted/60 transition-colors"
+                      onClick={() => setColorSectionOpen(s => ({ ...s, interactive: !s.interactive }))}
+                    >
+                      <span>Interactive</span>
+                      {colorSectionOpen.interactive ? <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" /> : <ChevronRight className="h-3.5 w-3.5 text-muted-foreground" />}
+                    </button>
+                    {colorSectionOpen.interactive && (
+                      <div className="p-4 grid grid-cols-2 gap-4">
+                        <ColorField id="color-primary" label="Primary" value={customColors.primary} onChange={(v) => setCustomColors({ primary: v })} placeholder="rgba(238,241,247,1)" />
+                        <ColorField id="color-destructive" label="Destructive" value={customColors.destructive} onChange={(v) => setCustomColors({ destructive: v })} placeholder="rgba(212,80,52,1)" />
+                        <ColorField id="color-ring" label="Ring" value={customColors.ring} onChange={(v) => setCustomColors({ ring: v })} placeholder="rgba(108,112,130,1)" />
                       </div>
-                    </div>
+                    )}
+                  </div>
+
+                  {/* Chat Colors section */}
+                  <div className="border border-border rounded-md overflow-hidden">
+                    <button
+                      className="w-full flex items-center justify-between px-4 py-2.5 text-sm font-medium bg-muted/40 hover:bg-muted/60 transition-colors"
+                      onClick={() => setColorSectionOpen(s => ({ ...s, chat: !s.chat }))}
+                    >
+                      <span>Chat Colors</span>
+                      {colorSectionOpen.chat ? <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" /> : <ChevronRight className="h-3.5 w-3.5 text-muted-foreground" />}
+                    </button>
+                    {colorSectionOpen.chat && (
+                      <div className="p-4 space-y-4">
+                        <div className="grid grid-cols-2 gap-4">
+                          <ColorField id="chat-user-border" label="User bubble border" value={customColors.chatUserBorder} onChange={(v) => setCustomColors({ chatUserBorder: v })} placeholder="rgba(251,191,36,0.40)" />
+                          <ColorField id="chat-user-bg" label="User bubble background" value={customColors.chatUserBg} onChange={(v) => setCustomColors({ chatUserBg: v })} placeholder="rgba(251,191,36,0.07)" />
+                          <ColorField id="chat-work-border" label="Work block line" value={customColors.chatWorkBorder} onChange={(v) => setCustomColors({ chatWorkBorder: v })} placeholder="rgba(99,179,237,0.35)" />
+                          <ColorField id="chat-agent-border" label="Agent card border" value={customColors.chatAgentBorder} onChange={(v) => setCustomColors({ chatAgentBorder: v })} placeholder="rgba(255,255,255,0.07)" />
+                          <ColorField id="chat-agent-bg" label="Agent card background" value={customColors.chatAgentBg} onChange={(v) => setCustomColors({ chatAgentBg: v })} placeholder="rgba(255,255,255,0.02)" />
+                          <ColorField id="chat-final-border" label="Final response border" value={customColors.chatFinalBorder} onChange={(v) => setCustomColors({ chatFinalBorder: v })} placeholder="rgba(74,222,128,0.50)" />
+                          <ColorField id="chat-final-bg" label="Final response background" value={customColors.chatFinalBg} onChange={(v) => setCustomColors({ chatFinalBg: v })} placeholder="rgba(22,163,74,0.13)" />
+                          <ColorField id="chat-result-ok-border" label="Result ok border" value={customColors.chatResultOkBorder} onChange={(v) => setCustomColors({ chatResultOkBorder: v })} placeholder="rgba(74,222,128,0.40)" />
+                          <ColorField id="chat-result-ok-bg" label="Result ok background" value={customColors.chatResultOkBg} onChange={(v) => setCustomColors({ chatResultOkBg: v })} placeholder="rgba(22,163,74,0.09)" />
+                          <ColorField id="chat-result-err-border" label="Result error border" value={customColors.chatResultErrBorder} onChange={(v) => setCustomColors({ chatResultErrBorder: v })} placeholder="rgba(248,113,113,0.50)" />
+                          <ColorField id="chat-result-err-bg" label="Result error background" value={customColors.chatResultErrBg} onChange={(v) => setCustomColors({ chatResultErrBg: v })} placeholder="rgba(239,68,68,0.11)" />
+                          <ColorField id="chat-terminal-command" label="Terminal command" value={customColors.chatTerminalCommand} onChange={(v) => setCustomColors({ chatTerminalCommand: v })} placeholder="rgba(74,222,128,1)" />
+                          <ColorField id="chat-terminal-output" label="Terminal output" value={customColors.chatTerminalOutput} onChange={(v) => setCustomColors({ chatTerminalOutput: v })} placeholder="rgba(134,239,172,1)" />
+                        </div>
+                        <ChatPreview />
+                      </div>
+                    )}
                   </div>
                 </div>
               </Card>
@@ -1455,7 +1481,7 @@ export const Settings: React.FC<SettingsProps> = ({
                     <Label className="text-sm mb-1.5 block">UI Font</Label>
                     {fontsLoading ? (
                       <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                        <Loader2 className="h-3 w-3 animate-spin" /> Loading fonts...
+                        <BreathingDots className="h-3 w-3" /> Loading fonts...
                       </div>
                     ) : (
                       <Select value={fontSans || '__default__'} onValueChange={v => handleFontSansChange(v === '__default__' ? '' : v)}>
@@ -1476,7 +1502,7 @@ export const Settings: React.FC<SettingsProps> = ({
                     <Label className="text-sm mb-1.5 block">Monospace Font</Label>
                     {fontsLoading ? (
                       <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                        <Loader2 className="h-3 w-3 animate-spin" /> Loading fonts...
+                        <BreathingDots className="h-3 w-3" /> Loading fonts...
                       </div>
                     ) : (
                       <Select value={fontMono || '__default__'} onValueChange={v => handleFontMonoChange(v === '__default__' ? '' : v)}>
@@ -1724,7 +1750,24 @@ export const Settings: React.FC<SettingsProps> = ({
                       Additional configuration options for advanced users
                     </p>
                   </div>
-                  
+
+                  {/* Developer Debug Mode */}
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <Label htmlFor="debug-mode-toggle" className="text-label">
+                        Developer debug mode
+                      </Label>
+                      <p className="text-xs text-muted-foreground mt-1">
+                        Enables verbose console logging and raw message inspection in the chat view
+                      </p>
+                    </div>
+                    <Switch
+                      id="debug-mode-toggle"
+                      checked={debugMode}
+                      onCheckedChange={setDebugMode}
+                    />
+                  </div>
+
                   {/* API Key Helper */}
                   <div className="space-y-2">
                     <Label htmlFor="apiKeyHelper">API Key Helper Script</Label>
@@ -1777,7 +1820,7 @@ export const Settings: React.FC<SettingsProps> = ({
                       }
                     }}
                   >
-                    {autoModeLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
+                    {autoModeLoading ? <BreathingDots className="h-4 w-4" /> : <RefreshCw className="h-4 w-4" />}
                     <span className="ml-2">{autoModeConfig ? 'Refresh' : 'Load'}</span>
                   </Button>
                 </div>
@@ -1922,7 +1965,7 @@ export const Settings: React.FC<SettingsProps> = ({
 
                 {skillsLoading ? (
                   <div className="flex items-center justify-center py-8">
-                    <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+                    <BreathingDots className="h-6 w-6 text-muted-foreground" />
                   </div>
                 ) : skills.length === 0 ? (
                   <div className="flex flex-col items-center justify-center py-10 text-center gap-3">
@@ -1985,7 +2028,7 @@ export const Settings: React.FC<SettingsProps> = ({
                                 </pre>
                               ) : (
                                 <div className="flex items-center gap-2 text-xs text-muted-foreground py-2">
-                                  <Loader2 className="h-3 w-3 animate-spin" />
+                                  <BreathingDots className="h-3 w-3" />
                                   Loading...
                                 </div>
                               )}
@@ -2193,7 +2236,7 @@ export const Settings: React.FC<SettingsProps> = ({
 
                 {hooksLoading ? (
                   <div className="flex items-center justify-center py-8">
-                    <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+                    <BreathingDots className="h-6 w-6 text-muted-foreground" />
                   </div>
                 ) : !globalSettings.hooks || Object.keys(globalSettings.hooks).length === 0 ? (
                   <div className="py-8 text-center text-muted-foreground">
@@ -2242,7 +2285,7 @@ export const Settings: React.FC<SettingsProps> = ({
                     ) : (
                       <>
                         <span className="h-2 w-2 rounded-full bg-red-500" />
-                        <span className="text-muted-foreground">command-guard.py not found at ~/.claude/hooks/</span>
+                        <span className="text-muted-foreground">c-guard.py not found at ~/.ccode/hooks/c-guard/</span>
                       </>
                     )}
                   </div>
@@ -2254,13 +2297,13 @@ export const Settings: React.FC<SettingsProps> = ({
                 <div>
                   <h3 className="text-heading-4 mb-2">commands.conf Editor</h3>
                   <p className="text-body-small text-muted-foreground mb-4">
-                    Configure allowed and denied commands at ~/.claude/hooks/resources/commands.conf
+                    Configure allowed and denied commands at ~/.ccode/hooks/c-guard/commands.conf
                   </p>
                 </div>
 
                 {commandsConfLoading && !commandsConfContent ? (
                   <div className="flex items-center justify-center py-8">
-                    <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+                    <BreathingDots className="h-6 w-6 text-muted-foreground" />
                   </div>
                 ) : (
                   <>
@@ -2294,7 +2337,7 @@ export const Settings: React.FC<SettingsProps> = ({
                         >
                           {commandsConfLoading ? (
                             <>
-                              <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                              <BreathingDots className="h-4 w-4 mr-2" />
                               Saving...
                             </>
                           ) : (
@@ -2369,7 +2412,7 @@ export const Settings: React.FC<SettingsProps> = ({
                       >
                         {cguardAuditLoading ? (
                           <>
-                            <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                            <BreathingDots className="h-4 w-4 mr-2" />
                             Running...
                           </>
                         ) : (
@@ -2406,7 +2449,7 @@ export const Settings: React.FC<SettingsProps> = ({
                     >
                       {cguardUsageLoading ? (
                         <>
-                          <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                          <BreathingDots className="h-4 w-4 mr-2" />
                           Loading...
                         </>
                       ) : (
@@ -2425,6 +2468,30 @@ export const Settings: React.FC<SettingsProps> = ({
                   )}
                 </Card>
               </div>
+              </div>
+              )}
+
+              {activeSection === 'mcp' && (
+              <div className="h-full">
+                <MCPManager onBack={() => {}} />
+              </div>
+              )}
+
+              {activeSection === 'agents' && (
+              <div className="h-full">
+                <Agents />
+              </div>
+              )}
+
+              {activeSection === 'claude-md' && (
+              <div className="h-full">
+                <MarkdownEditor onBack={() => {}} />
+              </div>
+              )}
+
+              {activeSection === 'claude-explorer' && (
+              <div className="h-full">
+                <ClaudeExplorer />
               </div>
               )}
             </div>

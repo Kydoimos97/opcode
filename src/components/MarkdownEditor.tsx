@@ -2,7 +2,8 @@ import React, { useState, useEffect } from "react";
 import MDEditor from "@uiw/react-md-editor";
 import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
 import { motion } from "framer-motion";
-import { Save, Loader2 } from "lucide-react";
+import { Save } from "lucide-react";
+import { BreathingDots } from "@/components/ui/spinner";
 import { Button } from "@/components/ui/button";
 import { Toast, ToastContainer } from "@/components/ui/toast";
 import { api } from "@/lib/api";
@@ -98,7 +99,7 @@ export const MarkdownEditor: React.FC<MarkdownEditorProps> = ({
             >
               {saving ? (
                 <>
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  <BreathingDots className="mr-2 h-4 w-4" />
                   Saving...
                 </>
               ) : (
@@ -127,7 +128,7 @@ export const MarkdownEditor: React.FC<MarkdownEditorProps> = ({
         <div className="flex-1 overflow-hidden p-6">
           {loading ? (
             <div className="flex items-center justify-center h-64">
-              <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+              <BreathingDots className="h-8 w-8 text-muted-foreground" />
             </div>
           ) : (
             <div className="h-full rounded-lg border border-border overflow-hidden shadow-sm" data-color-mode="dark">

@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { api, type SessionLogEntry } from '@/lib/api';
 import { Button } from '@/components/ui/button';
-import { X, Loader2, RefreshCw } from 'lucide-react';
+import { X, RefreshCw } from 'lucide-react';
+import { BreathingDots } from '@/components/ui/spinner';
 
 interface SessionLogsProps {
   onClose?: () => void;
@@ -73,7 +74,7 @@ export const SessionLogs: React.FC<SessionLogsProps> = ({ onClose }) => {
     if (contentLoading) {
       return (
         <div className="flex items-center justify-center h-full">
-          <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+          <BreathingDots className="h-6 w-6 text-muted-foreground" />
         </div>
       );
     }
@@ -144,7 +145,7 @@ export const SessionLogs: React.FC<SessionLogsProps> = ({ onClose }) => {
 
           {loading && (
             <div className="flex items-center justify-center p-4">
-              <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+              <BreathingDots className="h-4 w-4 text-muted-foreground" />
             </div>
           )}
 

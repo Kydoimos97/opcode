@@ -21,6 +21,20 @@ export interface CustomThemeColors {
   border: string;
   input: string;
   ring: string;
+  // Chat message colors — map to --chat-* CSS variables
+  chatUserBorder: string;
+  chatUserBg: string;
+  chatWorkBorder: string;
+  chatAgentBorder: string;
+  chatAgentBg: string;
+  chatFinalBorder: string;
+  chatFinalBg: string;
+  chatResultOkBorder: string;
+  chatResultOkBg: string;
+  chatResultErrBorder: string;
+  chatResultErrBg: string;
+  chatTerminalCommand: string;
+  chatTerminalOutput: string;
 }
 
 
@@ -61,23 +75,36 @@ async function saveThemeToCcode(key: string, value: string): Promise<void> {
 
 // Default custom theme colors (based on current dark theme)
 const DEFAULT_CUSTOM_COLORS: CustomThemeColors = {
-  background: 'oklch(0.12 0.01 240)',
-  foreground: 'oklch(0.98 0.01 240)',
-  card: 'oklch(0.14 0.01 240)',
-  cardForeground: 'oklch(0.98 0.01 240)',
-  primary: 'oklch(0.98 0.01 240)',
-  primaryForeground: 'oklch(0.12 0.01 240)',
-  secondary: 'oklch(0.16 0.01 240)',
-  secondaryForeground: 'oklch(0.98 0.01 240)',
-  muted: 'oklch(0.16 0.01 240)',
-  mutedForeground: 'oklch(0.65 0.01 240)',
-  accent: 'oklch(0.16 0.01 240)',
-  accentForeground: 'oklch(0.98 0.01 240)',
-  destructive: 'oklch(0.6 0.2 25)',
-  destructiveForeground: 'oklch(0.98 0.01 240)',
-  border: 'oklch(0.16 0.01 240)',
-  input: 'oklch(0.16 0.01 240)',
-  ring: 'oklch(0.98 0.01 240)',
+  background: 'rgba(22, 24, 30, 1)',
+  foreground: 'rgba(238, 241, 247, 1)',
+  card: 'rgba(30, 32, 40, 1)',
+  cardForeground: 'rgba(238, 241, 247, 1)',
+  primary: 'rgba(238, 241, 247, 1)',
+  primaryForeground: 'rgba(30, 32, 40, 1)',
+  secondary: 'rgba(38, 41, 50, 1)',
+  secondaryForeground: 'rgba(238, 241, 247, 1)',
+  muted: 'rgba(34, 36, 45, 1)',
+  mutedForeground: 'rgba(148, 153, 171, 1)',
+  accent: 'rgba(38, 41, 50, 1)',
+  accentForeground: 'rgba(238, 241, 247, 1)',
+  destructive: 'rgba(212, 80, 52, 1)',
+  destructiveForeground: 'rgba(250, 251, 255, 1)',
+  border: 'rgba(44, 47, 57, 1)',
+  input: 'rgba(44, 47, 57, 1)',
+  ring: 'rgba(108, 112, 130, 1)',
+  chatUserBorder: 'rgba(251, 191, 36, 0.40)',
+  chatUserBg: 'rgba(251, 191, 36, 0.07)',
+  chatWorkBorder: 'rgba(99, 179, 237, 0.35)',
+  chatAgentBorder: 'rgba(255, 255, 255, 0.07)',
+  chatAgentBg: 'rgba(255, 255, 255, 0.02)',
+  chatFinalBorder: 'rgba(74, 222, 128, 0.50)',
+  chatFinalBg: 'rgba(22, 163, 74, 0.13)',
+  chatResultOkBorder: 'rgba(74, 222, 128, 0.40)',
+  chatResultOkBg: 'rgba(22, 163, 74, 0.09)',
+  chatResultErrBorder: 'rgba(248, 113, 113, 0.50)',
+  chatResultErrBg: 'rgba(239, 68, 68, 0.11)',
+  chatTerminalCommand: 'rgba(74, 222, 128, 1)',
+  chatTerminalOutput: 'rgba(134, 239, 172, 1)',
 };
 
 
@@ -113,7 +140,7 @@ function rgbLuminance(rgbStr: string): number {
 function autoForeground(bgCssValue: string): string {
   const resolved = resolveCssColor(bgCssValue);
   const lum = rgbLuminance(resolved);
-  return lum > 0.45 ? 'oklch(0.1 0 0)' : 'oklch(0.95 0 0)';
+  return lum > 0.45 ? 'rgba(20, 20, 20, 1)' : 'rgba(242, 242, 242, 1)';
 }
 
 /**
@@ -163,15 +190,19 @@ export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     root.classList.remove('theme-dark', 'theme-gray', 'theme-light', 'theme-custom');
     root.classList.add(`theme-${themeMode}`);
 
+    const toCssVar = (key: string): string => {
+      const kebab = key.replace(/([A-Z])/g, '-$1').toLowerCase();
+      // chat* keys map to --chat-* directly; everything else to --color-*
+      return key.startsWith('chat') ? `--${kebab}` : `--color-${kebab}`;
+    };
+
     if (themeMode === 'custom') {
       Object.entries(colors).forEach(([key, value]) => {
-        const cssVarName = `--color-${key.replace(/([A-Z])/g, '-$1').toLowerCase()}`;
-        root.style.setProperty(cssVarName, value);
+        root.style.setProperty(toCssVar(key), value);
       });
     } else {
       Object.keys(colors).forEach((key) => {
-        const cssVarName = `--color-${key.replace(/([A-Z])/g, '-$1').toLowerCase()}`;
-        root.style.removeProperty(cssVarName);
+        root.style.removeProperty(toCssVar(key));
       });
     }
 

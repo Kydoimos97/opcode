@@ -57,6 +57,7 @@ import { useGroupedMessages } from "@/hooks/useGroupedMessages";
 import { useMessagePartition } from "@/hooks/useMessagePartition";
 import { useHookEvents } from "@/hooks/useHookEvents";
 import { TurnBlock } from "./TurnBlock";
+import { BreathingDots } from "@/components/ui/spinner";
 
 export type SessionState =
   | "idle"
@@ -159,14 +160,6 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
   const [searchMatchIndex, setSearchMatchIndex] = useState(0);
   const [historyExpanded, setHistoryExpanded] = useState(false);
   const [showLoadHistory, setShowLoadHistory] = useState(false);
-
-  const latestInputTokens = useMemo(() => {
-    for (let i = messages.length - 1; i >= 0; i--) {
-      const tokens = messages[i]?.message?.usage?.input_tokens;
-      if (typeof tokens === "number" && tokens > 0) return tokens;
-    }
-    return 0;
-  }, [messages]);
 
   const remoteControlActive = useMemo(() => {
     return messages.some(msg => {
@@ -443,11 +436,73 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
     }
   }, [claudeSessionId, session?.id, effectiveSession?.project_id, activeTab?.id]);
 
-  // React to watcher-fired session-file-changed events for this session
+  // Tracks whether a tail-read is in progress to prevent concurrent reads racing on byteOffsetRef.
+  const isTailReadingRef = useRef(false);
+  // Tracks the most recent project_id seen in a session-file-changed event for this session.
+  const resolvedProjectIdRef = useRef<string | null>(null);
+
+  // Shared helper: read new lines from the tail and append to messages.
+  // Returns true if any new messages were added.
+  const readAndAppendTail = async (sessionId: string, projectId: string): Promise<boolean> => {
+    if (isTailReadingRef.current) return false;
+    if (!byteOffsetRef.current) return false; // loadSessionHistory not yet complete (0 or undefined)
+    isTailReadingRef.current = true;
+    try {
+      const tailResult = await api.readSessionTail(sessionId, projectId, byteOffsetRef.current);
+      if (!isMountedRef.current) return false;
+      console.log(`[session-tail] ${sessionId} proj=${projectId} +${tailResult.lines.length} line(s) offset ${byteOffsetRef.current}→${tailResult.newOffset}`);
+
+      if (tailResult.newOffset === 0 && byteOffsetRef.current > 0) {
+        // File was truncated/rotated — fall back to full reload
+        byteOffsetRef.current = 0;
+        fileLineCountRef.current = 0;
+        await loadSessionHistory();
+        return true;
+      }
+
+      if (tailResult.lines.length === 0) return false;
+
+      byteOffsetRef.current = tailResult.newOffset;
+      fileLineCountRef.current += tailResult.lines.length;
+
+      const newMessages: ClaudeStreamMessage[] = tailResult.lines
+        .map((line: string) => {
+          try {
+            const entry = JSON.parse(line);
+            return { ...entry, type: entry.type || 'assistant' } as ClaudeStreamMessage;
+          } catch {
+            return null;
+          }
+        })
+        .filter((m): m is ClaudeStreamMessage => m !== null);
+
+      if (newMessages.length > 0) {
+        setMessages(prev => [...prev, ...newMessages]);
+        const lastEntry = newMessages[newMessages.length - 1] as any;
+        if (lastEntry && activeTab) {
+          if (lastEntry.type === 'result') {
+            updateTab(activeTab.id, { status: lastEntry.is_error ? 'error' : 'complete' });
+          } else if (lastEntry.type === 'assistant' || lastEntry.type === 'tool_use') {
+            updateTab(activeTab.id, { status: 'running' });
+          }
+        }
+        return true;
+      }
+      return false;
+    } catch {
+      return false;
+    } finally {
+      isTailReadingRef.current = false;
+    }
+  };
+
+  // React to watcher-fired session-file-changed events for this session.
+  // Only filters by session_id — project_id comes from the event itself so
+  // it always matches the actual on-disk directory, regardless of what the
+  // session prop carries.
   useEffect(() => {
     const sessionId = claudeSessionId || session?.id;
-    const projectId = effectiveSession?.project_id;
-    if (!sessionId || !projectId) return;
+    if (!sessionId) return;
 
     let unlisten: (() => void) | null = null;
 
@@ -455,58 +510,35 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
       tauriListenFn<{ session_id: string; project_id: string }>(
         'session-file-changed',
         async (event) => {
-          if (event.payload.session_id !== sessionId || event.payload.project_id !== projectId) return;
+          if (event.payload.session_id !== sessionId) return;
           if (!isMountedRef.current) return;
-          console.log(`[session-tail] event for ${sessionId} — offset ${byteOffsetRef.current}`);
-          try {
-            const tailResult = await api.readSessionTail(sessionId, projectId, byteOffsetRef.current);
-            console.log(`[session-tail] got ${tailResult.lines.length} new line(s), new_offset=${tailResult.newOffset}`);
-            if (!isMountedRef.current) return;
-
-            if (tailResult.newOffset === 0 && byteOffsetRef.current > 0) {
-              byteOffsetRef.current = 0;
-              fileLineCountRef.current = 0;
-              await loadSessionHistory();
-              return;
-            }
-
-            if (tailResult.lines.length === 0) return;
-
-            byteOffsetRef.current = tailResult.newOffset;
-            fileLineCountRef.current += tailResult.lines.length;
-
-            const newMessages: ClaudeStreamMessage[] = tailResult.lines
-              .map((line: string) => {
-                try {
-                  const entry = JSON.parse(line);
-                  return { ...entry, type: entry.type || 'assistant' } as ClaudeStreamMessage;
-                } catch {
-                  return null;
-                }
-              })
-              .filter((m): m is ClaudeStreamMessage => m !== null);
-
-            if (newMessages.length > 0) {
-              setMessages(prev => [...prev, ...newMessages]);
-
-              const lastEntry = newMessages[newMessages.length - 1] as any;
-              if (lastEntry && activeTab) {
-                if (lastEntry.type === 'result') {
-                  updateTab(activeTab.id, { status: lastEntry.is_error ? 'error' : 'complete' });
-                } else if (lastEntry.type === 'assistant' || lastEntry.type === 'tool_use') {
-                  updateTab(activeTab.id, { status: 'running' });
-                }
-              }
-            }
-          } catch {
-            // Silently ignore read errors
-          }
+          const eventProjectId = event.payload.project_id;
+          resolvedProjectIdRef.current = eventProjectId;
+          await readAndAppendTail(sessionId, eventProjectId);
         }
       ).then(fn => { unlisten = fn; });
     });
 
     return () => { unlisten?.(); };
-  }, [claudeSessionId, session?.id, effectiveSession?.project_id, activeTab?.id]);
+  }, [claudeSessionId, session?.id, activeTab?.id]);
+
+  // Fallback: poll every 5 seconds in case the watcher missed an event or the
+  // project_id wasn't available when the watcher listener was set up.
+  useEffect(() => {
+    const sessionId = claudeSessionId || session?.id;
+    if (!sessionId) return;
+
+    const poll = async () => {
+      if (!isMountedRef.current) return;
+      // Prefer the project_id resolved from a real watcher event; fall back to session prop.
+      const projectId = resolvedProjectIdRef.current ?? effectiveSession?.project_id;
+      if (!projectId) return;
+      await readAndAppendTail(sessionId, projectId);
+    };
+
+    const interval = setInterval(poll, 5000);
+    return () => clearInterval(interval);
+  }, [claudeSessionId, session?.id, effectiveSession?.project_id]);
 
   const handleRefresh = async () => {
     if (!session || isLoading) return;
@@ -1205,7 +1237,7 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
           transition={{ duration: 0.15 }}
           className="flex items-center justify-center py-4 mb-20"
         >
-          <div className="rotating-symbol text-primary" />
+          <BreathingDots className="h-5 w-5 text-primary" />
         </motion.div>
       )}
 
@@ -1376,13 +1408,13 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
             />
           ) : (
             // Original layout when no preview
-            <div className="h-full flex flex-col mx-auto px-6">
+            <div className="h-full flex flex-col px-6">
               {messagesList}
               
               {isLoading && messages.length === 0 && (
                 <div className="flex items-center justify-center h-full">
                   <div className="flex items-center gap-3">
-                    <div className="rotating-symbol text-primary" />
+                    <BreathingDots className="h-4 w-4 text-primary" />
                     <span className="text-sm text-muted-foreground">
                       {session ? "Loading session history..." : "Initializing Claude Code..."}
                     </span>
@@ -1458,90 +1490,6 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
         </AnimatePresence>
 
         <ErrorBoundary>
-          {/* Navigation Arrows - positioned above prompt bar with spacing */}
-          {displayableMessages.length > 5 && (
-            <motion.div
-              initial={{ opacity: 0, scale: 0.8 }}
-              animate={{ opacity: 1, scale: 1 }}
-              exit={{ opacity: 0, scale: 0.8 }}
-              transition={{ delay: 0.5 }}
-              className="fixed bottom-32 right-6 z-50"
-            >
-              <div className="flex items-center bg-background/95 backdrop-blur-md border rounded-full shadow-lg overflow-hidden">
-                <TooltipSimple content="Scroll to top" side="top">
-                  <motion.div
-                    whileTap={{ scale: 0.97 }}
-                    transition={{ duration: 0.15 }}
-                  >
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => {
-                      // Use virtualizer to scroll to the first item
-                      if (displayableMessages.length > 0) {
-                        // Scroll to top of the container
-                        parentRef.current?.scrollTo({
-                          top: 0,
-                          behavior: 'smooth'
-                        });
-                        
-                        // After smooth scroll completes, trigger a small scroll to ensure rendering
-                        setTimeout(() => {
-                          if (parentRef.current) {
-                            // Scroll down 1px then back to 0 to trigger virtualizer update
-                            parentRef.current.scrollTop = 1;
-                            requestAnimationFrame(() => {
-                              if (parentRef.current) {
-                                parentRef.current.scrollTop = 0;
-                              }
-                            });
-                          }
-                        }, 500); // Wait for smooth scroll to complete
-                      }
-                    }}
-                      className="px-3 py-2 hover:bg-accent rounded-none"
-                    >
-                      <ChevronUp className="h-4 w-4" />
-                    </Button>
-                  </motion.div>
-                </TooltipSimple>
-                <div className="w-px h-4 bg-border" />
-                <TooltipSimple content="Scroll to bottom" side="top">
-                  <motion.div
-                    whileTap={{ scale: 0.97 }}
-                    transition={{ duration: 0.15 }}
-                  >
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => {
-                        // Use the improved scrolling method for manual scroll to bottom
-                        if (displayableMessages.length > 0) {
-                          const scrollElement = parentRef.current;
-                          if (scrollElement) {
-                            // First, scroll using virtualizer to get close to the bottom
-                            rowVirtualizer.scrollToIndex(displayableMessages.length - 1, { align: 'end', behavior: 'auto' });
-
-                            // Then use direct scroll to ensure we reach the absolute bottom
-                            requestAnimationFrame(() => {
-                              scrollElement.scrollTo({
-                                top: scrollElement.scrollHeight,
-                                behavior: 'smooth'
-                              });
-                            });
-                          }
-                        }
-                      }}
-                      className="px-3 py-2 hover:bg-accent rounded-none"
-                    >
-                      <ChevronDown className="h-4 w-4" />
-                    </Button>
-                  </motion.div>
-                </TooltipSimple>
-              </div>
-            </motion.div>
-          )}
-
           {(sessionState === "waiting_approval" || sessionState === "waiting_elicitation") && (
             <ApprovalBanner
               type={sessionState === "waiting_approval" ? "approval" : "elicitation"}
@@ -1557,12 +1505,12 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
         <div className="flex-shrink-0 border-t border-border/50">
           <SessionStatusBar
             sessionId={claudeSessionId ?? session?.id ?? null}
-            inputTokens={latestInputTokens}
             sessionStatus={sessionStatus}
           />
           <AnimatePresence>
             {hookState.subagentActive && (
               <motion.div
+                key="subagent-indicator"
                 initial={{ opacity: 0, y: 4 }}
                 animate={{ opacity: 1, y: 0 }}
                 exit={{ opacity: 0, y: 4 }}
@@ -1575,13 +1523,14 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
             )}
             {hookState.currentTool && (
               <motion.div
+                key="current-tool-indicator"
                 initial={{ opacity: 0, y: 4 }}
                 animate={{ opacity: 1, y: 0 }}
                 exit={{ opacity: 0, y: 4 }}
                 transition={{ duration: 0.15 }}
                 className="flex items-center gap-2 px-4 py-1 text-xs text-muted-foreground bg-muted/40 border-t border-border/40"
               >
-                <div className="rotating-symbol text-primary h-3 w-3" />
+                <BreathingDots className="h-3 w-3 text-primary" />
                 <span className="font-medium">{hookState.currentTool.name}</span>
                 {hookState.currentTool.input && Object.keys(hookState.currentTool.input).length > 0 && (
                   <span className="opacity-60 truncate max-w-xs">
@@ -1673,6 +1622,48 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
               projectPath={projectPath}
               extraMenuItems={
                 <>
+                  {displayableMessages.length > 5 && (
+                    <>
+                      <TooltipSimple content="Scroll to top" side="top">
+                        <motion.div whileTap={{ scale: 0.97 }} transition={{ duration: 0.15 }}>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-9 w-9 text-muted-foreground hover:text-foreground"
+                            onClick={() => {
+                              parentRef.current?.scrollTo({ top: 0, behavior: 'smooth' });
+                              setTimeout(() => {
+                                if (parentRef.current) {
+                                  parentRef.current.scrollTop = 1;
+                                  requestAnimationFrame(() => { if (parentRef.current) parentRef.current.scrollTop = 0; });
+                                }
+                              }, 500);
+                            }}
+                          >
+                            <ChevronUp className="h-3.5 w-3.5" />
+                          </Button>
+                        </motion.div>
+                      </TooltipSimple>
+                      <TooltipSimple content="Scroll to bottom" side="top">
+                        <motion.div whileTap={{ scale: 0.97 }} transition={{ duration: 0.15 }}>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-9 w-9 text-muted-foreground hover:text-foreground"
+                            onClick={() => {
+                              const scrollElement = parentRef.current;
+                              if (scrollElement) {
+                                rowVirtualizer.scrollToIndex(displayableMessages.length - 1, { align: 'end', behavior: 'auto' });
+                                requestAnimationFrame(() => { scrollElement.scrollTo({ top: scrollElement.scrollHeight, behavior: 'smooth' }); });
+                              }
+                            }}
+                          >
+                            <ChevronDown className="h-3.5 w-3.5" />
+                          </Button>
+                        </motion.div>
+                      </TooltipSimple>
+                    </>
+                  )}
                   {messages.length > 0 && (
                     <Popover
                       trigger={

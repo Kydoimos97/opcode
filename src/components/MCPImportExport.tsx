@@ -1,5 +1,6 @@
 import React, { useState } from "react";
-import { Download, Upload, FileText, Loader2, Info, Network, Settings2, AlertCircle } from "lucide-react";
+import { Download, Upload, FileText, Info, Network, Settings2, AlertCircle } from "lucide-react";
+import { BreathingDots } from "@/components/ui/spinner";
 
 const IS_WINDOWS = navigator.userAgent.toLowerCase().includes("win");
 import { Button } from "@/components/ui/button";
@@ -221,7 +222,7 @@ export const MCPImportExport: React.FC<MCPImportExportProps> = ({
             >
               {importingDesktop ? (
                 <>
-                  <Loader2 className="h-4 w-4 animate-spin" />
+                  <BreathingDots className="h-4 w-4" />
                   Importing...
                 </>
               ) : (
@@ -265,7 +266,7 @@ export const MCPImportExport: React.FC<MCPImportExportProps> = ({
               >
                 {importingJson ? (
                   <>
-                    <Loader2 className="h-4 w-4 animate-spin" />
+                    <BreathingDots className="h-4 w-4" />
                     Importing...
                   </>
                 ) : (

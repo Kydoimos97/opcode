@@ -590,7 +590,7 @@ export const api = {
   },
 
   /**
-   * Saves the sidebar session state to ~/.ccode/sidebar_state.json
+   * Saves the sidebar session state to ~/.ccode/states/sidebar_state.json
    * @param state - The sidebar state containing sessions list
    */
   async saveSidebarState(state: { sessions: SidebarStateEntry[] }): Promise<void> {
@@ -598,7 +598,7 @@ export const api = {
   },
 
   /**
-   * Loads the sidebar session state from ~/.ccode/sidebar_state.json
+   * Loads the sidebar session state from ~/.ccode/states/sidebar_state.json
    * @returns Promise resolving to the sidebar state or null if invalid
    */
   async loadSidebarState(): Promise<{ sessions: SidebarStateEntry[] } | null> {
@@ -1862,9 +1862,9 @@ export const api = {
   async pollSessionFile(sessionId: string, projectId: string, fromLine: number): Promise<any[]> {
     try {
       return await apiCall<any[]>("poll_session_file", {
-        session_id: sessionId,
-        project_id: projectId,
-        from_line: fromLine,
+        sessionId,
+        projectId,
+        fromLine,
       });
     } catch (error) {
       console.error("Failed to poll session file:", error);
@@ -1881,9 +1881,9 @@ export const api = {
     newOffset: number;
   }> {
     return apiCall<{ lines: string[]; newOffset: number }>("read_session_tail", {
-      session_id: sessionId,
-      project_id: projectId,
-      byte_offset: byteOffset,
+      sessionId,
+      projectId,
+      byteOffset,
     });
   },
 
@@ -1892,8 +1892,8 @@ export const api = {
    */
   async getSessionFilePath(sessionId: string, projectId: string): Promise<string> {
     return await apiCall<string>("get_session_file_path", {
-      session_id: sessionId,
-      project_id: projectId,
+      sessionId,
+      projectId,
     });
   },
 
@@ -1903,8 +1903,8 @@ export const api = {
   async getSessionFileStatus(sessionId: string, projectId: string): Promise<SessionFileStatus> {
     try {
       return await apiCall<SessionFileStatus>("get_session_file_status", {
-        session_id: sessionId,
-        project_id: projectId,
+        sessionId,
+        projectId,
       });
     } catch (error) {
       console.error("Failed to get session file status:", error);
@@ -2240,6 +2240,14 @@ export const api = {
       return result;
     } catch {
       return null;
+    }
+  },
+
+  async readProcessState(): Promise<Record<string, { session_id: string; timestamp: string; status: string }>> {
+    try {
+      return await apiCall<Record<string, { session_id: string; timestamp: string; status: string }>>("read_process_state");
+    } catch {
+      return {};
     }
   },
 

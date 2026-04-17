@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { api, type ClaudeEntry } from '@/lib/api';
 import { Button } from '@/components/ui/button';
-import { X, ChevronRight, Loader2 } from 'lucide-react';
+import { X, ChevronRight } from 'lucide-react';
+import { BreathingDots } from '@/components/ui/spinner';
 import ReactMarkdown from 'react-markdown';
 
 interface ClaudeExplorerProps {
@@ -71,7 +72,7 @@ export const ClaudeExplorer: React.FC<ClaudeExplorerProps> = ({ onClose }) => {
     if (contentLoading) {
       return (
         <div className="flex items-center justify-center h-full">
-          <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+          <BreathingDots className="h-6 w-6 text-muted-foreground" />
         </div>
       );
     }
@@ -163,7 +164,7 @@ export const ClaudeExplorer: React.FC<ClaudeExplorerProps> = ({ onClose }) => {
 
           {loading && (
             <div className="flex items-center justify-center p-4">
-              <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+              <BreathingDots className="h-4 w-4 text-muted-foreground" />
             </div>
           )}
 

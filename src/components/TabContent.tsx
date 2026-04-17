@@ -3,7 +3,8 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { useTabState } from '@/hooks/useTabState';
 import { useScreenTracking } from '@/hooks/useAnalytics';
 import { Tab } from '@/contexts/TabContext';
-import { Loader2, Plus, ArrowLeft } from 'lucide-react';
+import { Plus, ArrowLeft } from 'lucide-react';
+import { BreathingDots } from '@/components/ui/spinner';
 import { api, type Project, type Session, type ClaudeMdFile } from '@/lib/api';
 import { ccodeSettings } from '@/lib/ccodeSettings';
 import { ProjectList } from '@/components/ProjectList';
@@ -257,7 +258,7 @@ const TabPanel: React.FC<TabPanelProps> = ({ tab, isActive }) => {
                     {/* Loading state */}
                     {loading && (
                       <div className="flex items-center justify-center py-8">
-                        <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+                        <BreathingDots className="h-6 w-6 text-muted-foreground" />
                       </div>
                     )}
 
@@ -484,7 +485,7 @@ const TabPanel: React.FC<TabPanelProps> = ({ tab, isActive }) => {
         <Suspense
           fallback={
             <div className="flex items-center justify-center h-full">
-              <Loader2 className="w-8 h-8 animate-spin text-muted-foreground" />
+              <BreathingDots className="w-8 h-8 text-muted-foreground" />
             </div>
           }
         >

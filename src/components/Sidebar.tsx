@@ -8,16 +8,10 @@ import {
   Plus,
   GitBranch,
   FolderOpen,
-  Bot,
   BarChart3,
-  Server,
-  FileText,
-  FolderSearch,
   Settings,
   Terminal,
   X,
-  Wrench,
-  Puzzle,
 } from 'lucide-react';
 import appLogo from '@/assets/logo.png';
 import { useTabContext, type Tab } from '@/contexts/TabContext';
@@ -40,14 +34,8 @@ interface GroupedTabs {
 
 const UTILITY_ITEMS = [
   { icon: FolderOpen, label: 'Projects', type: 'projects' as const },
-  { icon: Bot, label: 'Agents', type: 'agents' as const },
   { icon: BarChart3, label: 'Usage', type: 'usage' as const },
-  { icon: Server, label: 'MCP Servers', type: 'mcp' as const },
-  { icon: Wrench, label: 'Skills', type: 'skills' as const },
-  { icon: Puzzle, label: 'Plugins', type: 'plugins' as const },
   { icon: Terminal, label: 'Terminal', type: 'terminal' as const },
-  { icon: FileText, label: 'CLAUDE.md', type: 'claude-md' as const },
-  { icon: FolderSearch, label: '.claude Explorer', type: 'claude-explorer' as const },
   { icon: Settings, label: 'Settings', type: 'settings' as const },
 ];
 
@@ -56,15 +44,9 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onToggle }) => {
   const {
     createChatTab,
     createProjectsTab,
-    createAgentsTab,
     createUsageTab,
-    createMCPTab,
-    createClaudeMdTab,
-    createExplorerTab,
     createLogsTab,
     createSettingsTab,
-    createSkillsTab,
-    createPluginsTab,
     createTerminalTab,
     closeTab,
   } = useTabState();
@@ -79,6 +61,10 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onToggle }) => {
   const [hoveredSessionId, setHoveredSessionId] = useState<string | null>(null);
   const [_lastMessageVersion, setLastMessageVersion] = useState(0);
   const lastMessageCache = useRef<Map<string, string>>(new Map());
+  const tabsRef = useRef(tabs);
+  const updateTabRef = useRef(updateTab);
+  useEffect(() => { tabsRef.current = tabs; }, [tabs]);
+  useEffect(() => { updateTabRef.current = updateTab; }, [updateTab]);
 
   const chatTabs = useMemo(
     () => tabs.filter((tab) => tab.type === 'chat'),
@@ -177,7 +163,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onToggle }) => {
     import('@tauri-apps/api/event').then(({ listen }) => {
       listen<{ session_id: string; project_id: string }>('session-file-changed', async (event) => {
         const { session_id, project_id } = event.payload;
-        const matchingTab = tabs.find(
+        const matchingTab = tabsRef.current.find(
           t => t.type === 'chat' && (
             (t.claudeSessionId === session_id && t.claudeProjectId === project_id) ||
             (t.sessionId === session_id && t.sessionData?.project_id === project_id)
@@ -204,7 +190,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onToggle }) => {
             }
           }
           if (matchingTab.status !== newStatus) {
-            updateTab(matchingTab.id, { status: newStatus });
+            updateTabRef.current(matchingTab.id, { status: newStatus });
           }
         } catch {
           // Silently ignore
@@ -213,12 +199,13 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onToggle }) => {
     });
 
     return () => { unlisten?.(); };
-  }, [tabs, updateTab]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // 60s safety poll — catches watcher gaps and startup state
   useEffect(() => {
     const pollAll = async () => {
-      const targets = tabs.filter(t => t.type === 'chat' && (
+      const targets = tabsRef.current.filter(t => t.type === 'chat' && (
         (t.claudeSessionId && t.claudeProjectId) ||
         (t.sessionId && t.sessionData?.project_id)
       ));
@@ -246,7 +233,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onToggle }) => {
             }
           }
           if (tab.status !== newStatus) {
-            updateTab(tab.id, { status: newStatus });
+            updateTabRef.current(tab.id, { status: newStatus });
           }
         } catch {
           // Silently ignore
@@ -254,11 +241,11 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onToggle }) => {
       }
     };
 
-    // Poll immediately on mount / tab changes
     pollAll();
     const interval = setInterval(pollAll, 60_000);
     return () => clearInterval(interval);
-  }, [tabs, updateTab]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   useEffect(() => {
     chatTabs.forEach((tab) => {
@@ -295,20 +282,20 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onToggle }) => {
   const handleUtilityClick = (type: Tab['type']) => {
     const creators: Record<Tab['type'], () => string | null> = {
       'projects': createProjectsTab,
-      'agents': createAgentsTab,
       'usage': createUsageTab,
-      'mcp': createMCPTab,
-      'skills': createSkillsTab,
-      'plugins': createPluginsTab,
       'terminal': createTerminalTab,
-      'claude-md': createClaudeMdTab,
-      'claude-explorer': createExplorerTab,
-      'session-logs': createLogsTab,
       'settings': createSettingsTab,
       'chat': () => null,
       'agent': () => null,
       'agent-execution': () => null,
       'claude-file': () => null,
+      'agents': () => null,
+      'mcp': () => null,
+      'skills': () => null,
+      'plugins': () => null,
+      'claude-md': () => null,
+      'claude-explorer': () => null,
+      'session-logs': createLogsTab,
       'create-agent': () => null,
       'import-agent': () => null,
     };

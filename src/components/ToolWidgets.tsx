@@ -93,7 +93,7 @@ const FilePathLink: React.FC<{ path: string; className?: string }> = ({ path, cl
       onClick={handleClick}
       title={path}
       className={cn(
-        "font-mono text-xs text-foreground/80 hover:text-accent underline-offset-2 hover:underline cursor-pointer text-left truncate max-w-xs",
+        "font-mono text-xs text-foreground/80 hover:text-accent underline-offset-2 hover:underline cursor-pointer text-left truncate min-w-0",
         className
       )}
     >
@@ -183,7 +183,7 @@ export const LSWidget: React.FC<{ path: string; result?: any }> = ({ path, resul
     
     return (
       <div className="space-y-2">
-        <div className="flex items-center gap-2 p-3 rounded-lg bg-muted/50">
+        <div className="flex items-center gap-2 p-3 rounded-lg bg-muted">
           <FolderOpen className="h-4 w-4 text-primary" />
           <span className="text-sm">Directory contents for:</span>
           <code className="text-sm font-mono bg-background px-2 py-0.5 rounded">
@@ -196,7 +196,7 @@ export const LSWidget: React.FC<{ path: string; result?: any }> = ({ path, resul
   }
   
   return (
-    <div className="flex items-center gap-2 p-3 rounded-lg bg-muted/50">
+    <div className="flex items-center gap-2 p-3 rounded-lg bg-muted">
       <FolderOpen className="h-4 w-4 text-primary" />
       <span className="text-sm">Listing directory:</span>
       <code className="text-sm font-mono bg-background px-2 py-0.5 rounded">
@@ -406,7 +406,7 @@ export const ReadWidget: React.FC<{ filePath: string; result?: any }> = ({ fileP
     
     return (
       <div className="space-y-2">
-        <div className="flex items-center gap-2 p-3 rounded-lg bg-muted/50">
+        <div className="flex items-center gap-2 p-3 rounded-lg bg-muted">
           <FileText className="h-4 w-4 text-primary" />
           <span className="text-sm shrink-0">File content:</span>
           <FilePathLink path={filePath} className="flex-1" />
@@ -417,7 +417,7 @@ export const ReadWidget: React.FC<{ filePath: string; result?: any }> = ({ fileP
   }
 
   return (
-    <div className="flex items-center gap-2 p-3 rounded-lg bg-muted/50">
+    <div className="flex items-center gap-2 p-3 rounded-lg bg-muted">
       <FileText className="h-4 w-4 text-primary" />
       <span className="text-sm shrink-0">Reading file:</span>
       <FilePathLink path={filePath} className="flex-1" />
@@ -630,7 +630,7 @@ export const GlobWidget: React.FC<{ pattern: string; result?: any }> = ({ patter
   
   return (
     <div className="space-y-2">
-      <div className="flex items-center gap-2 p-3 rounded-lg bg-muted/50">
+      <div className="flex items-center gap-2 p-3 rounded-lg bg-muted">
         <Search className="h-4 w-4 text-primary" />
         <span className="text-sm">Searching for pattern:</span>
         <code className="text-sm font-mono bg-background px-2 py-0.5 rounded">
@@ -705,7 +705,7 @@ export const BashWidget: React.FC<{
       <ContextMenuTrigger asChild>
         <div className="rounded-lg border bg-background overflow-hidden">
       <div className="px-4 py-2 bg-muted/50 flex items-center gap-2 border-b">
-        <Terminal className="h-3.5 w-3.5 text-green-500" />
+        <Terminal className="h-3.5 w-3.5" style={{ color: 'var(--chat-terminal-command)' }} />
         <span className="text-xs font-mono text-muted-foreground">Terminal</span>
         {description && (
           <>
@@ -716,24 +716,25 @@ export const BashWidget: React.FC<{
         {/* Show loading indicator when no result yet */}
         {!result && (
           <div className="ml-auto flex items-center gap-1 text-xs text-muted-foreground">
-            <div className="h-2 w-2 bg-green-500 rounded-full animate-pulse" />
+            <div className="h-2 w-2 rounded-full animate-pulse" style={{ backgroundColor: 'var(--chat-terminal-command)' }} />
             <span>Running...</span>
           </div>
         )}
       </div>
       <div className="p-4 space-y-3">
-        <code className="text-xs font-mono text-green-400 block">
+        <code className="text-xs font-mono block" style={{ color: 'var(--chat-terminal-command)' }}>
           $ {command}
         </code>
 
         {/* Show result if available */}
         {result && (
-          <div className={cn(
-            "mt-3 p-3 rounded-md border text-xs font-mono whitespace-pre-wrap overflow-x-auto",
-            isError
-              ? "border-red-500/20 bg-red-500/5 text-red-400"
-              : "border-green-500/20 bg-green-500/5 text-green-300"
-          )}>
+          <div
+            className={cn(
+              "mt-3 p-3 rounded-md border text-xs font-mono whitespace-pre-wrap overflow-x-auto",
+              isError ? "border-red-500/20 bg-red-500/5 text-red-400" : "border-border/30 bg-muted/30"
+            )}
+            style={!isError ? { color: 'var(--chat-terminal-output)' } : undefined}
+          >
             {resultContent || (isError ? "Command failed" : "Command completed")}
           </div>
         )}
@@ -918,7 +919,7 @@ export const WriteWidget: React.FC<{ filePath: string; content: string; result?:
 
   return (
     <div className="space-y-2">
-      <div className="flex items-center gap-2 p-3 rounded-lg bg-muted/50">
+      <div className="flex items-center gap-2 p-3 rounded-lg bg-muted">
         <FileEdit className="h-4 w-4 text-primary" />
         <span className="text-sm shrink-0">Writing to file:</span>
         <FilePathLink path={filePath} className="flex-1" />
@@ -1202,10 +1203,10 @@ export const EditWidget: React.FC<{
 
   return (
     <div className="space-y-2">
-      <div className="flex items-center gap-2 mb-2">
-        <FileEdit className="h-4 w-4 text-primary" />
+      <div className="flex items-center gap-2 p-3 rounded-lg bg-muted mb-2">
+        <FileEdit className="h-4 w-4 text-primary shrink-0" />
         <span className="text-sm font-medium shrink-0">Applying Edit to:</span>
-        <FilePathLink path={file_path} className="flex-1" />
+        <FilePathLink path={file_path} className="flex-1 min-w-0" />
       </div>
 
       <div className="rounded-lg border bg-background overflow-hidden text-xs font-mono">

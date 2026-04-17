@@ -1251,6 +1251,7 @@ pub async fn poll_session_file(
 
 /// Result of reading new lines from a session tail.
 #[derive(serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct SessionTailResult {
     /// Raw JSONL line strings
     pub lines: Vec<String>,
@@ -3215,12 +3216,12 @@ pub async fn get_global_settings() -> Result<serde_json::Value, String> {
         .map_err(|e| format!("Failed to parse settings JSON: {}", e))
 }
 
-/// Reads ~/.claude/hooks/resources/commands.conf
+/// Reads ~/.ccode/hooks/c-guard/commands.conf
 #[tauri::command]
 pub async fn read_commands_conf() -> Result<serde_json::Value, String> {
     let home = dirs::home_dir()
         .ok_or_else(|| "Could not find home directory".to_string())?;
-    let conf_path = home.join(".claude").join("hooks").join("resources").join("commands.conf");
+    let conf_path = home.join(".ccode").join("hooks").join("c-guard").join("commands.conf");
 
     if !conf_path.exists() {
         return Ok(serde_json::json!({ "content": "", "exists": false }));
@@ -3231,12 +3232,12 @@ pub async fn read_commands_conf() -> Result<serde_json::Value, String> {
     Ok(serde_json::json!({ "content": content, "exists": true }))
 }
 
-/// Writes to ~/.claude/hooks/resources/commands.conf and verifies with command-guard.py
+/// Writes to ~/.ccode/hooks/c-guard/commands.conf and verifies with c-guard.py
 #[tauri::command]
 pub async fn write_and_verify_commands_conf(content: String) -> Result<String, String> {
     let home = dirs::home_dir()
         .ok_or_else(|| "Could not find home directory".to_string())?;
-    let conf_path = home.join(".claude").join("hooks").join("resources").join("commands.conf");
+    let conf_path = home.join(".ccode").join("hooks").join("c-guard").join("commands.conf");
 
     fs::create_dir_all(conf_path.parent().ok_or_else(|| "Invalid path".to_string())?)
         .map_err(|e| format!("Failed to create directory: {}", e))?;
@@ -3244,9 +3245,9 @@ pub async fn write_and_verify_commands_conf(content: String) -> Result<String, S
     fs::write(&conf_path, content)
         .map_err(|e| format!("Failed to write commands.conf: {}", e))?;
 
-    let guard_script = home.join(".claude").join("hooks").join("command-guard.py");
+    let guard_script = home.join(".ccode").join("hooks").join("c-guard").join("c-guard.py");
     if !guard_script.exists() {
-        return Ok("Verification skipped: command-guard.py not found".to_string());
+        return Ok("Verification skipped: c-guard.py not found".to_string());
     }
 
     let output = std::process::Command::new("python")
@@ -3255,7 +3256,7 @@ pub async fn write_and_verify_commands_conf(content: String) -> Result<String, S
         .output()
         .or_else(|_| {
             std::process::Command::new("python3")
-                .arg(home.join(".claude").join("hooks").join("command-guard.py").to_string_lossy().to_string())
+                .arg(home.join(".ccode").join("hooks").join("c-guard").join("c-guard.py").to_string_lossy().to_string())
                 .arg("--verify")
                 .output()
         });
@@ -3266,7 +3267,7 @@ pub async fn write_and_verify_commands_conf(content: String) -> Result<String, S
             let stderr = String::from_utf8_lossy(&output.stderr);
             Ok(format!("{}{}", stdout, stderr))
         }
-        Err(_) => Ok("Verification skipped: command-guard.py not found".to_string()),
+        Err(_) => Ok("Verification skipped: c-guard.py not found".to_string()),
     }
 }
 
@@ -3276,7 +3277,7 @@ pub async fn check_cguard_installed() -> Result<serde_json::Value, String> {
     let home = dirs::home_dir()
         .ok_or_else(|| "Could not find home directory".to_string())?;
 
-    let script_path = home.join(".claude").join("hooks").join("command-guard.py");
+    let script_path = home.join(".ccode").join("hooks").join("c-guard").join("c-guard.py");
     let script_exists = script_path.exists();
 
     let settings_path = home.join(".claude").join("settings.json");
@@ -3295,7 +3296,7 @@ pub async fn check_cguard_installed() -> Result<serde_json::Value, String> {
                             h.iter().any(|hook| {
                                 hook.get("command")
                                     .and_then(|c| c.as_str())
-                                    .map(|s| s.contains("hook-dispatcher") || s.contains("command-guard"))
+                                    .map(|s| s.contains("c-guard.sh") || s.contains("c-guard.py"))
                                     .unwrap_or(false)
                             })
                         })
@@ -3314,7 +3315,7 @@ pub async fn check_cguard_installed() -> Result<serde_json::Value, String> {
     }))
 }
 
-/// Enables or disables command guard by modifying ~/.claude/settings.json
+/// Enables or disables c-guard by modifying ~/.claude/settings.json
 #[tauri::command]
 pub async fn set_cguard_enabled(enabled: bool) -> Result<(), String> {
     let home = dirs::home_dir()
@@ -3329,8 +3330,8 @@ pub async fn set_cguard_enabled(enabled: bool) -> Result<(), String> {
         serde_json::json!({})
     };
 
-    let hook_dispatcher_path = format!(
-        "C:/Users/{username}/.claude/hooks/hook-dispatcher.sh",
+    let cguard_hook_command = format!(
+        "bash C:/Users/{username}/.ccode/hooks/c-guard/c-guard.sh",
         username = std::env::var("USERNAME").unwrap_or_else(|_| "User".to_string())
     );
 
@@ -3344,7 +3345,7 @@ pub async fn set_cguard_enabled(enabled: bool) -> Result<(), String> {
         }
 
         if let Some(array) = settings["hooks"]["PreToolUse"].as_array_mut() {
-            let has_dispatcher = array.iter().any(|entry| {
+            let has_cguard = array.iter().any(|entry| {
                 entry
                     .get("hooks")
                     .and_then(|h| h.as_array())
@@ -3352,19 +3353,18 @@ pub async fn set_cguard_enabled(enabled: bool) -> Result<(), String> {
                         h.iter().any(|hook| {
                             hook.get("command")
                                 .and_then(|c| c.as_str())
-                                .map(|s| s.contains("hook-dispatcher"))
+                                .map(|s| s.contains("c-guard.sh") || s.contains("c-guard.py"))
                                 .unwrap_or(false)
                         })
                     })
                     .unwrap_or(false)
             });
 
-            if !has_dispatcher {
+            if !has_cguard {
                 array.push(serde_json::json!({
-                    "matcher": "*",
                     "hooks": [{
                         "type": "command",
-                        "command": hook_dispatcher_path
+                        "command": cguard_hook_command
                     }]
                 }));
             }
@@ -3378,7 +3378,7 @@ pub async fn set_cguard_enabled(enabled: bool) -> Result<(), String> {
                             !hooks_arr.iter().any(|hook| {
                                 hook.get("command")
                                     .and_then(|c| c.as_str())
-                                    .map(|s| s.contains("hook-dispatcher"))
+                                    .map(|s| s.contains("c-guard.sh") || s.contains("c-guard.py"))
                                     .unwrap_or(false)
                             })
                         } else {
@@ -3397,12 +3397,12 @@ pub async fn set_cguard_enabled(enabled: bool) -> Result<(), String> {
         .map_err(|e| format!("Failed to write settings: {}", e))
 }
 
-/// Runs the command-guard.py script with the given arguments
+/// Runs the c-guard.py script with the given arguments
 #[tauri::command]
 pub async fn run_cguard_cli(args: Vec<String>) -> Result<String, String> {
     let home = dirs::home_dir()
         .ok_or_else(|| "Could not find home directory".to_string())?;
-    let guard_script = home.join(".claude").join("hooks").join("command-guard.py");
+    let guard_script = home.join(".ccode").join("hooks").join("c-guard").join("c-guard.py");
 
     let output = std::process::Command::new("python")
         .arg(guard_script.to_string_lossy().to_string())
@@ -3410,7 +3410,7 @@ pub async fn run_cguard_cli(args: Vec<String>) -> Result<String, String> {
         .output()
         .or_else(|_| {
             std::process::Command::new("python3")
-                .arg(home.join(".claude").join("hooks").join("command-guard.py").to_string_lossy().to_string())
+                .arg(home.join(".ccode").join("hooks").join("c-guard").join("c-guard.py").to_string_lossy().to_string())
                 .args(&args)
                 .output()
         });
@@ -3761,14 +3761,34 @@ fn ccode_settings_path() -> Result<PathBuf, String> {
 #[tauri::command]
 pub fn read_session_status(session_id: String) -> Result<serde_json::Value, String> {
     let home = dirs::home_dir().ok_or_else(|| "Cannot find home directory".to_string())?;
-    let path = home.join(".ccode").join("status").join(format!("{}.json", session_id));
+    let path = home
+        .join(".ccode")
+        .join("states")
+        .join("sessions")
+        .join(format!("{}.jsonl", session_id));
     if !path.exists() {
         return Ok(serde_json::Value::Null);
     }
-    let contents = fs::read_to_string(&path)
+    let content = fs::read_to_string(&path)
         .map_err(|e| format!("Failed to read session status: {}", e))?;
-    serde_json::from_str(&contents)
-        .map_err(|e| format!("Failed to parse session status: {}", e))
+    match content.lines().filter(|l| !l.trim().is_empty()).last() {
+        Some(line) => serde_json::from_str(line)
+            .map_err(|e| format!("Failed to parse session status: {}", e)),
+        None => Ok(serde_json::Value::Null),
+    }
+}
+
+#[tauri::command]
+pub fn read_process_state() -> Result<serde_json::Value, String> {
+    let home = dirs::home_dir().ok_or_else(|| "Cannot find home directory".to_string())?;
+    let path = home.join(".ccode").join("states").join("process_state.json");
+    if !path.exists() {
+        return Ok(serde_json::Value::Object(serde_json::Map::new()));
+    }
+    let content = fs::read_to_string(&path)
+        .map_err(|e| format!("Failed to read process state: {}", e))?;
+    serde_json::from_str(&content)
+        .map_err(|e| format!("Failed to parse process state: {}", e))
 }
 
 #[tauri::command]
@@ -3899,24 +3919,25 @@ pub async fn run_doctor(app: AppHandle) -> Result<String, String> {
     }
 }
 
-/// Saves the sidebar session state to ~/.ccode/sidebar_state.json
+/// Saves the sidebar session state to ~/.ccode/states/sidebar_state.json
 #[tauri::command]
 pub async fn save_sidebar_state(json: String) -> Result<(), String> {
     let ccode_dir = dirs::home_dir()
         .ok_or_else(|| "Cannot find home directory".to_string())?
-        .join(".ccode");
+        .join(".ccode")
+        .join("states");
     std::fs::create_dir_all(&ccode_dir).map_err(|e| e.to_string())?;
     let path = ccode_dir.join("sidebar_state.json");
     std::fs::write(&path, json).map_err(|e| e.to_string())?;
     Ok(())
 }
 
-/// Loads the sidebar session state from ~/.ccode/sidebar_state.json
+/// Loads the sidebar session state from ~/.ccode/states/sidebar_state.json
 /// Returns "{}" if the file does not exist.
 #[tauri::command]
 pub async fn load_sidebar_state() -> Result<String, String> {
     let path = match dirs::home_dir() {
-        Some(h) => h.join(".ccode").join("sidebar_state.json"),
+        Some(h) => h.join(".ccode").join("states").join("sidebar_state.json"),
         None => return Ok("{}".to_string()),
     };
     if !path.exists() {
