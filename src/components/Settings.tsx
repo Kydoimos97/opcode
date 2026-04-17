@@ -7,19 +7,14 @@ import {
   AlertCircle,
   Check,
   RefreshCw,
-  Code,
   Settings2,
   Layout,
   SlidersHorizontal,
-  Zap,
   Network,
   Package,
-  Package2,
-  Eye,
   Shield,
   Terminal,
   Command,
-  ShieldCheck,
   Palette,
   ChevronDown,
   ChevronRight,
@@ -49,10 +44,8 @@ import {
 } from "@/lib/api";
 import { cn } from "@/lib/utils";
 import { ClaudeVersionSelector } from "./ClaudeVersionSelector";
-import { HooksEditor } from "./HooksEditor";
 import { SlashCommandsManager } from "./SlashCommandsManager";
 import { ProxySettings } from "./ProxySettings";
-import { MCPManager } from "./MCPManager";
 import { Agents } from "./Agents";
 import { MarkdownEditor } from "./MarkdownEditor";
 import { ClaudeExplorer } from "./ClaudeExplorer";
@@ -60,7 +53,6 @@ import { useTheme } from "@/hooks";
 import { useDebugMode } from "@/hooks/useDebugMode";
 import { TabPersistenceService } from "@/services/tabPersistence";
 import { ccodeSettings } from "@/lib/ccodeSettings";
-import { startupCache } from "@/lib/startupCache";
 
 interface SettingsProps {
   /**
@@ -92,38 +84,17 @@ const CCODE_NAV_ITEMS = [
   { id: 'environment', label: 'Environment', icon: Terminal },
   { id: 'proxy', label: 'Proxy', icon: Network },
   { id: 'advanced', label: 'Advanced', icon: SlidersHorizontal },
-  { id: 'hooks-display', label: 'Hooks Display', icon: Eye },
 ] as const;
 
 const CLAUDE_NAV_ITEMS = [
-  { id: 'hooks', label: 'Hooks', icon: Zap },
   { id: 'commands', label: 'Commands', icon: Command },
-  { id: 'cguard', label: 'c-guard', icon: ShieldCheck },
   { id: 'skills', label: 'Skills', icon: Package },
-  { id: 'plugins', label: 'Plugins', icon: Package2 },
-  { id: 'mcp', label: 'MCP Servers', icon: Network },
   { id: 'agents', label: 'Agents', icon: Bot },
   { id: 'claude-md', label: 'CLAUDE.md', icon: FileText },
   { id: 'claude-explorer', label: '.claude Explorer', icon: FolderSearch },
 ] as const;
 
 type SectionId = typeof CCODE_NAV_ITEMS[number]['id'] | typeof CLAUDE_NAV_ITEMS[number]['id'];
-
-const DEFAULT_COMMANDS_CONF_TEMPLATE = `# c-guard commands configuration
-# Lines starting with # are comments
-# Format: ALLOW <pattern> or DENY <pattern>
-# Patterns support wildcards: * matches anything
-
-# Allow common development tools
-ALLOW git *
-ALLOW npm *
-ALLOW pnpm *
-ALLOW cargo *
-
-# Deny destructive operations
-DENY rm -rf /
-DENY format *
-`;
 
 // ─── Color picker helpers ─────────────────────────────────────────────────────
 
@@ -276,24 +247,7 @@ export const Settings: React.FC<SettingsProps> = ({
   const [expandedSkill, setExpandedSkill] = useState<string | null>(null);
   const [skillContent, setSkillContent] = useState<Record<string, string>>({});
 
-  // Plugins section state
-  const [pluginList, setPluginList] = useState<{
-    installed: Array<{ id: string; version: string | null; scope: string | null; enabled: boolean; installedAt: string | null; lastUpdated: string | null }>;
-    available: Array<{ pluginId: string; name: string; description: string | null; marketplaceName: string | null; installCount: number | null }>;
-  }>({ installed: [], available: [] });
-  const [pluginsLoading, setPluginsLoading] = useState(false);
-  const [pluginAction, setPluginAction] = useState<string | null>(null);
-  const [pluginsTab, setPluginsTab] = useState<'installed' | 'browse'>('installed');
 
-  // Hooks display state
-  const [globalSettings, setGlobalSettings] = useState<Record<string, any>>({});
-  const [hooksLoading, setHooksLoading] = useState(false);
-
-  // c-guard state
-  const [cguardEnabled, setCguardEnabled] = useState(false);
-  const [commandsConfContent, setCommandsConfContent] = useState("");
-  const [commandsConfExists, setCommandsConfExists] = useState(false);
-  const [commandsConfLoading, setCommandsConfLoading] = useState(false);
 
   // Collapsible custom color sections
   const [colorSectionOpen, setColorSectionOpen] = useState<Record<string, boolean>>({
@@ -302,13 +256,6 @@ export const Settings: React.FC<SettingsProps> = ({
     interactive: true,
     chat: true,
   });
-  const [commandsConfVerifyOutput, setCommandsConfVerifyOutput] = useState("");
-  const [cguardInstalled, setCguardInstalled] = useState<{ script_exists: boolean; hook_wired: boolean; installed: boolean } | null>(null);
-  const [cguardAuditInput, setCguardAuditInput] = useState("");
-  const [cguardAuditOutput, setCguardAuditOutput] = useState("");
-  const [cguardAuditLoading, setCguardAuditLoading] = useState(false);
-  const [cguardUsageOutput, setCguardUsageOutput] = useState("");
-  const [cguardUsageLoading, setCguardUsageLoading] = useState(false);
 
   const [sidebarDefaultOpen, setSidebarDefaultOpen] = useState(false);
   const [statusBarVisible, setStatusBarVisible] = useState(true);
@@ -322,8 +269,6 @@ export const Settings: React.FC<SettingsProps> = ({
   const [systemFonts, setSystemFonts] = useState<Array<{ name: string; is_monospace: boolean }>>([]);
   const [fontsLoading, setFontsLoading] = useState(false);
 
-  const [hookBridgeTypeCount, setHookBridgeTypeCount] = useState(0);
-  const [hookBridgeLoading, setHookBridgeLoading] = useState(false);
 
   // Auth status state
   const [authStatus, setAuthStatus] = useState<{
@@ -374,10 +319,6 @@ export const Settings: React.FC<SettingsProps> = ({
     (async () => {
       const startupIntroPref = await ccodeSettings.getPreference('startup_intro_enabled');
       setStartupIntroEnabled(startupIntroPref === null || startupIntroPref === undefined ? true : Boolean(startupIntroPref));
-      const cguardStatus = await api.checkCguardInstalled();
-      setCguardInstalled(cguardStatus);
-      const bridgeTypeCount = await api.checkHookBridgeInstalled().catch(() => 0);
-      setHookBridgeTypeCount(bridgeTypeCount);
 
       // Load auth status
       const auth = await api.getAuthStatus().catch(() => null);
@@ -425,20 +366,8 @@ export const Settings: React.FC<SettingsProps> = ({
   }, [activeSection, systemFonts.length]);
 
   useEffect(() => {
-    if (activeSection === 'plugins') {
-      loadPlugins();
-    }
-  }, [activeSection]);
-
-  useEffect(() => {
     if (activeSection === 'skills') {
       loadSkills();
-    }
-  }, [activeSection]);
-
-  useEffect(() => {
-    if (activeSection === 'commands') {
-      loadCommandsConf();
     }
   }, [activeSection]);
 
@@ -484,167 +413,10 @@ export const Settings: React.FC<SettingsProps> = ({
     }
   };
 
-  const loadPlugins = async () => {
-    try {
-      setPluginsLoading(true);
-      let result: any;
-      if (startupCache.plugins !== null) {
-        result = startupCache.plugins;
-        startupCache.plugins = null; // consume once
-      } else {
-        result = await api.listPlugins();
-      }
-      setPluginList(result);
-    } catch (err) {
-      console.error('Failed to load plugins:', err);
-    } finally {
-      setPluginsLoading(false);
-    }
-  };
-
-  /**
-   * Loads global settings to display hooks
-   */
-  const loadGlobalSettings = async () => {
-    try {
-      setHooksLoading(true);
-      const settings = await api.getGlobalSettings();
-      setGlobalSettings(settings);
-
-      // Check if c-guard is enabled
-      const hooks = settings.hooks || {};
-      const preToolUseHooks = hooks.PreToolUse || [];
-      const isCguardEnabled = Array.isArray(preToolUseHooks) &&
-        preToolUseHooks.some((hook: any) =>
-          typeof hook === 'object' && hook.hook_dispatcher &&
-          (hook.hook_dispatcher.includes('c-guard.sh') || hook.hook_dispatcher.includes('c-guard.py'))
-        );
-      setCguardEnabled(isCguardEnabled);
-    } catch (err) {
-      console.error("Failed to load global settings:", err);
-      setGlobalSettings({});
-    } finally {
-      setHooksLoading(false);
-    }
-  };
 
   /**
    * Loads commands.conf content
    */
-  const loadCommandsConf = async () => {
-    try {
-      setCommandsConfLoading(true);
-      const result = await api.readCommandsConf();
-      setCommandsConfExists(result.exists);
-      if (result.exists) {
-        setCommandsConfContent(result.content);
-      } else {
-        setCommandsConfContent(DEFAULT_COMMANDS_CONF_TEMPLATE);
-      }
-      setCommandsConfVerifyOutput("");
-    } catch (err) {
-      console.error("Failed to load commands.conf:", err);
-      setCommandsConfContent(DEFAULT_COMMANDS_CONF_TEMPLATE);
-      setCommandsConfExists(false);
-    } finally {
-      setCommandsConfLoading(false);
-    }
-  };
-
-  /**
-   * Saves and verifies commands.conf
-   */
-  const saveCommandsConf = async () => {
-    try {
-      setCommandsConfLoading(true);
-      const output = await api.writeAndVerifyCommandsConf(commandsConfContent);
-      setCommandsConfVerifyOutput(output);
-      setToast({
-        message: "commands.conf saved successfully",
-        type: "success",
-      });
-    } catch (err) {
-      console.error("Failed to save commands.conf:", err);
-      setCommandsConfVerifyOutput(`Error: ${String(err)}`);
-      setToast({
-        message: "Failed to save commands.conf",
-        type: "error",
-      });
-    } finally {
-      setCommandsConfLoading(false);
-    }
-  };
-
-  /**
-   * Toggles c-guard enabled state
-   */
-  const handleCguardToggle = async (newValue: boolean) => {
-    try {
-      await api.setCguardEnabled(newValue);
-      setCguardEnabled(newValue);
-      setToast({
-        message: newValue ? "c-guard enabled" : "c-guard disabled",
-        type: "success",
-      });
-      // Refresh global settings to reflect the change
-      await loadGlobalSettings();
-    } catch (err) {
-      console.error("Failed to toggle c-guard:", err);
-      setToast({
-        message: "Failed to toggle c-guard",
-        type: "error",
-      });
-    }
-  };
-
-  /**
-   * Runs c-guard audit command
-   */
-  const runCguardAudit = async () => {
-    if (!cguardAuditInput.trim()) {
-      setToast({
-        message: "Please enter a command to audit",
-        type: "error",
-      });
-      return;
-    }
-
-    try {
-      setCguardAuditLoading(true);
-      const output = await api.runCguardCli(["--audit", cguardAuditInput]);
-      setCguardAuditOutput(output);
-    } catch (err) {
-      console.error("Failed to run c-guard audit:", err);
-      setCguardAuditOutput(`Error: ${String(err)}`);
-      setToast({
-        message: "Failed to run c-guard audit",
-        type: "error",
-      });
-    } finally {
-      setCguardAuditLoading(false);
-    }
-  };
-
-  /**
-   * Runs c-guard usage stats command
-   */
-  const runCguardUsageStats = async () => {
-    try {
-      setCguardUsageLoading(true);
-      const output = await api.runCguardCli(["--usage"]);
-      setCguardUsageOutput(output);
-    } catch (err) {
-      console.error("Failed to run c-guard usage stats:", err);
-      setCguardUsageOutput(`Error: ${String(err)}`);
-      setToast({
-        message: "Failed to run c-guard usage stats",
-        type: "error",
-      });
-    } finally {
-      setCguardUsageLoading(false);
-    }
-  };
-
   /**
    * Loads the current Claude settings
    */
@@ -1836,88 +1608,7 @@ export const Settings: React.FC<SettingsProps> = ({
               </div>
               )}
 
-              {activeSection === 'hooks' && (
-              <div className="space-y-6">
-              <Card className="p-4">
-                <div className="flex items-center justify-between">
-                  <div className="space-y-1">
-                    <p className="text-sm font-medium">C-Code Hook Integration</p>
-                    <p className="text-xs text-muted-foreground">
-                      Real-time tool indicators, auto session titles, and waiting state via hooks.
-                    </p>
-                    <p className="text-xs text-muted-foreground">
-                      Changes take effect in your next Claude Code session.
-                    </p>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <div className={cn(
-                      'flex items-center gap-1 text-xs px-2 py-0.5 rounded-full',
-                      hookBridgeTypeCount >= 14
-                        ? 'bg-green-500/20 text-green-600'
-                        : hookBridgeTypeCount > 0
-                        ? 'bg-amber-500/20 text-amber-600'
-                        : 'bg-muted text-muted-foreground'
-                    )}>
-                      <div className={cn(
-                        'h-1.5 w-1.5 rounded-full',
-                        hookBridgeTypeCount >= 14 ? 'bg-green-500' : hookBridgeTypeCount > 0 ? 'bg-amber-500' : 'bg-muted-foreground'
-                      )} />
-                      {hookBridgeTypeCount >= 14 ? 'Installed' : hookBridgeTypeCount > 0 ? 'Update available' : 'Not installed'}
-                    </div>
-                    <Button
-                      variant={hookBridgeTypeCount >= 14 ? 'outline' : 'default'}
-                      size="sm"
-                      disabled={hookBridgeLoading}
-                      onClick={async () => {
-                        setHookBridgeLoading(true);
-                        try {
-                          if (hookBridgeTypeCount >= 14) {
-                            await api.removeHookBridge();
-                            setHookBridgeTypeCount(0);
-                            setToast({ message: 'Hook bridge removed', type: 'success' });
-                          } else {
-                            await api.installHookBridge();
-                            setHookBridgeTypeCount(14);
-                            setToast({ message: hookBridgeTypeCount > 0 ? 'Hook bridge updated' : 'Hook bridge installed', type: 'success' });
-                          }
-                        } catch (e) {
-                          setToast({ message: `Failed: ${e}`, type: 'error' });
-                        } finally {
-                          setHookBridgeLoading(false);
-                        }
-                      }}
-                    >
-                      {hookBridgeLoading ? 'Working...' : hookBridgeTypeCount >= 14 ? 'Remove' : hookBridgeTypeCount > 0 ? 'Update' : 'Install'}
-                    </Button>
-                  </div>
-                </div>
-              </Card>
-              <Card className="p-6">
-                <div className="space-y-4">
-                  <div>
-                    <h3 className="text-base font-semibold mb-2">User Hooks</h3>
-                    <p className="text-body-small text-muted-foreground mb-4">
-                      Configure hooks that apply to all Claude Code sessions for your user account.
-                      These are stored in <code className="mx-1 px-2 py-1 bg-muted rounded text-xs">~/.claude/settings.json</code>
-                    </p>
-                  </div>
-                  
-                  <HooksEditor
-                    key={activeSection}
-                    scope="user"
-                    className="border-0"
-                    hideActions={true}
-                    onChange={(hasChanges, getHooks) => {
-                      setUserHooksChanged(hasChanges);
-                      getUserHooks.current = getHooks;
-                    }}
-                  />
-                </div>
-              </Card>
-              </div>
-              )}
-
-              {activeSection === 'commands' && (
+{activeSection === 'commands' && (
               <div>
               <Card className="p-6">
                 <SlashCommandsManager className="p-0" />
@@ -2043,441 +1734,8 @@ export const Settings: React.FC<SettingsProps> = ({
               </div>
               )}
 
-              {activeSection === 'plugins' && (
-              <div className="space-y-4 mt-6">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <h3 className="text-heading-4">Plugins</h3>
-                    <p className="text-caption text-muted-foreground">
-                      Manage Claude Code plugins via claude plugin commands
-                    </p>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <div className="flex rounded-md border border-border overflow-hidden text-xs">
-                      <button
-                        onClick={() => setPluginsTab('installed')}
-                        className={cn('px-3 py-1.5 transition-colors', pluginsTab === 'installed' ? 'bg-primary text-primary-foreground' : 'hover:bg-muted')}
-                      >
-                        Installed ({pluginList.installed.length})
-                      </button>
-                      <button
-                        onClick={() => setPluginsTab('browse')}
-                        className={cn('px-3 py-1.5 transition-colors border-l border-border', pluginsTab === 'browse' ? 'bg-primary text-primary-foreground' : 'hover:bg-muted')}
-                      >
-                        Browse ({pluginList.available.length})
-                      </button>
-                    </div>
-                    <Button size="sm" variant="outline" onClick={loadPlugins} disabled={pluginsLoading}>
-                      <RefreshCw className={cn('h-4 w-4 mr-2', pluginsLoading && 'animate-spin')} />
-                      Refresh
-                    </Button>
-                  </div>
-                </div>
 
-                {pluginsLoading && pluginList.installed.length === 0 ? (
-                  <div className="flex items-center justify-center h-32 text-muted-foreground text-sm">
-                    <RefreshCw className="h-4 w-4 animate-spin mr-2" /> Loading plugins...
-                  </div>
-                ) : pluginsTab === 'installed' ? (
-                  pluginList.installed.length === 0 ? (
-                    <Card className="p-6 text-center text-muted-foreground text-sm">
-                      No plugins installed — browse available plugins to install one
-                    </Card>
-                  ) : (
-                    <div className="space-y-2">
-                      {pluginList.installed.map(plugin => {
-                        const shortName = plugin.id.split('@')[0];
-                        return (
-                          <Card key={plugin.id} className="p-3">
-                            <div className="flex items-center justify-between gap-3">
-                              <div className="flex-1 min-w-0">
-                                <div className="flex items-center gap-2 flex-wrap">
-                                  <span className="text-sm font-medium">{shortName}</span>
-                                  {plugin.scope && (
-                                    <span className="text-xs px-1.5 py-0.5 rounded bg-muted text-muted-foreground">{plugin.scope}</span>
-                                  )}
-                                  {plugin.version && plugin.version !== 'latest' && (
-                                    <span className="text-xs text-muted-foreground">v{plugin.version}</span>
-                                  )}
-                                </div>
-                                <p className="text-xs text-muted-foreground truncate">{plugin.id}</p>
-                              </div>
-                              <div className="flex items-center gap-2 flex-shrink-0">
-                                <div className={cn('h-1.5 w-1.5 rounded-full', plugin.enabled ? 'bg-green-500' : 'bg-muted-foreground')} />
-                                <Button
-                                  size="sm"
-                                  variant="outline"
-                                  disabled={pluginAction === plugin.id}
-                                  onClick={async () => {
-                                    setPluginAction(plugin.id);
-                                    try {
-                                      if (plugin.enabled) {
-                                        await api.disablePlugin(plugin.id);
-                                      } else {
-                                        await api.enablePlugin(plugin.id);
-                                      }
-                                      await loadPlugins();
-                                    } catch (e) {
-                                      console.warn('Plugin toggle failed:', e);
-                                    } finally {
-                                      setPluginAction(null);
-                                    }
-                                  }}
-                                >
-                                  {plugin.enabled ? 'Disable' : 'Enable'}
-                                </Button>
-                                <Button
-                                  size="sm"
-                                  variant="outline"
-                                  disabled={pluginAction === plugin.id}
-                                  onClick={async () => {
-                                    setPluginAction(plugin.id);
-                                    try {
-                                      await api.uninstallPlugin(plugin.id);
-                                      await loadPlugins();
-                                    } catch (e) {
-                                      console.warn('Uninstall failed:', e);
-                                    } finally {
-                                      setPluginAction(null);
-                                    }
-                                  }}
-                                >
-                                  Uninstall
-                                </Button>
-                              </div>
-                            </div>
-                          </Card>
-                        );
-                      })}
-                    </div>
-                  )
-                ) : (
-                  pluginList.available.length === 0 ? (
-                    <Card className="p-6 text-center text-muted-foreground text-sm">
-                      No plugins available from configured marketplaces
-                    </Card>
-                  ) : (
-                    <div className="space-y-2">
-                      {pluginList.available.map(plugin => {
-                        const isInstalled = pluginList.installed.some(p => p.id.startsWith(plugin.pluginId) || p.id === plugin.pluginId);
-                        return (
-                          <Card key={plugin.pluginId} className="p-3">
-                            <div className="flex items-center justify-between gap-3">
-                              <div className="flex-1 min-w-0">
-                                <div className="flex items-center gap-2 flex-wrap">
-                                  <span className="text-sm font-medium">{plugin.name}</span>
-                                  {plugin.marketplaceName && (
-                                    <span className="text-xs px-1.5 py-0.5 rounded bg-muted text-muted-foreground">{plugin.marketplaceName}</span>
-                                  )}
-                                  {plugin.installCount != null && plugin.installCount > 0 && (
-                                    <span className="text-xs text-muted-foreground">{plugin.installCount.toLocaleString()} installs</span>
-                                  )}
-                                </div>
-                                {plugin.description && (
-                                  <p className="text-xs text-muted-foreground mt-0.5 line-clamp-2">{plugin.description}</p>
-                                )}
-                              </div>
-                              <div className="flex-shrink-0">
-                                {isInstalled ? (
-                                  <span className="text-xs px-2 py-1 rounded bg-green-500/10 text-green-600">Installed</span>
-                                ) : (
-                                  <Button
-                                    size="sm"
-                                    disabled={pluginAction === plugin.pluginId}
-                                    onClick={async () => {
-                                      setPluginAction(plugin.pluginId);
-                                      try {
-                                        await api.installPlugin(plugin.pluginId, 'user');
-                                        await loadPlugins();
-                                        setPluginsTab('installed');
-                                      } catch (e) {
-                                        console.warn('Install failed:', e);
-                                      } finally {
-                                        setPluginAction(null);
-                                      }
-                                    }}
-                                  >
-                                    Install
-                                  </Button>
-                                )}
-                              </div>
-                            </div>
-                          </Card>
-                        );
-                      })}
-                    </div>
-                  )
-                )}
-              </div>
-              )}
-
-              {activeSection === 'hooks-display' && (
-              <div className="space-y-6 mt-6">
-              <Card className="p-6 space-y-4">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <h3 className="text-heading-4">Hooks Configuration</h3>
-                    <p className="text-body-small text-muted-foreground mt-1">
-                      Current hooks from ~/.claude/settings.json
-                    </p>
-                  </div>
-                  <motion.div whileTap={{ scale: 0.97 }} transition={{ duration: 0.15 }}>
-                    <Button
-                      onClick={loadGlobalSettings}
-                      disabled={hooksLoading}
-                      variant="outline"
-                      size="sm"
-                    >
-                      <RefreshCw className={cn("h-4 w-4 mr-2", hooksLoading && "animate-spin")} />
-                      Refresh
-                    </Button>
-                  </motion.div>
-                </div>
-
-                {hooksLoading ? (
-                  <div className="flex items-center justify-center py-8">
-                    <BreathingDots className="h-6 w-6 text-muted-foreground" />
-                  </div>
-                ) : !globalSettings.hooks || Object.keys(globalSettings.hooks).length === 0 ? (
-                  <div className="py-8 text-center text-muted-foreground">
-                    No hooks configured in ~/.claude/settings.json
-                  </div>
-                ) : (
-                  <pre className="font-mono text-xs overflow-auto max-h-64 p-3 border rounded-lg bg-muted">
-                    {JSON.stringify(globalSettings.hooks, null, 2)}
-                  </pre>
-                )}
-              </Card>
-              </div>
-              )}
-
-              {activeSection === 'cguard' && (
-              <div className="space-y-6 mt-6">
-              {/* Enable Toggle */}
-              <Card className="p-6 space-y-4">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <h3 className="text-heading-4">c-guard Status</h3>
-                    <p className="text-body-small text-muted-foreground mt-1">
-                      Enable or disable c-guard command auditing
-                    </p>
-                  </div>
-                  <div className="flex items-center gap-3">
-                    <Switch
-                      checked={cguardEnabled}
-                      onCheckedChange={handleCguardToggle}
-                      disabled={hooksLoading}
-                    />
-                  </div>
-                </div>
-                {cguardInstalled !== null && (
-                  <div className="mt-3 flex items-center gap-2 text-sm">
-                    {cguardInstalled.installed ? (
-                      <>
-                        <span className="h-2 w-2 rounded-full bg-green-500" />
-                        <span className="text-muted-foreground">c-guard is installed and active</span>
-                      </>
-                    ) : cguardInstalled.script_exists && !cguardInstalled.hook_wired ? (
-                      <>
-                        <span className="h-2 w-2 rounded-full bg-amber-400" />
-                        <span className="text-muted-foreground">Script found but hook not wired — enable the toggle to activate</span>
-                      </>
-                    ) : (
-                      <>
-                        <span className="h-2 w-2 rounded-full bg-red-500" />
-                        <span className="text-muted-foreground">c-guard.py not found at ~/.ccode/hooks/c-guard/</span>
-                      </>
-                    )}
-                  </div>
-                )}
-              </Card>
-
-              {/* commands.conf Editor */}
-              <Card className="p-6 space-y-4">
-                <div>
-                  <h3 className="text-heading-4 mb-2">commands.conf Editor</h3>
-                  <p className="text-body-small text-muted-foreground mb-4">
-                    Configure allowed and denied commands at ~/.ccode/hooks/c-guard/commands.conf
-                  </p>
-                </div>
-
-                {commandsConfLoading && !commandsConfContent ? (
-                  <div className="flex items-center justify-center py-8">
-                    <BreathingDots className="h-6 w-6 text-muted-foreground" />
-                  </div>
-                ) : (
-                  <>
-                    {!commandsConfExists && (
-                      <div className="rounded-md border border-dashed border-border p-4 mb-4 text-sm text-muted-foreground">
-                        commands.conf does not exist yet. Edit the template below and click "Save & Create" to create it.
-                      </div>
-                    )}
-                    {commandsConfContent && (
-                      <p className="text-xs text-muted-foreground mb-2">
-                        {(() => {
-                          const lines = commandsConfContent.split('\n').filter(l => l.trim() && !l.trim().startsWith('#'));
-                          const allow = lines.filter(l => l.trim().toUpperCase().startsWith('ALLOW')).length;
-                          const deny = lines.filter(l => l.trim().toUpperCase().startsWith('DENY')).length;
-                          return `${allow} allow rule${allow !== 1 ? 's' : ''}, ${deny} deny rule${deny !== 1 ? 's' : ''}`;
-                        })()}
-                      </p>
-                    )}
-                    <textarea
-                      value={commandsConfContent}
-                      onChange={(e) => setCommandsConfContent(e.target.value)}
-                      className="font-mono text-xs h-64 w-full border rounded p-2 bg-background"
-                      placeholder="Enter commands configuration..."
-                    />
-                    <div className="flex gap-2">
-                      <motion.div whileTap={{ scale: 0.97 }} transition={{ duration: 0.15 }} className="flex-1">
-                        <Button
-                          onClick={saveCommandsConf}
-                          disabled={commandsConfLoading}
-                          className="w-full"
-                        >
-                          {commandsConfLoading ? (
-                            <>
-                              <BreathingDots className="h-4 w-4 mr-2" />
-                              Saving...
-                            </>
-                          ) : (
-                            <>
-                              <Save className="h-4 w-4 mr-2" />
-                              {commandsConfExists ? "Save & Verify" : "Save & Create"}
-                            </>
-                          )}
-                        </Button>
-                      </motion.div>
-                      <motion.div whileTap={{ scale: 0.97 }} transition={{ duration: 0.15 }}>
-                        <Button
-                          onClick={loadCommandsConf}
-                          disabled={commandsConfLoading}
-                          variant="outline"
-                        >
-                          <RefreshCw className={cn("h-4 w-4", commandsConfLoading && "animate-spin")} />
-                        </Button>
-                      </motion.div>
-                    </div>
-
-                    {commandsConfVerifyOutput && (
-                      <pre
-                        className={cn(
-                          "font-mono text-xs p-3 border rounded-lg overflow-auto max-h-32",
-                          commandsConfVerifyOutput.toLowerCase().includes("error")
-                            ? "bg-destructive/10 border-destructive/50 text-destructive"
-                            : commandsConfVerifyOutput.trim() === ""
-                            ? "bg-green-500/10 border-green-500/50 text-green-600 dark:text-green-400"
-                            : "bg-amber-500/10 border-amber-500/50 text-amber-700 dark:text-amber-400"
-                        )}
-                      >
-                        {commandsConfVerifyOutput.trim() === ""
-                          ? "Config is valid - no errors found"
-                          : commandsConfVerifyOutput}
-                      </pre>
-                    )}
-                  </>
-                )}
-              </Card>
-
-              {/* CLI Tools Section */}
-              <div className="space-y-6">
-                {/* Audit */}
-                <Card className="p-6 space-y-4">
-                  <div>
-                    <h3 className="text-heading-4 mb-2">Audit Command</h3>
-                    <p className="text-body-small text-muted-foreground mb-4">
-                      Audit a command to see if it would be allowed by c-guard
-                    </p>
-                  </div>
-
-                  <div className="space-y-3">
-                    <div>
-                      <Label htmlFor="audit-command" className="text-sm mb-2">
-                        Command to audit
-                      </Label>
-                      <Input
-                        id="audit-command"
-                        value={cguardAuditInput}
-                        onChange={(e) => setCguardAuditInput(e.target.value)}
-                        placeholder="e.g., npm install"
-                        className="font-mono text-xs"
-                      />
-                    </div>
-
-                    <motion.div whileTap={{ scale: 0.97 }} transition={{ duration: 0.15 }}>
-                      <Button
-                        onClick={runCguardAudit}
-                        disabled={cguardAuditLoading || !cguardAuditInput.trim()}
-                        className="w-full"
-                      >
-                        {cguardAuditLoading ? (
-                          <>
-                            <BreathingDots className="h-4 w-4 mr-2" />
-                            Running...
-                          </>
-                        ) : (
-                          <>
-                            <Code className="h-4 w-4 mr-2" />
-                            Run Audit
-                          </>
-                        )}
-                      </Button>
-                    </motion.div>
-
-                    {cguardAuditOutput && (
-                      <pre className="font-mono text-xs p-3 border rounded-lg bg-muted overflow-auto max-h-48">
-                        {cguardAuditOutput}
-                      </pre>
-                    )}
-                  </div>
-                </Card>
-
-                {/* Usage Stats */}
-                <Card className="p-6 space-y-4">
-                  <div>
-                    <h3 className="text-heading-4 mb-2">Usage Statistics</h3>
-                    <p className="text-body-small text-muted-foreground mb-4">
-                      View c-guard usage statistics and command execution history
-                    </p>
-                  </div>
-
-                  <motion.div whileTap={{ scale: 0.97 }} transition={{ duration: 0.15 }}>
-                    <Button
-                      onClick={runCguardUsageStats}
-                      disabled={cguardUsageLoading}
-                      className="w-full"
-                    >
-                      {cguardUsageLoading ? (
-                        <>
-                          <BreathingDots className="h-4 w-4 mr-2" />
-                          Loading...
-                        </>
-                      ) : (
-                        <>
-                          <Code className="h-4 w-4 mr-2" />
-                          Show Usage Stats
-                        </>
-                      )}
-                    </Button>
-                  </motion.div>
-
-                  {cguardUsageOutput && (
-                    <pre className="font-mono text-xs p-3 border rounded-lg bg-muted overflow-auto max-h-96">
-                      {cguardUsageOutput}
-                    </pre>
-                  )}
-                </Card>
-              </div>
-              </div>
-              )}
-
-              {activeSection === 'mcp' && (
-              <div className="h-full">
-                <MCPManager onBack={() => {}} />
-              </div>
-              )}
-
-              {activeSection === 'agents' && (
+{activeSection === 'agents' && (
               <div className="h-full">
                 <Agents />
               </div>
