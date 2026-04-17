@@ -57,7 +57,7 @@ export function StartupIntro({ visible, progress = 0, stepLabel }: { visible: bo
               {/* App logo */}
               <motion.img
                 src={appLogo}
-                alt="Opcode"
+                alt="C-Code"
                 className="relative z-10 h-20 w-20 object-contain flex-shrink-0"
                 initial={{ opacity: 0, scale: 0.85 }}
                 animate={{ opacity: 1, scale: 1 }}

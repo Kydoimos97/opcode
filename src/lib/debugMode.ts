@@ -29,5 +29,5 @@ export async function setDebugMode(enabled: boolean): Promise<void> {
 }
 
 export async function debugLog(...args: unknown[]): Promise<void> {
-  if (await isDebugMode()) console.debug('[opcode]', ...args);
+  if (await isDebugMode()) console.debug('[ccode]', ...args);
 }

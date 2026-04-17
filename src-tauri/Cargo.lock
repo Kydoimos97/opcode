@@ -667,6 +667,59 @@ dependencies = [
 ]
 
 [[package]]
+name = "ccode"
+version = "0.2.1"
+dependencies = [
+ "anyhow",
+ "async-trait",
+ "axum",
+ "base64 0.22.1",
+ "chrono",
+ "clap",
+ "cocoa",
+ "dirs 5.0.1",
+ "env_logger",
+ "fontdb",
+ "futures",
+ "futures-util",
+ "glob",
+ "image",
+ "libc",
+ "log",
+ "objc",
+ "once_cell",
+ "portable-pty",
+ "regex",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "serde_yaml",
+ "sha2",
+ "sysinfo",
+ "tauri",
+ "tauri-build",
+ "tauri-plugin-clipboard-manager",
+ "tauri-plugin-dialog",
+ "tauri-plugin-fs",
+ "tauri-plugin-global-shortcut",
+ "tauri-plugin-http",
+ "tauri-plugin-notification",
+ "tauri-plugin-process",
+ "tauri-plugin-shell",
+ "tauri-plugin-updater",
+ "tauri-plugin-window-state",
+ "tempfile",
+ "tokio",
+ "tower",
+ "tower-http",
+ "uuid",
+ "walkdir",
+ "which",
+ "window-vibrancy 0.5.3",
+ "zstd",
+]
+
+[[package]]
 name = "cesu8"
 version = "1.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3591,59 +3644,6 @@ name = "once_cell_polyfill"
 version = "1.70.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a4895175b425cb1f87721b59f0f286c2092bd4af812243672510e1ac53e2e0ad"
-
-[[package]]
-name = "opcode"
-version = "0.2.1"
-dependencies = [
- "anyhow",
- "async-trait",
- "axum",
- "base64 0.22.1",
- "chrono",
- "clap",
- "cocoa",
- "dirs 5.0.1",
- "env_logger",
- "fontdb",
- "futures",
- "futures-util",
- "glob",
- "image",
- "libc",
- "log",
- "objc",
- "once_cell",
- "portable-pty",
- "regex",
- "reqwest",
- "serde",
- "serde_json",
- "serde_yaml",
- "sha2",
- "sysinfo",
- "tauri",
- "tauri-build",
- "tauri-plugin-clipboard-manager",
- "tauri-plugin-dialog",
- "tauri-plugin-fs",
- "tauri-plugin-global-shortcut",
- "tauri-plugin-http",
- "tauri-plugin-notification",
- "tauri-plugin-process",
- "tauri-plugin-shell",
- "tauri-plugin-updater",
- "tauri-plugin-window-state",
- "tempfile",
- "tokio",
- "tower",
- "tower-http",
- "uuid",
- "walkdir",
- "which",
- "window-vibrancy 0.5.3",
- "zstd",
-]
 
 [[package]]
 name = "open"

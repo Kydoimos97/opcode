@@ -26,16 +26,16 @@ tasks:
       - pnpm run tauri dev
 
   dev-web:
-    desc: Build frontend then run the web server binary (opcode-web) on the default port
+    desc: Build frontend then run the web server binary (ccode-web) on the default port
     deps: [build-frontend]
     cmds:
-      - cargo run --manifest-path {{.CARGO_DIR}}/Cargo.toml --bin opcode-web
+      - cargo run --manifest-path {{.CARGO_DIR}}/Cargo.toml --bin ccode-web
 
   dev-web-port:
     desc: Run the web server binary on a custom port (task dev-web-port PORT=9090)
     deps: [build-frontend]
     cmds:
-      - cargo run --manifest-path {{.CARGO_DIR}}/Cargo.toml --bin opcode-web -- --port {{.PORT}}
+      - cargo run --manifest-path {{.CARGO_DIR}}/Cargo.toml --bin ccode-web -- --port {{.PORT}}
     vars:
       PORT: "8080"
 

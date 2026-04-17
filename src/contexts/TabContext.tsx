@@ -39,7 +39,6 @@ interface TabContextType {
 
 const TabContext = createContext<TabContextType | undefined>(undefined);
 
-// const STORAGE_KEY = 'opcode_tabs'; // No longer needed - persistence disabled
 const MAX_TABS = 20;
 
 export const TabProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
