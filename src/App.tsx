@@ -66,13 +66,7 @@ function AppContent() {
   const [previousView] = useState<View>("welcome");
   const [showSystemFooter, setShowSystemFooter] = useState(false);
 
-  const [splashVisible, setSplashVisible] = useState(() => {
-    try {
-      const v = window.localStorage.getItem('app_setting:startup_intro_enabled');
-      if (v === 'false') return false;
-    } catch { /* ignore */ }
-    return true;
-  });
+  const [splashVisible, setSplashVisible] = useState(true);
   const [splashProgress, setSplashProgress] = useState(0);
   const [splashStep, setSplashStep] = useState('');
 

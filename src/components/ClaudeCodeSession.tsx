@@ -52,7 +52,6 @@ import { WebviewPreview } from "./WebviewPreview";
 import type { ClaudeStreamMessage } from "./AgentExecution";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { useTabState } from "@/hooks/useTabState";
-import { SessionPersistenceService } from "@/services/sessionPersistence";
 import { useGroupedMessages } from "@/hooks/useGroupedMessages";
 import { useMessagePartition } from "@/hooks/useMessagePartition";
 import { useHookEvents } from "@/hooks/useHookEvents";
@@ -557,15 +556,6 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
       
       const history = await api.loadSessionHistory(session.id, session.project_id);
       
-      // Save session data for restoration
-      if (history && history.length > 0) {
-        SessionPersistenceService.saveSession(
-          session.id,
-          session.project_id,
-          session.project_path,
-          history.length
-        );
-      }
       
       // Convert history to messages format
       const loadedMessages: ClaudeStreamMessage[] = history.map(entry => ({
@@ -786,14 +776,6 @@ export const ClaudeCodeSession: React.FC<ClaudeCodeSessionProps> = ({
                 if (!extractedSessionInfo) {
                   const projectId = projectPath.replace(/[^a-zA-Z0-9]/g, '-');
                   setExtractedSessionInfo({ sessionId: msg.session_id, projectId });
-                  
-                  // Save session data for restoration
-                  SessionPersistenceService.saveSession(
-                    msg.session_id,
-                    projectId,
-                    projectPath,
-                    messages.length
-                  );
                 }
 
                 // Switch to session-specific listeners

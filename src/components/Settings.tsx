@@ -287,36 +287,56 @@ export const Settings: React.FC<SettingsProps> = ({
   const [doctorLoading, setDoctorLoading] = useState(false);
   const [doctorError, setDoctorError] = useState<string | null>(null);
 
-  useEffect(() => {
-    setSidebarDefaultOpen(localStorage.getItem('ui_pref:sidebar_default_open') === 'true');
-    setStatusBarVisible(localStorage.getItem('ui_pref:status_bar_visible') !== 'false');
-    setWorkBlockAutoExpand(localStorage.getItem('ui_pref:work_block_auto_expand') === 'true');
-    setShowStreamingIndicator(localStorage.getItem('ui_pref:show_streaming_indicator') !== 'false');
+  const saveUiPreference = React.useCallback(async (key: string, value: boolean) => {
+    try {
+      const currentSettings = await api.readCcodeSettings();
+      await api.writeCcodeSettings({
+        ...currentSettings,
+        [key]: value
+      });
+    } catch (error) {
+      console.error(`Failed to save ${key}:`, error);
+    }
   }, []);
 
   useEffect(() => {
-    localStorage.setItem('ui_pref:sidebar_default_open', sidebarDefaultOpen.toString());
-  }, [sidebarDefaultOpen]);
+    (async () => {
+      try {
+        const settings = await api.readCcodeSettings();
+        setSidebarDefaultOpen(settings.sidebar_default_open ?? false);
+        setStatusBarVisible(settings.status_bar_visible ?? true);
+        setWorkBlockAutoExpand(settings.work_block_auto_expand ?? false);
+        setShowStreamingIndicator(settings.show_streaming_indicator ?? true);
+      } catch (error) {
+        console.error('Failed to load UI preferences:', error);
+      }
+    })();
+  }, []);
 
   useEffect(() => {
-    localStorage.setItem('ui_pref:status_bar_visible', statusBarVisible.toString());
-  }, [statusBarVisible]);
+    saveUiPreference('sidebar_default_open', sidebarDefaultOpen);
+  }, [sidebarDefaultOpen, saveUiPreference]);
 
   useEffect(() => {
-    localStorage.setItem('ui_pref:work_block_auto_expand', workBlockAutoExpand.toString());
-  }, [workBlockAutoExpand]);
+    saveUiPreference('status_bar_visible', statusBarVisible);
+  }, [statusBarVisible, saveUiPreference]);
 
   useEffect(() => {
-    localStorage.setItem('ui_pref:show_streaming_indicator', showStreamingIndicator.toString());
-  }, [showStreamingIndicator]);
+    saveUiPreference('work_block_auto_expand', workBlockAutoExpand);
+  }, [workBlockAutoExpand, saveUiPreference]);
+
+  useEffect(() => {
+    saveUiPreference('show_streaming_indicator', showStreamingIndicator);
+  }, [showStreamingIndicator, saveUiPreference]);
 
 
   // Load settings on mount
   useEffect(() => {
     loadSettings();
     loadClaudeBinaryPath();
-    setTabPersistenceEnabled(TabPersistenceService.isEnabled());
     (async () => {
+      const tabPersistenceEnabled = await TabPersistenceService.isEnabled();
+      setTabPersistenceEnabled(tabPersistenceEnabled);
       const startupIntroPref = await ccodeSettings.getPreference('startup_intro_enabled');
       setStartupIntroEnabled(startupIntroPref === null || startupIntroPref === undefined ? true : Boolean(startupIntroPref));
 
@@ -1536,7 +1556,7 @@ export const Settings: React.FC<SettingsProps> = ({
                     <Switch
                       id="debug-mode-toggle"
                       checked={debugMode}
-                      onCheckedChange={setDebugMode}
+                      onCheckedChange={(checked) => setDebugMode(checked)}
                     />
                   </div>
 

@@ -4,9 +4,5 @@ export { useDebounce, useDebouncedCallback } from './useDebounce';
 export { useApiCall } from './useApiCall';
 export { usePagination } from './usePagination';
 export { useTheme } from './useTheme';
-export {
-  usePerformanceMonitor,
-  useAsyncPerformanceTracker
-} from './usePerformanceMonitor';
 export { useGroupedMessages, groupMessagesIntoTurns, type Turn } from './useGroupedMessages';
 export { useProjectDisplayName } from './useProjectDisplayName';

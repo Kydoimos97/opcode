@@ -1,6 +1,5 @@
 import React, { createContext, useState, useContext, useCallback, useEffect, useRef } from 'react';
 import { TabPersistenceService } from '@/services/tabPersistence';
-import { SessionPersistenceService } from '@/services/sessionPersistence';
 import { api } from '@/lib/api';
 
 export interface Tab {
@@ -61,22 +60,7 @@ export const TabProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     
     if (savedTabs.length > 0) {
       // For chat tabs, restore session data
-      let restoredTabs = await Promise.all(savedTabs.map(async (tab) => {
-        if (tab.type === 'chat' && tab.sessionId) {
-          // Check if session can be restored
-          const sessionData = SessionPersistenceService.loadSession(tab.sessionId);
-          if (sessionData) {
-            // Create a Session object for the tab
-            const session = SessionPersistenceService.createSessionFromRestoreData(sessionData);
-            return {
-              ...tab,
-              sessionData: session,
-              initialProjectPath: sessionData.projectPath
-            };
-          }
-        }
-        return tab;
-      }));
+      const restoredTabs = savedTabs;
 
       // Merge sessions from sidebar_state.json that weren't in localStorage
       // (e.g. sessions that were running when app closed before fix #1 was deployed)

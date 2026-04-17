@@ -1,7 +1,6 @@
 import React, { Suspense, lazy, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useTabState } from '@/hooks/useTabState';
-import { useScreenTracking } from '@/hooks/useAnalytics';
 import { Tab } from '@/contexts/TabContext';
 import { Plus, ArrowLeft } from 'lucide-react';
 import { BreathingDots } from '@/components/ui/spinner';
@@ -44,8 +43,6 @@ const TabPanel: React.FC<TabPanelProps> = ({ tab, isActive }) => {
   const [isEditingProjectName, setIsEditingProjectName] = React.useState(false);
   const [projectNameEdit, setProjectNameEdit] = React.useState('');
 
-  // Track screen when tab becomes active
-  useScreenTracking(isActive ? tab.type : undefined, isActive ? tab.id : undefined);
   const [error, setError] = React.useState<string | null>(null);
   
   // Load projects when tab becomes active and refresh every 30s while active
