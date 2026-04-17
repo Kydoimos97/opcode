@@ -1,6 +1,7 @@
 import React, { useState } from "react";
 import { motion } from "framer-motion";
-import { ArrowLeft, Save, Loader2, ChevronDown, Zap, AlertCircle } from "lucide-react";
+import { ArrowLeft, Save, ChevronDown, Zap, AlertCircle } from "lucide-react";
+import { BreathingDots } from "@/components/ui/spinner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -122,7 +123,7 @@ export const CreateAgent: React.FC<CreateAgentProps> = ({
       transition={{ duration: 0.15 }}
       className={cn("h-full overflow-y-auto bg-background", className)}
     >
-      <div className="max-w-6xl mx-auto flex flex-col h-full">
+      <div className="mx-auto flex flex-col h-full">
         {/* Header */}
         <div className="p-6 border-b border-border">
           <div className="flex items-center justify-between">
@@ -162,7 +163,7 @@ export const CreateAgent: React.FC<CreateAgentProps> = ({
               >
                 {saving ? (
                   <>
-                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    <BreathingDots className="mr-2 h-4 w-4" />
                     Saving...
                   </>
                 ) : (

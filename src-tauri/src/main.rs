@@ -5,6 +5,7 @@ mod checkpoint;
 mod claude_binary;
 mod commands;
 mod process;
+mod watcher;
 
 use checkpoint::state::CheckpointState;
 use commands::agents::{
@@ -12,41 +13,53 @@ use commands::agents::{
     export_agent_to_file, fetch_github_agent_content, fetch_github_agents, get_agent,
     get_agent_run, get_agent_run_with_real_time_metrics, get_claude_binary_path,
     get_live_session_output, get_session_output, get_session_status, import_agent,
-    import_agent_from_file, import_agent_from_github, init_database, kill_agent_session,
+    import_agent_from_file, import_agent_from_github, kill_agent_session,
     list_agent_runs, list_agent_runs_with_metrics, list_agents, list_claude_installations,
     list_running_sessions, load_agent_session_history, set_claude_binary_path,
-    stream_session_output, update_agent, AgentDb,
+    stream_session_output, update_agent,
 };
 use commands::claude::{
     cancel_claude_execution, check_auto_checkpoint, check_claude_version, cleanup_old_checkpoints,
     clear_checkpoint_manager, continue_claude_code, create_checkpoint, create_project,
-    execute_claude_code, find_claude_md_files, fork_from_checkpoint, get_checkpoint_diff,
-    get_checkpoint_settings, get_checkpoint_state_stats, get_claude_session_output,
-    get_claude_settings, get_home_directory, get_hooks_config, get_project_sessions,
-    get_recently_modified_files, get_session_timeline, get_system_prompt, list_checkpoints,
-    list_directory_contents, list_projects, list_running_claude_sessions, load_session_history,
-    open_new_session, read_claude_md_file, restore_checkpoint, resume_claude_code,
-    save_claude_md_file, save_claude_settings, save_system_prompt, search_files,
-    track_checkpoint_message, track_session_messages, update_checkpoint_settings,
-    update_hooks_config, validate_hook_command, ClaudeProcessState,
+    delete_native_agent, execute_claude_code, find_claude_md_files, fork_from_checkpoint,
+    check_cguard_installed, get_auth_status, get_checkpoint_diff, get_checkpoint_settings, get_checkpoint_state_stats,
+    get_claude_session_output, get_claude_settings, get_git_diff_stat, get_git_info,
+    get_global_settings, get_home_directory, get_hooks_config, get_project_sessions,
+    get_recently_modified_files, get_session_timeline, get_system_prompt, get_worktrees,
+    list_checkpoints, list_directory_contents, list_native_agents, list_projects,
+    list_running_claude_sessions, list_skills, load_session_history, open_new_session,
+    read_claude_md_file, read_commands_conf, read_native_agent, restore_checkpoint,
+    resume_claude_code, run_cguard_cli, save_claude_md_file, save_claude_settings,
+    save_system_prompt, search_files, set_cguard_enabled, track_checkpoint_message,
+    track_session_messages, update_checkpoint_settings, update_hooks_config, validate_hook_command,
+    write_and_verify_commands_conf, write_native_agent, ClaudeProcessState,
+    list_claude_directory, read_claude_file, list_session_logs,
+    poll_session_file, read_session_tail, get_session_file_status, get_session_file_path,
+    read_ccode_settings, write_ccode_settings, read_session_status, read_process_state, open_path,
+    list_plugins, install_plugin, uninstall_plugin, enable_plugin, disable_plugin,
+    list_plan_files, read_plan_file, get_auto_mode_config, run_doctor,
+    save_sidebar_state, load_sidebar_state, read_tabs_cache, write_tabs_cache,
 };
+use commands::fonts::list_system_fonts;
+use commands::system::get_system_resources;
+use commands::terminal::open_terminal_in;
+use commands::hook_events::{get_hook_events, check_hook_bridge_installed, install_hook_bridge, remove_hook_bridge};
 use commands::mcp::{
     mcp_add, mcp_add_from_claude_desktop, mcp_add_json, mcp_get, mcp_get_server_status, mcp_list,
     mcp_read_project_config, mcp_remove, mcp_reset_project_choices, mcp_save_project_config,
     mcp_serve, mcp_test_connection,
 };
+use commands::startup::get_startup_snapshot;
 
-use commands::proxy::{apply_proxy_settings, get_proxy_settings, save_proxy_settings};
-use commands::storage::{
-    storage_delete_row, storage_execute_sql, storage_insert_row, storage_list_tables,
-    storage_read_table, storage_reset_database, storage_update_row,
-};
+use commands::proxy::{apply_proxy_settings, get_proxy_settings, load_proxy_at_startup, save_proxy_settings};
+use commands::pty::{spawn_pty, write_pty, resize_pty, kill_pty};
 use commands::usage::{
     get_session_stats, get_usage_by_date_range, get_usage_details, get_usage_stats,
+    read_usage_cache, write_usage_cache,
 };
 use process::ProcessRegistryState;
-use std::sync::Mutex;
 use tauri::Manager;
+use tauri::Emitter;
 
 #[cfg(target_os = "macos")]
 use window_vibrancy::{apply_vibrancy, NSVisualEffectMaterial};
@@ -58,67 +71,17 @@ fn main() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_shell::init())
+        .plugin(tauri_plugin_window_state::Builder::default().build())
         .setup(|app| {
-            // Initialize agents database
-            let conn = init_database(&app.handle()).expect("Failed to initialize agents database");
-
-            // Load and apply proxy settings from the database
-            {
-                let db = AgentDb(Mutex::new(conn));
-                let proxy_settings = match db.0.lock() {
-                    Ok(conn) => {
-                        // Directly query proxy settings from the database
-                        let mut settings = commands::proxy::ProxySettings::default();
-
-                        let keys = vec![
-                            ("proxy_enabled", "enabled"),
-                            ("proxy_http", "http_proxy"),
-                            ("proxy_https", "https_proxy"),
-                            ("proxy_no", "no_proxy"),
-                            ("proxy_all", "all_proxy"),
-                        ];
-
-                        for (db_key, field) in keys {
-                            if let Ok(value) = conn.query_row(
-                                "SELECT value FROM app_settings WHERE key = ?1",
-                                rusqlite::params![db_key],
-                                |row| row.get::<_, String>(0),
-                            ) {
-                                match field {
-                                    "enabled" => settings.enabled = value == "true",
-                                    "http_proxy" => {
-                                        settings.http_proxy = Some(value).filter(|s| !s.is_empty())
-                                    }
-                                    "https_proxy" => {
-                                        settings.https_proxy = Some(value).filter(|s| !s.is_empty())
-                                    }
-                                    "no_proxy" => {
-                                        settings.no_proxy = Some(value).filter(|s| !s.is_empty())
-                                    }
-                                    "all_proxy" => {
-                                        settings.all_proxy = Some(value).filter(|s| !s.is_empty())
-                                    }
-                                    _ => {}
-                                }
-                            }
-                        }
-
-                        log::info!("Loaded proxy settings: enabled={}", settings.enabled);
-                        settings
-                    }
-                    Err(e) => {
-                        log::warn!("Failed to lock database for proxy settings: {}", e);
-                        commands::proxy::ProxySettings::default()
-                    }
-                };
-
-                // Apply the proxy settings
-                apply_proxy_settings(&proxy_settings);
+            // Restore window position and size from previous session
+            if let Some(window) = app.get_webview_window("main") {
+                use tauri_plugin_window_state::{WindowExt, StateFlags};
+                window.restore_state(StateFlags::all()).ok();
             }
 
-            // Re-open the connection for the app to manage
-            let conn = init_database(&app.handle()).expect("Failed to initialize agents database");
-            app.manage(AgentDb(Mutex::new(conn)));
+            // Load and apply proxy settings from ~/.ccode/settings.json
+            let proxy_settings = load_proxy_at_startup();
+            apply_proxy_settings(&proxy_settings);
 
             // Initialize checkpoint state
             let checkpoint_state = CheckpointState::new();
@@ -146,6 +109,50 @@ fn main() {
 
             // Initialize Claude process state
             app.manage(ClaudeProcessState::default());
+
+            // Initialize session watcher
+            let watcher_state = watcher::init_session_watcher(app.handle().clone());
+            app.manage(watcher_state);
+
+            // Start system resources background polling (emits every 5s)
+            {
+                use sysinfo::{CpuRefreshKind, Disks, MemoryRefreshKind, RefreshKind, System};
+                use std::time::Duration;
+                use commands::system::SystemResources;
+
+                let app_handle = app.handle().clone();
+                tauri::async_runtime::spawn(async move {
+                    let mut sys = System::new_with_specifics(
+                        RefreshKind::new()
+                            .with_memory(MemoryRefreshKind::everything())
+                            .with_cpu(CpuRefreshKind::everything()),
+                    );
+                    loop {
+                        sys.refresh_memory();
+                        sys.refresh_cpu_usage();
+
+                        let disks = Disks::new_with_refreshed_list();
+                        let (disk_used, disk_total) =
+                            disks.iter().fold((0u64, 0u64), |(used, total), d| {
+                                (
+                                    used + d.total_space().saturating_sub(d.available_space()),
+                                    total + d.total_space(),
+                                )
+                            });
+
+                        let payload = SystemResources {
+                            ram_used_mb: sys.used_memory() / 1_048_576,
+                            ram_total_mb: sys.total_memory() / 1_048_576,
+                            cpu_percent: sys.global_cpu_usage(),
+                            disk_used_gb: disk_used as f64 / 1_073_741_824.0,
+                            disk_total_gb: disk_total as f64 / 1_073_741_824.0,
+                        };
+
+                        let _ = app_handle.emit("system-resources", &payload);
+                        tokio::time::sleep(Duration::from_secs(10)).await;
+                    }
+                });
+            }
 
             // Apply window vibrancy with rounded corners on macOS
             #[cfg(target_os = "macos")]
@@ -211,6 +218,15 @@ fn main() {
             get_hooks_config,
             update_hooks_config,
             validate_hook_command,
+            get_auth_status,
+            get_git_info,
+            get_git_diff_stat,
+            get_worktrees,
+            list_plugins,
+            install_plugin,
+            uninstall_plugin,
+            enable_plugin,
+            disable_plugin,
             // Checkpoint Management
             create_checkpoint,
             restore_checkpoint,
@@ -260,6 +276,8 @@ fn main() {
             get_usage_by_date_range,
             get_usage_details,
             get_session_stats,
+            read_usage_cache,
+            write_usage_cache,
             // MCP (Model Context Protocol)
             mcp_add,
             mcp_list,
@@ -273,14 +291,6 @@ fn main() {
             mcp_get_server_status,
             mcp_read_project_config,
             mcp_save_project_config,
-            // Storage Management
-            storage_list_tables,
-            storage_read_table,
-            storage_update_row,
-            storage_delete_row,
-            storage_insert_row,
-            storage_execute_sql,
-            storage_reset_database,
             // Slash Commands
             commands::slash_commands::slash_commands_list,
             commands::slash_commands::slash_command_get,
@@ -289,6 +299,57 @@ fn main() {
             // Proxy Settings
             get_proxy_settings,
             save_proxy_settings,
+            // Native agents and skills
+            list_native_agents,
+            read_native_agent,
+            write_native_agent,
+            delete_native_agent,
+            list_skills,
+            get_global_settings,
+            read_commands_conf,
+            write_and_verify_commands_conf,
+            set_cguard_enabled,
+            check_cguard_installed,
+            run_cguard_cli,
+            // .claude Explorer and Logs
+            list_claude_directory,
+            read_claude_file,
+            list_session_logs,
+            // Session file polling
+            poll_session_file,
+            read_session_tail,
+            get_session_file_status,
+            get_session_file_path,
+            read_ccode_settings,
+            write_ccode_settings,
+            read_session_status,
+            read_process_state,
+            read_tabs_cache,
+            write_tabs_cache,
+            open_path,
+            list_plan_files,
+            read_plan_file,
+            get_auto_mode_config,
+            run_doctor,
+            list_system_fonts,
+            get_system_resources,
+            // Terminal
+            open_terminal_in,
+            // PTY Commands
+            spawn_pty,
+            write_pty,
+            resize_pty,
+            kill_pty,
+            // Hook event bridge
+            get_hook_events,
+            check_hook_bridge_installed,
+            install_hook_bridge,
+            remove_hook_bridge,
+            // Startup
+            get_startup_snapshot,
+            // Sidebar state persistence
+            save_sidebar_state,
+            load_sidebar_state,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

@@ -1,13 +1,10 @@
 /**
  * Tab Persistence Service
- * Handles saving and restoring tab state to/from localStorage
+ * Handles saving and restoring tab state to/from ~/.ccode/states/cache/tabs.json
  */
 
+import { api } from '@/lib/api';
 import type { Tab } from '@/contexts/TabContext';
-
-const STORAGE_KEY = 'opcode_tabs_v2';
-const ACTIVE_TAB_KEY = 'opcode_active_tab_v2';
-const PERSISTENCE_ENABLED_KEY = 'opcode_tab_persistence_enabled';
 
 interface SerializedTab {
   id: string;
@@ -18,55 +15,68 @@ interface SerializedTab {
   claudeFileId?: string;
   initialProjectPath?: string;
   projectPath?: string;
+  claudeSessionId?: string;
+  claudeProjectId?: string;
   status: Tab['status'];
   hasUnsavedChanges: boolean;
   order: number;
   icon?: string;
   createdAt: string;
   updatedAt: string;
-  // Note: We don't persist sessionData or agentData as they're complex objects
+}
+
+interface TabsCacheData {
+  tabs: SerializedTab[];
+  activeTabId: string | null;
 }
 
 export class TabPersistenceService {
   /**
-   * Check if tab persistence is enabled
+   * Check if tab persistence is enabled (default: true)
    */
-  static isEnabled(): boolean {
-    const enabled = localStorage.getItem(PERSISTENCE_ENABLED_KEY);
-    // Default to true if not set
-    return enabled === null || enabled === 'true';
+  static async isEnabled(): Promise<boolean> {
+    try {
+      const settings = await api.readCcodeSettings();
+      const enabled = settings?.tabPersistence?.enabled;
+      return enabled !== false;
+    } catch {
+      return true;
+    }
   }
 
   /**
    * Enable or disable tab persistence
    */
-  static setEnabled(enabled: boolean): void {
-    localStorage.setItem(PERSISTENCE_ENABLED_KEY, String(enabled));
-    if (!enabled) {
-      // Clear saved tabs when disabling persistence
-      this.clearTabs();
+  static async setEnabled(enabled: boolean): Promise<void> {
+    try {
+      const settings = await api.readCcodeSettings();
+      const updated = {
+        ...settings,
+        tabPersistence: {
+          ...(settings?.tabPersistence || {}),
+          enabled
+        }
+      };
+      await api.writeCcodeSettings(updated);
+      if (!enabled) {
+        await this.clearTabs();
+      }
+    } catch (err) {
+      console.error('Failed to set tab persistence enabled:', err);
     }
   }
   /**
-   * Save tabs to localStorage
+   * Save tabs to file
    */
-  static saveTabs(tabs: Tab[], activeTabId: string | null): void {
-    // Don't save if persistence is disabled
-    if (!this.isEnabled()) return;
-    
+  static async saveTabs(tabs: Tab[], activeTabId: string | null): Promise<void> {
     try {
-      // Filter out tabs that shouldn't be persisted
+      if (!await this.isEnabled()) return;
+
       const persistableTabs = tabs.filter(tab => {
-        // Don't persist tabs with running status (they're likely stale)
-        if (tab.status === 'running') return false;
-        
-        // Don't persist create/import agent tabs (they're temporary)
         if (tab.type === 'create-agent' || tab.type === 'import-agent') return false;
-        
         return true;
       });
 
-      // Serialize tabs (excluding complex objects)
       const serializedTabs: SerializedTab[] = persistableTabs.map(tab => ({
         id: tab.id,
         type: tab.type,
@@ -76,97 +86,84 @@ export class TabPersistenceService {
         claudeFileId: tab.claudeFileId,
         initialProjectPath: tab.initialProjectPath,
         projectPath: tab.projectPath,
-        status: tab.status === 'running' ? 'idle' : tab.status, // Reset running status
-        hasUnsavedChanges: false, // Reset unsaved changes
+        claudeSessionId: tab.claudeSessionId,
+        claudeProjectId: tab.claudeProjectId,
+        status: (tab.status === 'running' || tab.status === 'waiting') ? 'idle' : tab.status,
+        hasUnsavedChanges: false,
         order: tab.order,
         icon: tab.icon,
         createdAt: tab.createdAt instanceof Date ? tab.createdAt.toISOString() : tab.createdAt,
         updatedAt: tab.updatedAt instanceof Date ? tab.updatedAt.toISOString() : tab.updatedAt
       }));
 
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(serializedTabs));
-      
-      // Save active tab ID
-      if (activeTabId && persistableTabs.some(tab => tab.id === activeTabId)) {
-        localStorage.setItem(ACTIVE_TAB_KEY, activeTabId);
-      }
+      const validActiveTabId = activeTabId && persistableTabs.some(tab => tab.id === activeTabId)
+        ? activeTabId
+        : null;
+
+      const cacheData: TabsCacheData = {
+        tabs: serializedTabs,
+        activeTabId: validActiveTabId
+      };
+
+      await api.writeTabsCache(JSON.stringify(cacheData));
     } catch (error) {
       console.error('Failed to save tabs:', error);
     }
   }
 
   /**
-   * Load tabs from localStorage
+   * Load tabs from file
    */
-  static loadTabs(): { tabs: Tab[], activeTabId: string | null } {
-    // Don't load if persistence is disabled
-    if (!this.isEnabled()) {
-      return { tabs: [], activeTabId: null };
-    }
-    
+  static async loadTabs(): Promise<{ tabs: Tab[], activeTabId: string | null }> {
     try {
-      const savedTabsJson = localStorage.getItem(STORAGE_KEY);
-      const savedActiveTabId = localStorage.getItem(ACTIVE_TAB_KEY);
-      
-      if (!savedTabsJson) {
+      if (!await this.isEnabled()) {
         return { tabs: [], activeTabId: null };
       }
 
-      const serializedTabs: SerializedTab[] = JSON.parse(savedTabsJson);
-      
-      // Deserialize tabs
-      const tabs: Tab[] = serializedTabs.map(serialized => ({
+      const json = await api.readTabsCache();
+      if (!json) {
+        return { tabs: [], activeTabId: null };
+      }
+
+      const cacheData: TabsCacheData = JSON.parse(json);
+
+      const tabs: Tab[] = cacheData.tabs.map(serialized => ({
         ...serialized,
         createdAt: new Date(serialized.createdAt),
         updatedAt: new Date(serialized.updatedAt),
-        sessionData: undefined, // Will be loaded when tab is activated
-        agentData: undefined, // Will be loaded when tab is activated
-        status: serialized.status === 'running' ? 'idle' : serialized.status // Ensure no running status
+        sessionData: undefined,
+        agentData: undefined,
+        status: (serialized.status === 'running' || serialized.status === 'waiting') ? 'idle' : serialized.status
       }));
 
-      // Validate and filter out any invalid tabs
       const validTabs = tabs.filter(tab => {
-        // Basic validation
         if (!tab.id || !tab.type || !tab.title) return false;
-        
-        // Type-specific validation
+
         switch (tab.type) {
           case 'chat':
-            // Chat tabs without sessionId or projectPath might be invalid
-            // But we'll keep them as they might be new sessions
             return true;
           case 'agent':
-            // Agent tabs need an agentRunId
             return !!tab.agentRunId;
           case 'agent-execution':
-            // Agent execution tabs without agentData are invalid
-            // We'll filter these out as they can't be restored properly
             return false;
           case 'claude-file':
-            // Claude file tabs need a file ID
             return !!tab.claudeFileId;
           default:
-            // Other tab types (projects, agents, usage, etc.) are always valid
             return true;
         }
       });
 
-      // Ensure proper ordering
       const orderedTabs = validTabs
         .sort((a, b) => a.order - b.order)
         .map((tab, index) => ({ ...tab, order: index }));
 
-      // Validate active tab ID
-      const activeTabId = savedActiveTabId && orderedTabs.some(tab => tab.id === savedActiveTabId)
-        ? savedActiveTabId
+      const activeTabId = cacheData.activeTabId && orderedTabs.some(tab => tab.id === cacheData.activeTabId)
+        ? cacheData.activeTabId
         : orderedTabs.length > 0 ? orderedTabs[0].id : null;
 
       return { tabs: orderedTabs, activeTabId };
     } catch (error) {
       console.error('Failed to load tabs:', error);
-      // Clear corrupted data
-      localStorage.removeItem(STORAGE_KEY);
-      localStorage.removeItem(ACTIVE_TAB_KEY);
       return { tabs: [], activeTabId: null };
     }
   }
@@ -174,27 +171,15 @@ export class TabPersistenceService {
   /**
    * Clear saved tabs
    */
-  static clearTabs(): void {
-    localStorage.removeItem(STORAGE_KEY);
-    localStorage.removeItem(ACTIVE_TAB_KEY);
-  }
-
-  /**
-   * Migrate from old storage format if needed
-   */
-  static migrateFromOldFormat(): void {
+  static async clearTabs(): Promise<void> {
     try {
-      const oldKey = 'opcode_tabs';
-      const oldData = localStorage.getItem(oldKey);
-      
-      if (oldData && !localStorage.getItem(STORAGE_KEY)) {
-        // Attempt to migrate old data
-        localStorage.setItem(STORAGE_KEY, oldData);
-        localStorage.removeItem(oldKey);
-        console.log('Migrated tab data from old format');
-      }
+      const emptyData: TabsCacheData = {
+        tabs: [],
+        activeTabId: null
+      };
+      await api.writeTabsCache(JSON.stringify(emptyData));
     } catch (error) {
-      console.error('Failed to migrate old tab data:', error);
+      console.error('Failed to clear tabs:', error);
     }
   }
 }

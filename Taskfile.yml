@@ -1,0 +1,100 @@
+version: "3"
+
+vars:
+  CARGO_DIR: src-tauri
+
+tasks:
+  default:
+    desc: List all available tasks
+    cmds:
+      - task --list
+
+  install:
+    desc: Install frontend dependencies
+    cmds:
+      - pnpm install
+
+  dev-local:
+    desc: Build frontend then run the Tauri desktop app in dev mode (required on first run)
+    deps: [build-frontend]
+    cmds:
+      - pnpm run tauri dev
+
+  dev-local-fast:
+    desc: Run Tauri dev mode without rebuilding frontend (use after first dev-local run)
+    cmds:
+      - pnpm run tauri dev
+
+  dev-web:
+    desc: Build frontend then run the web server binary (ccode-web) on the default port
+    deps: [build-frontend]
+    cmds:
+      - cargo run --manifest-path {{.CARGO_DIR}}/Cargo.toml --bin ccode-web
+
+  dev-web-port:
+    desc: Run the web server binary on a custom port (task dev-web-port PORT=9090)
+    deps: [build-frontend]
+    cmds:
+      - cargo run --manifest-path {{.CARGO_DIR}}/Cargo.toml --bin ccode-web -- --port {{.PORT}}
+    vars:
+      PORT: "8080"
+
+  build-frontend:
+    desc: Type-check and build the React/Vite frontend
+    cmds:
+      - pnpm run build
+
+  build-binary:
+    desc: Compile the Rust backend in release mode (no bundling)
+    cmds:
+      - cargo build --manifest-path {{.CARGO_DIR}}/Cargo.toml --release
+
+  build-app:
+    desc: Build the full Tauri app bundle for the current platform
+    cmds:
+      - pnpm run tauri build
+
+  build-dmg:
+    desc: Build a macOS DMG bundle
+    cmds:
+      - pnpm run build:dmg
+
+  build-executables:
+    desc: Fetch and build platform executables (uses bun scripts)
+    cmds:
+      - pnpm run build:executables
+
+  check:
+    desc: Type-check TypeScript and run cargo check on the Rust crate
+    cmds:
+      - pnpm run check
+
+  cargo-check:
+    desc: Run cargo check on the Rust crate only
+    cmds:
+      - cargo check --manifest-path {{.CARGO_DIR}}/Cargo.toml
+
+  cargo-fmt:
+    desc: Format Rust source code with rustfmt
+    cmds:
+      - cargo fmt --manifest-path {{.CARGO_DIR}}/Cargo.toml
+
+  cargo-test:
+    desc: Run Rust unit tests
+    cmds:
+      - cargo test --manifest-path {{.CARGO_DIR}}/Cargo.toml
+
+  clean:
+    desc: Remove all build artifacts (node_modules, dist, cargo target)
+    cmds:
+      - pnpm run tauri build --no-bundle || true
+      - cargo clean --manifest-path {{.CARGO_DIR}}/Cargo.toml
+      - cmd /c "if exist node_modules rmdir /s /q node_modules"
+      - cmd /c "if exist dist rmdir /s /q dist"
+
+  rebuild:
+    desc: Full clean then install and build
+    cmds:
+      - task: clean
+      - task: install
+      - task: build-app

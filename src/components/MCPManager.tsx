@@ -1,10 +1,12 @@
 import React, { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { AlertCircle, Loader2 } from "lucide-react";
+import { AlertCircle } from "lucide-react";
+import { BreathingDots } from "@/components/ui/spinner";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Card } from "@/components/ui/card";
 import { Toast, ToastContainer } from "@/components/ui/toast";
 import { api, type MCPServer } from "@/lib/api";
+import { startupCache } from "@/lib/startupCache";
 import { MCPServerList } from "./MCPServerList";
 import { MCPAddServer } from "./MCPAddServer";
 import { MCPImportExport } from "./MCPImportExport";
@@ -47,7 +49,13 @@ export const MCPManager: React.FC<MCPManagerProps> = ({
       setLoading(true);
       setError(null);
       console.log("MCPManager: Loading servers...");
-      const serverList = await api.mcpList();
+      let serverList: MCPServer[];
+      if (startupCache.mcpServers !== null) {
+        serverList = startupCache.mcpServers;
+        startupCache.mcpServers = null; // consume once; next refresh hits API
+      } else {
+        serverList = await api.mcpList();
+      }
       console.log("MCPManager: Received server list:", serverList);
       console.log("MCPManager: Server count:", serverList.length);
       setServers(serverList);
@@ -96,7 +104,7 @@ export const MCPManager: React.FC<MCPManagerProps> = ({
 
   return (
     <div className="h-full overflow-y-auto">
-      <div className="max-w-6xl mx-auto flex flex-col h-full">
+      <div className="mx-auto flex flex-col h-full">
         {/* Header */}
         <div className="p-6">
           <div className="flex items-center justify-between">
@@ -127,7 +135,7 @@ export const MCPManager: React.FC<MCPManagerProps> = ({
         {/* Content */}
         {loading ? (
           <div className="flex-1 flex items-center justify-center">
-            <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+            <BreathingDots className="h-8 w-8 text-muted-foreground" />
           </div>
         ) : (
           <div className="flex-1 overflow-y-auto p-6">

@@ -59,10 +59,49 @@ import * as Diff from 'diff';
 import { Card, CardContent } from "@/components/ui/card";
 import { detectLinks, makeLinksClickable } from "@/lib/linkDetector";
 import ReactMarkdown from "react-markdown";
-import { open } from "@tauri-apps/plugin-shell";
+import { api } from "@/lib/api";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Input } from "@/components/ui/input";
 import { motion, AnimatePresence } from "framer-motion";
+import {
+  ContextMenu,
+  ContextMenuTrigger,
+  ContextMenuContent,
+  ContextMenuItem,
+  ContextMenuSeparator,
+} from "@/components/ui/context-menu";
+
+/** Renders a file path as a clickable link that opens the file/folder in the OS */
+const FilePathLink: React.FC<{ path: string; className?: string }> = ({ path, className }) => {
+  const handleClick = async (e: React.MouseEvent) => {
+    e.stopPropagation();
+    try {
+      await api.openPath(path);
+    } catch {
+      // Fallback: open parent directory
+      const parent = path.replace(/[/\\][^/\\]+$/, '');
+      try { await api.openPath(parent || path); } catch { /* ignore */ }
+    }
+  };
+
+  // Show just the filename but keep full path in tooltip
+  const displayName = path.replace(/\\/g, '/').split('/').pop() || path;
+  const dir = path.replace(/\\/g, '/').split('/').slice(0, -1).join('/');
+
+  return (
+    <button
+      onClick={handleClick}
+      title={path}
+      className={cn(
+        "font-mono text-xs text-foreground/80 hover:text-accent underline-offset-2 hover:underline cursor-pointer text-left truncate min-w-0",
+        className
+      )}
+    >
+      <span className="text-muted-foreground/50">{dir ? dir + '/' : ''}</span>
+      <span>{displayName}</span>
+    </button>
+  );
+};
 
 /**
  * Widget for TodoWrite tool - displays a beautiful TODO list
@@ -144,7 +183,7 @@ export const LSWidget: React.FC<{ path: string; result?: any }> = ({ path, resul
     
     return (
       <div className="space-y-2">
-        <div className="flex items-center gap-2 p-3 rounded-lg bg-muted/50">
+        <div className="flex items-center gap-2 p-3 rounded-lg bg-muted">
           <FolderOpen className="h-4 w-4 text-primary" />
           <span className="text-sm">Directory contents for:</span>
           <code className="text-sm font-mono bg-background px-2 py-0.5 rounded">
@@ -157,7 +196,7 @@ export const LSWidget: React.FC<{ path: string; result?: any }> = ({ path, resul
   }
   
   return (
-    <div className="flex items-center gap-2 p-3 rounded-lg bg-muted/50">
+    <div className="flex items-center gap-2 p-3 rounded-lg bg-muted">
       <FolderOpen className="h-4 w-4 text-primary" />
       <span className="text-sm">Listing directory:</span>
       <code className="text-sm font-mono bg-background px-2 py-0.5 rounded">
@@ -367,27 +406,23 @@ export const ReadWidget: React.FC<{ filePath: string; result?: any }> = ({ fileP
     
     return (
       <div className="space-y-2">
-        <div className="flex items-center gap-2 p-3 rounded-lg bg-muted/50">
+        <div className="flex items-center gap-2 p-3 rounded-lg bg-muted">
           <FileText className="h-4 w-4 text-primary" />
-          <span className="text-sm">File content:</span>
-          <code className="text-sm font-mono bg-background px-2 py-0.5 rounded flex-1 truncate">
-            {filePath}
-          </code>
+          <span className="text-sm shrink-0">File content:</span>
+          <FilePathLink path={filePath} className="flex-1" />
         </div>
         {resultContent && <ReadResultWidget content={resultContent} filePath={filePath} />}
       </div>
     );
   }
-  
+
   return (
-    <div className="flex items-center gap-2 p-3 rounded-lg bg-muted/50">
+    <div className="flex items-center gap-2 p-3 rounded-lg bg-muted">
       <FileText className="h-4 w-4 text-primary" />
-      <span className="text-sm">Reading file:</span>
-      <code className="text-sm font-mono bg-background px-2 py-0.5 rounded flex-1 truncate">
-        {filePath}
-      </code>
+      <span className="text-sm shrink-0">Reading file:</span>
+      <FilePathLink path={filePath} className="flex-1" />
       {!result && (
-        <div className="ml-auto flex items-center gap-1 text-xs text-muted-foreground">
+        <div className="ml-auto flex items-center gap-1 text-xs text-muted-foreground shrink-0">
           <div className="h-2 w-2 bg-blue-500 rounded-full animate-pulse" />
           <span>Loading...</span>
         </div>
@@ -595,7 +630,7 @@ export const GlobWidget: React.FC<{ pattern: string; result?: any }> = ({ patter
   
   return (
     <div className="space-y-2">
-      <div className="flex items-center gap-2 p-3 rounded-lg bg-muted/50">
+      <div className="flex items-center gap-2 p-3 rounded-lg bg-muted">
         <Search className="h-4 w-4 text-primary" />
         <span className="text-sm">Searching for pattern:</span>
         <code className="text-sm font-mono bg-background px-2 py-0.5 rounded">
@@ -627,15 +662,15 @@ export const GlobWidget: React.FC<{ pattern: string; result?: any }> = ({ patter
 /**
  * Widget for Bash tool
  */
-export const BashWidget: React.FC<{ 
-  command: string; 
+export const BashWidget: React.FC<{
+  command: string;
   description?: string;
   result?: any;
 }> = ({ command, description, result }) => {
   // Extract result content if available
   let resultContent = '';
   let isError = false;
-  
+
   if (result) {
     isError = result.is_error || false;
     if (typeof result.content === 'string') {
@@ -652,11 +687,25 @@ export const BashWidget: React.FC<{
       }
     }
   }
-  
+
+  const handleCopyCommand = () => {
+    navigator.clipboard.writeText(command);
+  };
+
+  const handleCopyOutput = () => {
+    navigator.clipboard.writeText(resultContent ?? '');
+  };
+
+  const handleCopyAll = () => {
+    navigator.clipboard.writeText(`Command: ${command}\n\nOutput:\n${resultContent ?? ''}`);
+  };
+
   return (
-    <div className="rounded-lg border bg-background overflow-hidden">
+    <ContextMenu>
+      <ContextMenuTrigger asChild>
+        <div className="rounded-lg border bg-background overflow-hidden">
       <div className="px-4 py-2 bg-muted/50 flex items-center gap-2 border-b">
-        <Terminal className="h-3.5 w-3.5 text-green-500" />
+        <Terminal className="h-3.5 w-3.5" style={{ color: 'var(--chat-terminal-command)' }} />
         <span className="text-xs font-mono text-muted-foreground">Terminal</span>
         {description && (
           <>
@@ -667,29 +716,48 @@ export const BashWidget: React.FC<{
         {/* Show loading indicator when no result yet */}
         {!result && (
           <div className="ml-auto flex items-center gap-1 text-xs text-muted-foreground">
-            <div className="h-2 w-2 bg-green-500 rounded-full animate-pulse" />
+            <div className="h-2 w-2 rounded-full animate-pulse" style={{ backgroundColor: 'var(--chat-terminal-command)' }} />
             <span>Running...</span>
           </div>
         )}
       </div>
       <div className="p-4 space-y-3">
-        <code className="text-xs font-mono text-green-400 block">
+        <code className="text-xs font-mono block" style={{ color: 'var(--chat-terminal-command)' }}>
           $ {command}
         </code>
-        
+
         {/* Show result if available */}
         {result && (
-          <div className={cn(
-            "mt-3 p-3 rounded-md border text-xs font-mono whitespace-pre-wrap overflow-x-auto",
-            isError 
-              ? "border-red-500/20 bg-red-500/5 text-red-400" 
-              : "border-green-500/20 bg-green-500/5 text-green-300"
-          )}>
+          <div
+            className={cn(
+              "mt-3 p-3 rounded-md border text-xs font-mono whitespace-pre-wrap overflow-x-auto",
+              isError ? "border-red-500/20 bg-red-500/5 text-red-400" : "border-border/30 bg-muted/30"
+            )}
+            style={!isError ? { color: 'var(--chat-terminal-output)' } : undefined}
+          >
             {resultContent || (isError ? "Command failed" : "Command completed")}
           </div>
         )}
       </div>
-    </div>
+        </div>
+      </ContextMenuTrigger>
+      <ContextMenuContent>
+        <ContextMenuItem onClick={handleCopyCommand}>
+          Copy command
+        </ContextMenuItem>
+        {result && (
+          <>
+            <ContextMenuSeparator />
+            <ContextMenuItem onClick={handleCopyOutput}>
+              Copy output
+            </ContextMenuItem>
+            <ContextMenuItem onClick={handleCopyAll}>
+              Copy all
+            </ContextMenuItem>
+          </>
+        )}
+      </ContextMenuContent>
+    </ContextMenu>
   );
 };
 
@@ -851,12 +919,10 @@ export const WriteWidget: React.FC<{ filePath: string; content: string; result?:
 
   return (
     <div className="space-y-2">
-      <div className="flex items-center gap-2 p-3 rounded-lg bg-muted/50">
+      <div className="flex items-center gap-2 p-3 rounded-lg bg-muted">
         <FileEdit className="h-4 w-4 text-primary" />
-        <span className="text-sm">Writing to file:</span>
-        <code className="text-sm font-mono bg-background px-2 py-0.5 rounded flex-1 truncate">
-          {filePath}
-        </code>
+        <span className="text-sm shrink-0">Writing to file:</span>
+        <FilePathLink path={filePath} className="flex-1" />
       </div>
       <CodePreview codeContent={displayContent} truncated={true} />
       <MaximizedView />
@@ -1137,12 +1203,10 @@ export const EditWidget: React.FC<{
 
   return (
     <div className="space-y-2">
-      <div className="flex items-center gap-2 mb-2">
-        <FileEdit className="h-4 w-4 text-primary" />
-        <span className="text-sm font-medium">Applying Edit to:</span>
-        <code className="text-sm font-mono bg-background px-2 py-0.5 rounded flex-1 truncate">
-          {file_path}
-        </code>
+      <div className="flex items-center gap-2 p-3 rounded-lg bg-muted mb-2">
+        <FileEdit className="h-4 w-4 text-primary shrink-0" />
+        <span className="text-sm font-medium shrink-0">Applying Edit to:</span>
+        <FilePathLink path={file_path} className="flex-1 min-w-0" />
       </div>
 
       <div className="rounded-lg border bg-background overflow-hidden text-xs font-mono">
@@ -1543,18 +1607,31 @@ export const CommandOutputWidget: React.FC<{
     return elements;
   };
 
+  const handleCopyOutput = () => {
+    navigator.clipboard.writeText(output ?? '');
+  };
+
   return (
-    <div className="rounded-lg border bg-background/50 overflow-hidden">
-      <div className="px-4 py-2 bg-muted/50 flex items-center gap-2">
-        <ChevronRight className="h-3 w-3 text-green-500" />
-        <span className="text-xs font-mono text-green-400">Output</span>
-      </div>
-      <div className="p-3">
-        <pre className="text-sm font-mono text-zinc-300 whitespace-pre-wrap">
-          {output ? parseAnsiToReact(output) : <span className="text-zinc-500 italic">No output</span>}
-        </pre>
-      </div>
-    </div>
+    <ContextMenu>
+      <ContextMenuTrigger asChild>
+        <div className="rounded-lg border bg-background/50 overflow-hidden">
+          <div className="px-4 py-2 bg-muted/50 flex items-center gap-2">
+            <ChevronRight className="h-3 w-3 text-green-500" />
+            <span className="text-xs font-mono text-green-400">Output</span>
+          </div>
+          <div className="p-3">
+            <pre className="text-sm font-mono text-zinc-300 whitespace-pre-wrap">
+              {output ? parseAnsiToReact(output) : <span className="text-zinc-500 italic">No output</span>}
+            </pre>
+          </div>
+        </div>
+      </ContextMenuTrigger>
+      <ContextMenuContent>
+        <ContextMenuItem onClick={handleCopyOutput}>
+          Copy output
+        </ContextMenuItem>
+      </ContextMenuContent>
+    </ContextMenu>
   );
 };
 
@@ -1609,7 +1686,7 @@ export const MultiEditWidget: React.FC<{
       <div className="ml-6 space-y-2">
         <div className="flex items-center gap-2">
           <FileText className="h-3 w-3 text-blue-500" />
-          <code className="text-xs font-mono text-blue-500">{file_path}</code>
+          <FilePathLink path={file_path} className="flex-1" />
         </div>
         
         <div className="space-y-1">

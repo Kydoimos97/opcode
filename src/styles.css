@@ -88,29 +88,57 @@ html {
 /* Dark theme configuration */
 @theme {
   /* Colors */
-  --color-background: oklch(0.10 0.01 240);
-  --color-foreground: oklch(0.95 0.01 240);
-  --color-card: oklch(0.14 0.01 240);
-  --color-card-foreground: oklch(0.95 0.01 240);
-  --color-popover: oklch(0.13 0.01 240);
-  --color-popover-foreground: oklch(0.95 0.01 240);
-  --color-primary: oklch(0.95 0.01 240);
-  --color-primary-foreground: oklch(0.14 0.01 240);
-  --color-secondary: oklch(0.18 0.01 240);
-  --color-secondary-foreground: oklch(0.95 0.01 240);
-  --color-muted: oklch(0.16 0.01 240);
-  --color-muted-foreground: oklch(0.65 0.01 240);
-  --color-accent: oklch(0.18 0.01 240);
-  --color-accent-foreground: oklch(0.95 0.01 240);
-  --color-destructive: oklch(0.6 0.2 25);
-  --color-destructive-foreground: oklch(0.98 0.01 240);
-  --color-border: oklch(0.20 0.01 240);
-  --color-input: oklch(0.20 0.01 240);
-  --color-ring: oklch(0.50 0.015 240);
-  
+  --color-background: rgba(22, 24, 30, 1);
+  --color-foreground: rgba(238, 241, 247, 1);
+  --color-card: rgba(30, 32, 40, 1);
+  --color-card-foreground: rgba(238, 241, 247, 1);
+  --color-popover: rgba(28, 30, 38, 1);
+  --color-popover-foreground: rgba(238, 241, 247, 1);
+  --color-primary: rgba(238, 241, 247, 1);
+  --color-primary-foreground: rgba(30, 32, 40, 1);
+  --color-secondary: rgba(38, 41, 50, 1);
+  --color-secondary-foreground: rgba(238, 241, 247, 1);
+  --color-muted: rgba(34, 36, 45, 1);
+  --color-muted-foreground: rgba(148, 153, 171, 1);
+  --color-accent: rgba(38, 41, 50, 1);
+  --color-accent-foreground: rgba(238, 241, 247, 1);
+  --color-destructive: rgba(212, 80, 52, 1);
+  --color-destructive-foreground: rgba(250, 251, 255, 1);
+  --color-border: rgba(44, 47, 57, 1);
+  --color-input: rgba(44, 47, 57, 1);
+  --color-ring: rgba(108, 112, 130, 1);
+
   /* Additional colors for status messages */
-  --color-green-500: oklch(0.72 0.20 142);
-  --color-green-600: oklch(0.64 0.22 142);
+  --color-green-500: rgba(70, 192, 110, 1);
+  --color-green-600: rgba(44, 166, 84, 1);
+
+  /* Chat message colors */
+  /* User bubble: warm amber so it reads as a distinct human turn */
+  --chat-user-border: rgba(251, 191, 36, 0.40);
+  --chat-user-bg: rgba(251, 191, 36, 0.07);
+  /* Work block indent line: neutral */
+  --chat-work-border: rgba(255, 255, 255, 0.12);
+  /* Agent (non-final, tool_use) card: minimal — just enough to group tool calls */
+  --chat-agent-border: rgba(255, 255, 255, 0.07);
+  --chat-agent-bg: rgba(255, 255, 255, 0.02);
+  /* Tool widget headers — not used via CSS var, see ToolWidgets.tsx */
+  --chat-tool-border: rgba(255, 255, 255, 0.10);
+  --chat-tool-bg: rgba(255, 255, 255, 0.04);
+  /* Final response: blue */
+  --chat-final-border: rgba(96, 165, 250, 0.50);
+  --chat-final-bg: rgba(59, 130, 246, 0.08);
+  /* Interrupt bubble */
+  --chat-interrupt-border: rgba(245, 158, 11, 0.5);
+  --chat-interrupt-bg: rgba(245, 158, 11, 0.1);
+  --chat-interrupt-fg: rgba(251, 191, 36, 1);
+  /* Result cards */
+  --chat-result-ok-border: rgba(74, 222, 128, 0.40);
+  --chat-result-ok-bg: rgba(22, 163, 74, 0.09);
+  --chat-result-err-border: rgba(248, 113, 113, 0.50);
+  --chat-result-err-bg: rgba(239, 68, 68, 0.11);
+  /* Terminal output */
+  --chat-terminal-command: rgba(74, 222, 128, 1);
+  --chat-terminal-output: rgba(134, 239, 172, 1);
 
   /* Border radius */
   --radius-sm: 0.25rem;
@@ -171,83 +199,83 @@ html {
 
 /* Light Theme */
 .theme-light {
-  --color-background: oklch(0.98 0.01 240);
-  --color-foreground: oklch(0.12 0.01 240);
-  --color-card: oklch(0.96 0.01 240);
-  --color-card-foreground: oklch(0.12 0.01 240);
-  --color-popover: oklch(0.98 0.01 240);
-  --color-popover-foreground: oklch(0.12 0.01 240);
-  --color-primary: oklch(0.12 0.01 240);
-  --color-primary-foreground: oklch(0.98 0.01 240);
-  --color-secondary: oklch(0.94 0.01 240);
-  --color-secondary-foreground: oklch(0.12 0.01 240);
-  --color-muted: oklch(0.94 0.01 240);
-  --color-muted-foreground: oklch(0.45 0.01 240);
-  --color-accent: oklch(0.94 0.01 240);
-  --color-accent-foreground: oklch(0.12 0.01 240);
-  --color-destructive: oklch(0.6 0.2 25);
-  --color-destructive-foreground: oklch(0.98 0.01 240);
-  --color-border: oklch(0.90 0.01 240);
-  --color-input: oklch(0.90 0.01 240);
-  --color-ring: oklch(0.52 0.015 240);
-  
+  --color-background: rgba(250, 251, 255, 1);
+  --color-foreground: rgba(25, 27, 34, 1);
+  --color-card: rgba(242, 244, 250, 1);
+  --color-card-foreground: rgba(25, 27, 34, 1);
+  --color-popover: rgba(250, 251, 255, 1);
+  --color-popover-foreground: rgba(25, 27, 34, 1);
+  --color-primary: rgba(25, 27, 34, 1);
+  --color-primary-foreground: rgba(250, 251, 255, 1);
+  --color-secondary: rgba(236, 238, 244, 1);
+  --color-secondary-foreground: rgba(25, 27, 34, 1);
+  --color-muted: rgba(236, 238, 244, 1);
+  --color-muted-foreground: rgba(97, 101, 116, 1);
+  --color-accent: rgba(236, 238, 244, 1);
+  --color-accent-foreground: rgba(25, 27, 34, 1);
+  --color-destructive: rgba(212, 80, 52, 1);
+  --color-destructive-foreground: rgba(250, 251, 255, 1);
+  --color-border: rgba(223, 225, 232, 1);
+  --color-input: rgba(223, 225, 232, 1);
+  --color-ring: rgba(114, 118, 136, 1);
+
   /* Additional colors for status messages */
-  --color-green-500: oklch(0.62 0.20 142);
-  --color-green-600: oklch(0.54 0.22 142);
+  --color-green-500: rgba(44, 166, 88, 1);
+  --color-green-600: rgba(30, 140, 68, 1);
 }
 
 /* Gray Theme */
 .theme-gray {
-  --color-background: oklch(0.18 0.01 240);
-  --color-foreground: oklch(0.95 0.01 240);
-  --color-card: oklch(0.23 0.01 240);
-  --color-card-foreground: oklch(0.95 0.01 240);
-  --color-popover: oklch(0.21 0.01 240);
-  --color-popover-foreground: oklch(0.95 0.01 240);
-  --color-primary: oklch(0.95 0.01 240);
-  --color-primary-foreground: oklch(0.23 0.01 240);
-  --color-secondary: oklch(0.27 0.01 240);
-  --color-secondary-foreground: oklch(0.95 0.01 240);
-  --color-muted: oklch(0.27 0.01 240);
-  --color-muted-foreground: oklch(0.65 0.01 240);
-  --color-accent: oklch(0.27 0.01 240);
-  --color-accent-foreground: oklch(0.95 0.01 240);
-  --color-destructive: oklch(0.6 0.2 25);
-  --color-destructive-foreground: oklch(0.98 0.01 240);
-  --color-border: oklch(0.32 0.01 240);
-  --color-input: oklch(0.32 0.01 240);
-  --color-ring: oklch(0.55 0.015 240);
-  
+  --color-background: rgba(38, 41, 50, 1);
+  --color-foreground: rgba(238, 241, 247, 1);
+  --color-card: rgba(50, 53, 64, 1);
+  --color-card-foreground: rgba(238, 241, 247, 1);
+  --color-popover: rgba(45, 48, 59, 1);
+  --color-popover-foreground: rgba(238, 241, 247, 1);
+  --color-primary: rgba(238, 241, 247, 1);
+  --color-primary-foreground: rgba(50, 53, 64, 1);
+  --color-secondary: rgba(58, 62, 75, 1);
+  --color-secondary-foreground: rgba(238, 241, 247, 1);
+  --color-muted: rgba(58, 62, 75, 1);
+  --color-muted-foreground: rgba(148, 153, 171, 1);
+  --color-accent: rgba(58, 62, 75, 1);
+  --color-accent-foreground: rgba(238, 241, 247, 1);
+  --color-destructive: rgba(212, 80, 52, 1);
+  --color-destructive-foreground: rgba(250, 251, 255, 1);
+  --color-border: rgba(70, 74, 89, 1);
+  --color-input: rgba(70, 74, 89, 1);
+  --color-ring: rgba(122, 127, 145, 1);
+
   /* Additional colors for status messages */
-  --color-green-500: oklch(0.72 0.20 142);
-  --color-green-600: oklch(0.64 0.22 142);
+  --color-green-500: rgba(70, 192, 110, 1);
+  --color-green-600: rgba(44, 166, 84, 1);
 }
 
 /* White Theme (High Contrast Light) */
 .theme-white {
-  --color-background: oklch(0.99 0 240);
-  --color-foreground: oklch(0.10 0 240);
-  --color-card: oklch(1.0 0 240);
-  --color-card-foreground: oklch(0.10 0 240);
-  --color-popover: oklch(1.0 0 240);
-  --color-popover-foreground: oklch(0.10 0 240);
-  --color-primary: oklch(0.10 0 240);
-  --color-primary-foreground: oklch(1.0 0 240);
-  --color-secondary: oklch(0.95 0.01 240);
-  --color-secondary-foreground: oklch(0.10 0 240);
-  --color-muted: oklch(0.93 0.01 240);
-  --color-muted-foreground: oklch(0.40 0.01 240);
-  --color-accent: oklch(0.95 0.01 240);
-  --color-accent-foreground: oklch(0.10 0 240);
-  --color-destructive: oklch(0.55 0.25 25);
-  --color-destructive-foreground: oklch(1.0 0 240);
-  --color-border: oklch(0.88 0.01 240);
-  --color-input: oklch(0.88 0.01 240);
-  --color-ring: oklch(0.45 0.015 240);
-  
+  --color-background: rgba(252, 253, 255, 1);
+  --color-foreground: rgba(22, 22, 22, 1);
+  --color-card: rgba(255, 255, 255, 1);
+  --color-card-foreground: rgba(22, 22, 22, 1);
+  --color-popover: rgba(255, 255, 255, 1);
+  --color-popover-foreground: rgba(22, 22, 22, 1);
+  --color-primary: rgba(22, 22, 22, 1);
+  --color-primary-foreground: rgba(255, 255, 255, 1);
+  --color-secondary: rgba(238, 241, 247, 1);
+  --color-secondary-foreground: rgba(22, 22, 22, 1);
+  --color-muted: rgba(232, 235, 241, 1);
+  --color-muted-foreground: rgba(85, 89, 103, 1);
+  --color-accent: rgba(238, 241, 247, 1);
+  --color-accent-foreground: rgba(22, 22, 22, 1);
+  --color-destructive: rgba(190, 58, 32, 1);
+  --color-destructive-foreground: rgba(255, 255, 255, 1);
+  --color-border: rgba(218, 220, 228, 1);
+  --color-input: rgba(218, 220, 228, 1);
+  --color-ring: rgba(97, 101, 116, 1);
+
   /* Additional colors for status messages */
-  --color-green-500: oklch(0.55 0.25 142);
-  --color-green-600: oklch(0.47 0.27 142);
+  --color-green-500: rgba(26, 142, 68, 1);
+  --color-green-600: rgba(18, 118, 50, 1);
 }
 
 /* Custom Theme - CSS variables will be set dynamically by ThemeContext */
@@ -981,4 +1009,13 @@ code::-webkit-scrollbar-thumb:hover {
 
 .image-move-to-input {
   animation: moveToInput 0.8s ease-in-out forwards;
-} 
+}
+
+@keyframes dot-breathe {
+  0%, 100% { transform: scale(0.55); opacity: 0.35; }
+  50%       { transform: scale(1);    opacity: 1; }
+}
+
+.dot-breathe-1 { animation: dot-breathe 1.2s ease-in-out infinite; animation-delay: 0s; }
+.dot-breathe-2 { animation: dot-breathe 1.2s ease-in-out infinite; animation-delay: 0.2s; }
+.dot-breathe-3 { animation: dot-breathe 1.2s ease-in-out infinite; animation-delay: 0.4s; }

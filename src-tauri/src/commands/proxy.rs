@@ -1,8 +1,4 @@
-use rusqlite::params;
 use serde::{Deserialize, Serialize};
-use tauri::State;
-
-use crate::commands::agents::AgentDb;
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct ProxySettings {
@@ -25,76 +21,69 @@ impl Default for ProxySettings {
     }
 }
 
-/// Get proxy settings from the database
-#[tauri::command]
-pub async fn get_proxy_settings(db: State<'_, AgentDb>) -> Result<ProxySettings, String> {
-    let conn = db.0.lock().map_err(|e| e.to_string())?;
-
-    let mut settings = ProxySettings::default();
-
-    // Query each proxy setting
-    let keys = vec![
-        ("proxy_enabled", "enabled"),
-        ("proxy_http", "http_proxy"),
-        ("proxy_https", "https_proxy"),
-        ("proxy_no", "no_proxy"),
-        ("proxy_all", "all_proxy"),
-    ];
-
-    for (db_key, field) in keys {
-        if let Ok(value) = conn.query_row(
-            "SELECT value FROM app_settings WHERE key = ?1",
-            params![db_key],
-            |row| row.get::<_, String>(0),
-        ) {
-            match field {
-                "enabled" => settings.enabled = value == "true",
-                "http_proxy" => settings.http_proxy = Some(value).filter(|s| !s.is_empty()),
-                "https_proxy" => settings.https_proxy = Some(value).filter(|s| !s.is_empty()),
-                "no_proxy" => settings.no_proxy = Some(value).filter(|s| !s.is_empty()),
-                "all_proxy" => settings.all_proxy = Some(value).filter(|s| !s.is_empty()),
-                _ => {}
-            }
-        }
+fn read_proxy_from_ccode() -> ProxySettings {
+    let path = match dirs::home_dir() {
+        Some(h) => h.join(".ccode").join("settings.json"),
+        None => return ProxySettings::default(),
+    };
+    let content = match std::fs::read_to_string(&path) {
+        Ok(c) => c,
+        Err(_) => return ProxySettings::default(),
+    };
+    let map: serde_json::Map<String, serde_json::Value> = match serde_json::from_str(&content) {
+        Ok(m) => m,
+        Err(_) => return ProxySettings::default(),
+    };
+    ProxySettings {
+        enabled: map.get("proxy_enabled").and_then(|v| v.as_str()).map(|s| s == "true").unwrap_or(false),
+        http_proxy: map.get("proxy_http").and_then(|v| v.as_str()).filter(|s| !s.is_empty()).map(String::from),
+        https_proxy: map.get("proxy_https").and_then(|v| v.as_str()).filter(|s| !s.is_empty()).map(String::from),
+        no_proxy: map.get("proxy_no").and_then(|v| v.as_str()).filter(|s| !s.is_empty()).map(String::from),
+        all_proxy: map.get("proxy_all").and_then(|v| v.as_str()).filter(|s| !s.is_empty()).map(String::from),
     }
-
-    Ok(settings)
 }
 
-/// Save proxy settings to the database
+fn write_proxy_to_ccode(settings: &ProxySettings) -> Result<(), String> {
+    let ccode_dir = match dirs::home_dir() {
+        Some(h) => h.join(".ccode"),
+        None => return Err("Failed to get home directory".to_string()),
+    };
+    std::fs::create_dir_all(&ccode_dir).map_err(|e| e.to_string())?;
+    let path = ccode_dir.join("settings.json");
+    let mut map: serde_json::Map<String, serde_json::Value> = if path.exists() {
+        let c = std::fs::read_to_string(&path).map_err(|e| e.to_string())?;
+        serde_json::from_str(&c).unwrap_or_default()
+    } else {
+        serde_json::Map::new()
+    };
+    map.insert("proxy_enabled".to_string(), settings.enabled.to_string().into());
+    map.insert("proxy_http".to_string(), settings.http_proxy.clone().unwrap_or_default().into());
+    map.insert("proxy_https".to_string(), settings.https_proxy.clone().unwrap_or_default().into());
+    map.insert("proxy_no".to_string(), settings.no_proxy.clone().unwrap_or_default().into());
+    map.insert("proxy_all".to_string(), settings.all_proxy.clone().unwrap_or_default().into());
+    let content = serde_json::to_string_pretty(&map).map_err(|e| e.to_string())?;
+    let tmp = path.with_extension("tmp");
+    std::fs::write(&tmp, &content).map_err(|e| e.to_string())?;
+    std::fs::rename(&tmp, &path).map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+/// Load proxy settings at app startup (sync, used before async runtime is set up)
+pub fn load_proxy_at_startup() -> ProxySettings {
+    read_proxy_from_ccode()
+}
+
+/// Get proxy settings
 #[tauri::command]
-pub async fn save_proxy_settings(
-    db: State<'_, AgentDb>,
-    settings: ProxySettings,
-) -> Result<(), String> {
-    let conn = db.0.lock().map_err(|e| e.to_string())?;
+pub async fn get_proxy_settings() -> Result<ProxySettings, String> {
+    Ok(read_proxy_from_ccode())
+}
 
-    // Save each setting
-    let values = vec![
-        ("proxy_enabled", settings.enabled.to_string()),
-        (
-            "proxy_http",
-            settings.http_proxy.clone().unwrap_or_default(),
-        ),
-        (
-            "proxy_https",
-            settings.https_proxy.clone().unwrap_or_default(),
-        ),
-        ("proxy_no", settings.no_proxy.clone().unwrap_or_default()),
-        ("proxy_all", settings.all_proxy.clone().unwrap_or_default()),
-    ];
-
-    for (key, value) in values {
-        conn.execute(
-            "INSERT OR REPLACE INTO app_settings (key, value) VALUES (?1, ?2)",
-            params![key, value],
-        )
-        .map_err(|e| format!("Failed to save {}: {}", key, e))?;
-    }
-
-    // Apply the proxy settings immediately to the current process
+/// Save proxy settings
+#[tauri::command]
+pub async fn save_proxy_settings(settings: ProxySettings) -> Result<(), String> {
+    write_proxy_to_ccode(&settings)?;
     apply_proxy_settings(&settings);
-
     Ok(())
 }
 
@@ -103,13 +92,11 @@ pub fn apply_proxy_settings(settings: &ProxySettings) {
     log::info!("Applying proxy settings: enabled={}", settings.enabled);
 
     if !settings.enabled {
-        // Clear proxy environment variables if disabled
         log::info!("Clearing proxy environment variables");
         std::env::remove_var("HTTP_PROXY");
         std::env::remove_var("HTTPS_PROXY");
         std::env::remove_var("NO_PROXY");
         std::env::remove_var("ALL_PROXY");
-        // Also clear lowercase versions
         std::env::remove_var("http_proxy");
         std::env::remove_var("https_proxy");
         std::env::remove_var("no_proxy");
@@ -117,7 +104,6 @@ pub fn apply_proxy_settings(settings: &ProxySettings) {
         return;
     }
 
-    // Ensure NO_PROXY includes localhost by default
     let mut no_proxy_list = vec!["localhost", "127.0.0.1", "::1", "0.0.0.0"];
     if let Some(user_no_proxy) = &settings.no_proxy {
         if !user_no_proxy.is_empty() {
@@ -126,7 +112,6 @@ pub fn apply_proxy_settings(settings: &ProxySettings) {
     }
     let no_proxy_value = no_proxy_list.join(",");
 
-    // Set proxy environment variables (uppercase is standard)
     if let Some(http_proxy) = &settings.http_proxy {
         if !http_proxy.is_empty() {
             log::info!("Setting HTTP_PROXY={}", http_proxy);
@@ -141,7 +126,6 @@ pub fn apply_proxy_settings(settings: &ProxySettings) {
         }
     }
 
-    // Always set NO_PROXY to include localhost
     log::info!("Setting NO_PROXY={}", no_proxy_value);
     std::env::set_var("NO_PROXY", &no_proxy_value);
 
@@ -149,14 +133,6 @@ pub fn apply_proxy_settings(settings: &ProxySettings) {
         if !all_proxy.is_empty() {
             log::info!("Setting ALL_PROXY={}", all_proxy);
             std::env::set_var("ALL_PROXY", all_proxy);
-        }
-    }
-
-    // Log current proxy environment variables for debugging
-    log::info!("Current proxy environment variables:");
-    for (key, value) in std::env::vars() {
-        if key.contains("PROXY") || key.contains("proxy") {
-            log::info!("  {}={}", key, value);
         }
     }
 }

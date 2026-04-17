@@ -1,0 +1,272 @@
+import React, { useEffect, useState, useRef } from "react";
+import { ShieldCheck, ShieldOff } from "lucide-react";
+import { cn } from "@/lib/utils";
+import { api } from "@/lib/api";
+import { TooltipSimple } from "@/components/ui/tooltip-modern";
+
+interface SessionStatusBarProps {
+  sessionId: string | null;
+  className?: string;
+  sessionStatus?: {
+    session_id?: string;
+    cwd?: string;
+    model?: { id: string; display_name: string };
+    session_name?: string;
+    agent?: { name: string };
+    agent_type?: string;
+    version?: string;
+    cost?: {
+      total_cost_usd: number;
+      total_duration_ms: number;
+      total_lines_added: number;
+      total_lines_removed: number;
+    };
+    context_window?: {
+      used_percentage: number;
+      remaining_percentage: number;
+      context_window_size: number;
+      current_usage?: { input_tokens: number; output_tokens: number; cache_read_input_tokens?: number };
+    };
+    rate_limits?: {
+      five_hour?: { used_percentage: number; resets_at: number };
+      seven_day?: { used_percentage: number; resets_at: number };
+    };
+  } | null;
+}
+
+function getModelShort(modelId: string): string {
+  if (modelId.includes("opus")) return "Opus";
+  if (modelId.includes("sonnet")) return "Sonnet";
+  if (modelId.includes("haiku")) return "Haiku";
+  return modelId.split("-").pop() ?? modelId;
+}
+
+function formatDuration(ms: number): string {
+  const totalSeconds = Math.floor(ms / 1000);
+  const hours = Math.floor(totalSeconds / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+  if (hours > 0 && minutes > 0) return `${hours}h${minutes}m`;
+  if (hours > 0) return `${hours}h`;
+  if (minutes > 0) return `${minutes}m`;
+  return `${totalSeconds}s`;
+}
+
+function formatCost(usd: number): string {
+  if (usd < 0.01) return "<$0.01";
+  if (usd < 10) return `$${usd.toFixed(2)}`;
+  return `$${Math.round(usd)}`;
+}
+
+
+function getRateLimitColor(pct: number): string {
+  if (pct >= 85) return "text-red-400";
+  if (pct >= 65) return "text-yellow-400";
+  return "text-green-400";
+}
+
+function formatResetCountdown(resetsAtUnix: number): string {
+  const nowSec = Date.now() / 1000;
+  const diffSec = resetsAtUnix - nowSec;
+  if (diffSec <= 0) return "now";
+  const h = Math.floor(diffSec / 3600);
+  const m = Math.floor((diffSec % 3600) / 60);
+  if (h > 0 && m > 0) return `${h}h${m}m`;
+  if (h > 0) return `${h}h`;
+  return `${m}m`;
+}
+
+function isCguardActive(settings: any): boolean {
+  const hooks = settings?.hooks?.PreToolUse;
+  if (!Array.isArray(hooks)) return false;
+  return hooks.some((h: any) =>
+    typeof h === "string"
+      ? h.includes("c-guard.sh") || h.includes("c-guard.py")
+      : h?.command?.includes("c-guard.sh") ||
+        h?.command?.includes("c-guard.py") ||
+        h?.hooks?.some?.((inner: any) =>
+          inner?.command?.includes("c-guard.sh") || inner?.command?.includes("c-guard.py")
+        )
+  );
+}
+
+export const SessionStatusBar: React.FC<SessionStatusBarProps> = ({
+  sessionId,
+  className,
+  sessionStatus,
+}) => {
+  const [statusData, setStatusData] = useState<Record<string, any> | null>(null);
+  const [cguardActive, setCguardActive] = useState(false);
+  const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  useEffect(() => {
+    api.getGlobalSettings()
+      .then((s) => setCguardActive(isCguardActive(s)))
+      .catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    if (!sessionId) {
+      setStatusData(null);
+      return;
+    }
+
+    const poll = async () => {
+      const data = await api.readSessionStatus(sessionId);
+      setStatusData(data && Object.keys(data).length > 0 ? data : null);
+    };
+
+    poll();
+    intervalRef.current = setInterval(poll, 5000);
+    return () => {
+      if (intervalRef.current) {
+        clearInterval(intervalRef.current);
+        intervalRef.current = null;
+      }
+    };
+  }, [sessionId]);
+
+  const effectiveStatusData = statusData || sessionStatus;
+  if (!effectiveStatusData) return null;
+
+  const model = effectiveStatusData.model;
+  const cost = effectiveStatusData.cost;
+  const ctx = effectiveStatusData.context_window;
+  const rateLimits = effectiveStatusData.rate_limits;
+  const agentName: string = effectiveStatusData.agent?.name ?? "main";
+
+  const modelShort = model?.id
+    ? getModelShort(model.id)
+    : (model?.display_name ?? "—");
+  const costStr = typeof cost?.total_cost_usd === "number"
+    ? formatCost(cost.total_cost_usd)
+    : null;
+  const durStr = typeof cost?.total_duration_ms === "number"
+    ? formatDuration(cost.total_duration_ms)
+    : null;
+  const linesAdded: number = cost?.total_lines_added ?? 0;
+  const linesRemoved: number = cost?.total_lines_removed ?? 0;
+  const ctxPct: number = Math.round(ctx?.used_percentage ?? 0);
+  const fiveHrPct: number | null = rateLimits?.five_hour?.used_percentage != null ? Math.round(rateLimits.five_hour.used_percentage) : null;
+  const sevenDayPct: number | null = rateLimits?.seven_day?.used_percentage != null ? Math.round(rateLimits.seven_day.used_percentage) : null;
+  const fiveHrReset: number | null = rateLimits?.five_hour?.resets_at ?? null;
+  const sevenDayReset: number | null = rateLimits?.seven_day?.resets_at ?? null;
+  const hasRateLimits = fiveHrPct !== null || sevenDayPct !== null;
+
+  return (
+    <div
+      className={cn(
+        "flex items-center gap-2 px-3 py-1 text-xs",
+        "bg-background/95 backdrop-blur-sm select-none",
+        className
+      )}
+    >
+      {/* Agent(Model) */}
+      <span className="flex items-center gap-0.5 shrink-0 text-muted-foreground">
+        <span className="font-medium text-foreground capitalize">{agentName}</span>
+        <span className="opacity-40 mx-0.5">/</span>
+        <span className="font-medium text-foreground">{modelShort}</span>
+      </span>
+
+      <span className="text-border shrink-0">·</span>
+
+      {/* Cost / duration / diff */}
+      <span className="flex items-center gap-2 shrink-0">
+        {costStr && <span className="text-amber-400">{costStr}</span>}
+        {durStr && <span className="text-muted-foreground">{durStr}</span>}
+        {(linesAdded > 0 || linesRemoved > 0) && (
+          <span>
+            <span className="text-green-400">+{linesAdded}</span>
+            <span className="text-muted-foreground/40">/</span>
+            <span className="text-red-400">-{linesRemoved}</span>
+          </span>
+        )}
+      </span>
+
+      <span className="text-border shrink-0">·</span>
+
+      {/* Context progress bar — scaled so 83% actual = 100% visual width */}
+      {ctxPct > 0 && (() => {
+        const COMPACT_THRESHOLD = 0.83;
+        const visualPct = (ctxPct / (COMPACT_THRESHOLD * 100)) * 100;
+        const barColor = visualPct >= 100 ? "bg-red-400" : visualPct >= 70 ? "bg-amber-400" : "bg-green-400";
+        const textColor = visualPct >= 100 ? "text-red-400" : visualPct >= 70 ? "text-amber-400" : "text-green-400";
+        const label = `${Math.round(visualPct)}%`;
+        const tooltipText = `Context: ${ctxPct}% used — 100% triggers auto-compact`;
+        return (
+          <TooltipSimple content={tooltipText} side="top">
+            <span className="flex items-center gap-1.5 shrink-0 cursor-default">
+              <span className="text-muted-foreground/60">ctx</span>
+              {/* Extra right margin absorbs bar overflow so the label never overlaps */}
+              <span className="relative h-1.5 w-20 mr-4 rounded-full bg-muted overflow-visible">
+                <span
+                  className={cn(
+                    "absolute inset-y-0 left-0 rounded-full transition-all duration-1000",
+                    barColor
+                  )}
+                  style={{ width: `${Math.min(visualPct, 100)}%` }}
+                />
+                {/* Compact threshold marker — 83% actual = 100% visual */}
+                <span
+                  className="absolute top-1/2 -translate-y-1/2 w-px h-3 bg-foreground/40 rounded-full"
+                  style={{ left: "100%" }}
+                />
+              </span>
+              <span className={textColor}>{label}</span>
+            </span>
+          </TooltipSimple>
+        );
+      })()}
+
+      {/* Spacer */}
+      <span className="flex-1" />
+
+      {/* Rate limits */}
+      {hasRateLimits && (
+        <>
+          <span className="flex items-center gap-3 shrink-0">
+            {fiveHrPct !== null && (
+              <TooltipSimple
+                content={fiveHrReset ? `Resets in ${formatResetCountdown(fiveHrReset)}` : "5-hour rolling limit"}
+                side="top"
+              >
+                <span className="cursor-default">
+                  <span className="text-muted-foreground/60">5h </span>
+                  <span className={getRateLimitColor(fiveHrPct)}>{fiveHrPct}%</span>
+                  {fiveHrReset && (
+                    <span className="text-muted-foreground/40 ml-1">↺{formatResetCountdown(fiveHrReset)}</span>
+                  )}
+                </span>
+              </TooltipSimple>
+            )}
+            {sevenDayPct !== null && (
+              <TooltipSimple
+                content={sevenDayReset ? `Resets in ${formatResetCountdown(sevenDayReset)}` : "7-day rolling limit"}
+                side="top"
+              >
+                <span className="cursor-default">
+                  <span className="text-muted-foreground/60">7d </span>
+                  <span className={getRateLimitColor(sevenDayPct)}>{sevenDayPct}%</span>
+                  {sevenDayReset && (
+                    <span className="text-muted-foreground/40 ml-1">↺{formatResetCountdown(sevenDayReset)}</span>
+                  )}
+                </span>
+              </TooltipSimple>
+            )}
+          </span>
+          <span className="text-border shrink-0">·</span>
+        </>
+      )}
+
+      {/* c-guard indicator */}
+      <TooltipSimple content={cguardActive ? "c-guard active" : "c-guard inactive"} side="top">
+        <span className="flex items-center">
+          {cguardActive ? (
+            <ShieldCheck className="h-3.5 w-3.5 text-green-400" />
+          ) : (
+            <ShieldOff className="h-3.5 w-3.5 opacity-30" />
+          )}
+        </span>
+      </TooltipSimple>
+    </div>
+  );
+};

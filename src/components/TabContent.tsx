@@ -1,10 +1,11 @@
 import React, { Suspense, lazy, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useTabState } from '@/hooks/useTabState';
-import { useScreenTracking } from '@/hooks/useAnalytics';
 import { Tab } from '@/contexts/TabContext';
-import { Loader2, Plus, ArrowLeft } from 'lucide-react';
+import { Plus, ArrowLeft } from 'lucide-react';
+import { BreathingDots } from '@/components/ui/spinner';
 import { api, type Project, type Session, type ClaudeMdFile } from '@/lib/api';
+import { ccodeSettings } from '@/lib/ccodeSettings';
 import { ProjectList } from '@/components/ProjectList';
 import { SessionList } from '@/components/SessionList';
 import { Button } from '@/components/ui/button';
@@ -19,6 +20,9 @@ const UsageDashboard = lazy(() => import('@/components/UsageDashboard').then(m =
 const MCPManager = lazy(() => import('@/components/MCPManager').then(m => ({ default: m.MCPManager })));
 const Settings = lazy(() => import('@/components/Settings').then(m => ({ default: m.Settings })));
 const MarkdownEditor = lazy(() => import('@/components/MarkdownEditor').then(m => ({ default: m.MarkdownEditor })));
+const ClaudeExplorer = lazy(() => import('@/components/ClaudeExplorer').then(m => ({ default: m.ClaudeExplorer })));
+const SessionLogs = lazy(() => import('@/components/SessionLogs').then(m => ({ default: m.SessionLogs })));
+const TerminalTab = lazy(() => import('@/components/TerminalTab').then(m => ({ default: m.TerminalTab })));
 // const ClaudeFileEditor = lazy(() => import('@/components/ClaudeFileEditor').then(m => ({ default: m.ClaudeFileEditor })));
 
 // Import non-lazy components for projects view
@@ -28,23 +32,36 @@ interface TabPanelProps {
   isActive: boolean;
 }
 
+
 const TabPanel: React.FC<TabPanelProps> = ({ tab, isActive }) => {
   const { updateTab } = useTabState();
   const [projects, setProjects] = React.useState<Project[]>([]);
   const [selectedProject, setSelectedProject] = React.useState<Project | null>(null);
   const [sessions, setSessions] = React.useState<Session[]>([]);
   const [loading, setLoading] = React.useState(false);
-  
-  // Track screen when tab becomes active
-  useScreenTracking(isActive ? tab.type : undefined, isActive ? tab.id : undefined);
+  const [projectDisplayName, setProjectDisplayName] = React.useState('');
+  const [isEditingProjectName, setIsEditingProjectName] = React.useState(false);
+  const [projectNameEdit, setProjectNameEdit] = React.useState('');
+
   const [error, setError] = React.useState<string | null>(null);
   
-  // Load projects when tab becomes active and is of type 'projects'
+  // Load projects when tab becomes active and refresh every 30s while active
   useEffect(() => {
-    if (isActive && tab.type === 'projects') {
-      loadProjects();
-    }
+    if (!isActive || tab.type !== 'projects') return;
+    loadProjects();
+    const interval = setInterval(loadProjects, 30_000);
+    return () => clearInterval(interval);
   }, [isActive, tab.type]);
+
+  // Sync display name when selected project changes
+  useEffect(() => {
+    if (!selectedProject) return;
+    const fallback = selectedProject.path.split(/[/\\]/).pop() || selectedProject.path;
+    setProjectDisplayName(fallback);
+    ccodeSettings.getProject(selectedProject.path).then(meta => {
+      if (meta.name) setProjectDisplayName(meta.name);
+    });
+  }, [selectedProject?.id]);
   
   const loadProjects = async () => {
     try {
@@ -64,15 +81,15 @@ const TabPanel: React.FC<TabPanelProps> = ({ tab, isActive }) => {
     try {
       setLoading(true);
       setError(null);
-      const sessionList = await api.getProjectSessions(project.id);
+      const [sessionList, meta] = await Promise.all([
+        api.getProjectSessions(project.id),
+        ccodeSettings.getProject(project.path),
+      ]);
       setSessions(sessionList);
       setSelectedProject(project);
-      
-      // Update tab title to show project name
-      const projectName = project.path.split('/').pop() || 'Project';
-      updateTab(tab.id, {
-        title: projectName
-      });
+
+      const fallback = project.path.split(/[/\\]/).pop() || 'Project';
+      updateTab(tab.id, { title: meta.name || fallback });
     } catch (err) {
       console.error("Failed to load sessions:", err);
       setError("Failed to load sessions for this project.");
@@ -140,7 +157,7 @@ const TabPanel: React.FC<TabPanelProps> = ({ tab, isActive }) => {
               {/* Content based on selection */}
               {selectedProject ? (
                 <div className="h-full overflow-y-auto">
-                  <div className="max-w-6xl mx-auto p-6">
+                  <div className="mx-auto p-6">
                     <div className="mb-6">
                       <div className="flex items-center justify-between">
                         <div className="flex items-center gap-3">
@@ -166,10 +183,44 @@ const TabPanel: React.FC<TabPanelProps> = ({ tab, isActive }) => {
                             </Button>
                           </motion.div>
                           <div>
-                            <h1 className="text-3xl font-bold tracking-tight">
-                              {selectedProject.path.split('/').pop()}
-                            </h1>
-                            <p className="mt-1 text-sm text-muted-foreground">
+                            {isEditingProjectName ? (
+                              <input
+                                autoFocus
+                                value={projectNameEdit}
+                                onChange={e => setProjectNameEdit(e.target.value)}
+                                onKeyDown={e => {
+                                  if (e.key === 'Enter') {
+                                    const trimmed = projectNameEdit.trim();
+                                    const fallback = selectedProject.path.split(/[/\\]/).pop() || selectedProject.path;
+                                    ccodeSettings.setProject(selectedProject.path, { name: trimmed || undefined });
+                                    setProjectDisplayName(trimmed || fallback);
+                                    setIsEditingProjectName(false);
+                                  }
+                                  if (e.key === 'Escape') setIsEditingProjectName(false);
+                                }}
+                                onBlur={() => {
+                                  const trimmed = projectNameEdit.trim();
+                                  const fallback = selectedProject.path.split(/[/\\]/).pop() || selectedProject.path;
+                                  ccodeSettings.setProject(selectedProject.path, { name: trimmed || undefined });
+                                  setProjectDisplayName(trimmed || fallback);
+                                  setIsEditingProjectName(false);
+                                }}
+                                className="text-3xl font-bold tracking-tight bg-transparent border-b-2 border-primary outline-none w-80"
+                              />
+                            ) : (
+                              <h1
+                                className="text-3xl font-bold tracking-tight cursor-pointer hover:text-foreground/80 transition-colors group flex items-center gap-2"
+                                onClick={() => { setProjectNameEdit(projectDisplayName); setIsEditingProjectName(true); }}
+                                title="Click to rename"
+                              >
+                                {projectDisplayName}
+                                <span className="text-base text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity font-normal">rename</span>
+                              </h1>
+                            )}
+                            <p className="mt-1 text-sm text-muted-foreground font-mono">
+                              {selectedProject.path}
+                            </p>
+                            <p className="text-sm text-muted-foreground">
                               {`${sessions.length} session${sessions.length !== 1 ? 's' : ''}`}
                             </p>
                           </div>
@@ -204,7 +255,7 @@ const TabPanel: React.FC<TabPanelProps> = ({ tab, isActive }) => {
                     {/* Loading state */}
                     {loading && (
                       <div className="flex items-center justify-center py-8">
-                        <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+                        <BreathingDots className="h-6 w-6 text-muted-foreground" />
                       </div>
                     )}
 
@@ -240,6 +291,26 @@ const TabPanel: React.FC<TabPanelProps> = ({ tab, isActive }) => {
                   onProjectClick={handleProjectClick}
                   onOpenProject={handleOpenProject}
                   loading={loading}
+                  onSessionClick={(project, session) => {
+                    updateTab(tab.id, {
+                      type: 'chat',
+                      title: session.first_message
+                        ? session.first_message.slice(0, 40)
+                        : (project.path.split(/[/\\]/).pop() || 'Session'),
+                      sessionId: session.id,
+                      sessionData: session,
+                      initialProjectPath: session.project_path,
+                    });
+                  }}
+                  onNewSession={(project) => {
+                    updateTab(tab.id, {
+                      type: 'chat',
+                      title: project.path.split(/[/\\]/).pop() || 'New Session',
+                      sessionId: undefined,
+                      sessionData: undefined,
+                      initialProjectPath: project.path,
+                    });
+                  }}
                 />
               )}
           </div>
@@ -357,13 +428,39 @@ const TabPanel: React.FC<TabPanelProps> = ({ tab, isActive }) => {
         );
       
       case 'import-agent':
-        // TODO: Implement import agent component
         return (
           <div className="h-full">
             <div className="p-4">Import agent functionality coming soon...</div>
           </div>
         );
-      
+
+      case 'claude-explorer':
+        return (
+          <div className="h-full">
+            <ClaudeExplorer />
+          </div>
+        );
+
+      case 'session-logs':
+        return (
+          <div className="h-full">
+            <SessionLogs />
+          </div>
+        );
+
+      case 'skills':
+        return <div className="p-6 text-muted-foreground text-sm">Skills — coming soon</div>;
+
+      case 'plugins':
+        return <div className="p-6 text-muted-foreground text-sm">Plugins — coming soon</div>;
+
+      case 'terminal':
+        return (
+          <div className="h-full">
+            <TerminalTab path={tab.projectPath} />
+          </div>
+        );
+
       default:
         return (
           <div className="h-full">
@@ -385,7 +482,7 @@ const TabPanel: React.FC<TabPanelProps> = ({ tab, isActive }) => {
         <Suspense
           fallback={
             <div className="flex items-center justify-center h-full">
-              <Loader2 className="w-8 h-8 animate-spin text-muted-foreground" />
+              <BreathingDots className="w-8 h-8 text-muted-foreground" />
             </div>
           }
         >
@@ -402,27 +499,19 @@ export const TabContent: React.FC = () => {
   
   // Listen for events to open sessions in tabs
   useEffect(() => {
-    const handleOpenSessionInTab = (event: CustomEvent) => {
+    const handleOpenSessionInTab = async (event: CustomEvent) => {
       const { session } = event.detail;
-      
-      // Check if tab already exists for this session
+      const fallback = session.project_path.split(/[/\\]/).pop() || 'Session';
+      const meta = await ccodeSettings.getProject(session.project_path);
+      const projectName = meta.name || fallback;
+
       const existingTab = findTabBySessionId(session.id);
       if (existingTab) {
-        // Update existing tab with session data and switch to it
-        updateTab(existingTab.id, {
-          sessionData: session,
-          title: session.project_path.split('/').pop() || 'Session'
-        });
+        updateTab(existingTab.id, { sessionData: session, title: projectName });
         window.dispatchEvent(new CustomEvent('switch-to-tab', { detail: { tabId: existingTab.id } }));
       } else {
-        // Create new tab for this session
-        const projectName = session.project_path.split('/').pop() || 'Session';
         const newTabId = createChatTab(session.id, projectName, session.project_path);
-        // Update the new tab with session data
-        updateTab(newTabId, {
-          sessionData: session,
-          initialProjectPath: session.project_path
-        });
+        updateTab(newTabId, { sessionData: session, initialProjectPath: session.project_path });
       }
     };
 
@@ -449,61 +538,54 @@ export const TabContent: React.FC = () => {
       closeTab(tabId);
     };
 
-    const handleClaudeSessionSelected = (event: CustomEvent) => {
+    const handleClaudeSessionSelected = async (event: CustomEvent) => {
       const { session } = event.detail;
-      // Check if there's an existing tab for this session
+      const fallback = session.project_path.split(/[/\\]/).pop() || 'Session';
+      const meta = await ccodeSettings.getProject(session.project_path);
+      const projectName = meta.name || fallback;
+
       const existingTab = findTabBySessionId(session.id);
       if (existingTab) {
-        // If tab exists, just switch to it
-        updateTab(existingTab.id, {
-          sessionData: session,
-          title: session.project_path.split('/').pop() || 'Session',
-        });
+        updateTab(existingTab.id, { sessionData: session, title: projectName });
         window.dispatchEvent(new CustomEvent('switch-to-tab', { detail: { tabId: existingTab.id } }));
       } else {
-        // If we're in a projects tab, update it to show the session
-        // Otherwise create a new tab (for compatibility with other parts of the app)
         const currentTab = tabs.find(t => t.id === activeTabId);
         if (currentTab && currentTab.type === 'projects') {
           updateTab(currentTab.id, {
             type: 'chat',
-            title: session.project_path.split('/').pop() || 'Session',
+            title: projectName,
             sessionId: session.id,
             sessionData: session,
             initialProjectPath: session.project_path
           });
         } else {
-          const projectName = session.project_path.split('/').pop() || 'Session';
           const newTabId = createChatTab(session.id, projectName, session.project_path);
-          updateTab(newTabId, {
-            sessionData: session,
-            initialProjectPath: session.project_path,
-          });
+          updateTab(newTabId, { sessionData: session, initialProjectPath: session.project_path });
         }
       }
     };
 
-    window.addEventListener('open-session-in-tab', handleOpenSessionInTab as EventListener);
+    window.addEventListener('open-session-in-tab', handleOpenSessionInTab as unknown as EventListener);
     window.addEventListener('open-claude-file', handleOpenClaudeFile as EventListener);
     window.addEventListener('open-agent-execution', handleOpenAgentExecution as EventListener);
     window.addEventListener('open-create-agent-tab', handleOpenCreateAgentTab);
     window.addEventListener('open-import-agent-tab', handleOpenImportAgentTab);
     window.addEventListener('close-tab', handleCloseTab as EventListener);
-    window.addEventListener('claude-session-selected', handleClaudeSessionSelected as EventListener);
+    window.addEventListener('claude-session-selected', handleClaudeSessionSelected as unknown as EventListener);
     return () => {
-      window.removeEventListener('open-session-in-tab', handleOpenSessionInTab as EventListener);
+      window.removeEventListener('open-session-in-tab', handleOpenSessionInTab as unknown as EventListener);
       window.removeEventListener('open-claude-file', handleOpenClaudeFile as EventListener);
       window.removeEventListener('open-agent-execution', handleOpenAgentExecution as EventListener);
       window.removeEventListener('open-create-agent-tab', handleOpenCreateAgentTab);
       window.removeEventListener('open-import-agent-tab', handleOpenImportAgentTab);
       window.removeEventListener('close-tab', handleCloseTab as EventListener);
-      window.removeEventListener('claude-session-selected', handleClaudeSessionSelected as EventListener);
+      window.removeEventListener('claude-session-selected', handleClaudeSessionSelected as unknown as EventListener);
     };
   }, [createChatTab, findTabBySessionId, createClaudeFileTab, createAgentExecutionTab, createCreateAgentTab, createImportAgentTab, closeTab, updateTab]);
   
   return (
     <div className="flex-1 h-full relative">
-      <AnimatePresence mode="wait">
+      <AnimatePresence>
         {tabs.map((tab) => (
           <TabPanel
             key={tab.id}

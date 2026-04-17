@@ -1,31 +1,34 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { motion } from "framer-motion";
 import { Bot, FolderCode } from "lucide-react";
 import { api, type Project, type Session, type ClaudeMdFile } from "@/lib/api";
+import { ccodeSettings } from "@/lib/ccodeSettings";
 import { initializeWebMode } from "@/lib/apiAdapter";
 import { OutputCacheProvider } from "@/lib/outputCache";
-import { TabProvider } from "@/contexts/TabContext";
+import { TabProvider, useTabContext } from "@/contexts/TabContext";
 import { ThemeProvider } from "@/contexts/ThemeContext";
+import { TooltipProvider } from "@/components/ui/tooltip-modern";
 import { Card } from "@/components/ui/card";
 import { ProjectList } from "@/components/ProjectList";
 import { FilePicker } from "@/components/FilePicker";
 import { SessionList } from "@/components/SessionList";
 import { CustomTitlebar } from "@/components/CustomTitlebar";
+import { Sidebar } from "@/components/Sidebar";
 import { MarkdownEditor } from "@/components/MarkdownEditor";
 import { ClaudeFileEditor } from "@/components/ClaudeFileEditor";
 import { Settings } from "@/components/Settings";
 import { CCAgents } from "@/components/CCAgents";
 import { UsageDashboard } from "@/components/UsageDashboard";
 import { MCPManager } from "@/components/MCPManager";
-import { NFOCredits } from "@/components/NFOCredits";
 import { ClaudeBinaryDialog } from "@/components/ClaudeBinaryDialog";
-import { Toast, ToastContainer } from "@/components/ui/toast";
 import { ProjectSettings } from '@/components/ProjectSettings';
-import { TabManager } from "@/components/TabManager";
 import { TabContent } from "@/components/TabContent";
+import { SystemFooter } from "@/components/SystemFooter";
 import { useTabState } from "@/hooks/useTabState";
-import { useAppLifecycle, useTrackEvent } from "@/hooks";
 import { StartupIntro } from "@/components/StartupIntro";
+import { Toaster } from "@/components/ui/Toaster";
+import { showError, showSuccess } from "@/hooks/useToast";
+import { startupCache } from "@/lib/startupCache";
 
 type View = 
   | "welcome" 
@@ -48,44 +51,146 @@ type View =
  */
 function AppContent() {
   const [view, setView] = useState<View>("tabs");
-  const { createClaudeMdTab, createSettingsTab, createUsageTab, createMCPTab, createAgentsTab } = useTabState();
+  const [sidebarOpen, setSidebarOpen] = useState(true);
+  const { } = useTabState();
   const [projects, setProjects] = useState<Project[]>([]);
   const [selectedProject, setSelectedProject] = useState<Project | null>(null);
   const [sessions, setSessions] = useState<Session[]>([]);
   const [editingClaudeFile, setEditingClaudeFile] = useState<ClaudeMdFile | null>(null);
   const [loading, setLoading] = useState(true);
   const [_error, setError] = useState<string | null>(null);
-  const [showNFO, setShowNFO] = useState(false);
   const [showClaudeBinaryDialog, setShowClaudeBinaryDialog] = useState(false);
   const [showProjectPicker, setShowProjectPicker] = useState(false);
   const [homeDirectory, setHomeDirectory] = useState<string>('/');
-  const [toast, setToast] = useState<{ message: string; type: "success" | "error" | "info" } | null>(null);
   const [projectForSettings, setProjectForSettings] = useState<Project | null>(null);
   const [previousView] = useState<View>("welcome");
-  
-  // Initialize analytics lifecycle tracking
-  useAppLifecycle();
-  const trackEvent = useTrackEvent();
-  
-  // Track user journey milestones
-  const [hasTrackedFirstChat] = useState(false);
-  // const [hasTrackedFirstAgent] = useState(false);
-  
-  // Track when user reaches different journey stages
-  useEffect(() => {
-    if (view === "projects" && projects.length > 0 && !hasTrackedFirstChat) {
-      // User has projects - they're past onboarding
-      trackEvent.journeyMilestone({
-        journey_stage: 'onboarding',
-        milestone_reached: 'projects_created',
-        time_to_milestone_ms: Date.now() - performance.timing.navigationStart
-      });
-    }
-  }, [view, projects.length, hasTrackedFirstChat, trackEvent]);
+  const [showSystemFooter, setShowSystemFooter] = useState(false);
 
-  // Initialize web mode compatibility on mount
+  const [splashVisible, setSplashVisible] = useState(true);
+  const [splashProgress, setSplashProgress] = useState(0);
+  const [splashStep, setSplashStep] = useState('');
+
+  const { tabs, updateTab } = useTabContext();
+  const tabsRef = useRef(tabs);
+  useEffect(() => { tabsRef.current = tabs; }, [tabs]);
+
+  // Comprehensive 7-step startup sequence
   useEffect(() => {
-    initializeWebMode();
+    if (!splashVisible) return; // splash disabled — skip eager load
+
+    const sleep = (ms: number) => new Promise<void>(r => setTimeout(r, ms));
+
+    const runStep = async (
+      label: string,
+      minMs: number,
+      work: () => Promise<void>
+    ) => {
+      setSplashStep(label);
+      await Promise.all([work().catch(console.error), sleep(minMs)]);
+    };
+
+    (async () => {
+      try {
+        // Step 1 — Load settings (0 → 14%)
+        await runStep('Loading settings...', 600, async () => {
+          initializeWebMode();
+          ccodeSettings.warmup();
+          const settingsData = await api.readCcodeSettings().catch(() => ({} as Record<string, string>));
+          startupCache.lastUpdated = new Date();
+          // Check if splash is disabled by settings
+          const pref = settingsData['startup_intro_enabled'] ?? null;
+          if (pref === 'false') { setSplashVisible(false); return; }
+        });
+        setSplashProgress(14);
+
+        // Step 2 — Read projects and sessions (14 → 28%)
+        await runStep('Reading projects and sessions...', 700, async () => {
+          const projects = await api.listProjects().catch(() => []);
+          startupCache.projects = projects;
+        });
+        setSplashProgress(28);
+
+        // Step 3 — Check session statuses (28 → 45%)
+        await runStep('Checking session statuses...', 900, async () => {
+          // Wait briefly for TabContext to finish loading from localStorage
+          await sleep(150);
+          const currentTabs = tabsRef.current;
+          const chatTabs = currentTabs.filter(t =>
+            t.type === 'chat' && (t.claudeSessionId || t.sessionId) &&
+            (t.claudeProjectId || (t.sessionData as any)?.project_id)
+          );
+          for (const tab of chatTabs) {
+            const sessionId = tab.claudeSessionId || tab.sessionId!;
+            const projectId = tab.claudeProjectId || (tab.sessionData as any)?.project_id;
+            if (!sessionId || !projectId) continue;
+            try {
+              const status = await api.getSessionFileStatus(sessionId, projectId);
+              let newStatus: 'idle' | 'running' | 'complete' | 'error' | 'waiting' = 'idle';
+              if (status.last_type === 'result') {
+                newStatus = status.is_error ? 'error' : 'complete';
+              } else if (status.awaiting_approval) {
+                newStatus = 'waiting';
+              } else if (status.modified_secs_ago < 30) {
+                newStatus = 'running';
+              }
+              if (tab.status !== newStatus) {
+                updateTab(tab.id, { status: newStatus });
+              }
+            } catch { /* ignore per-tab errors */ }
+          }
+        });
+        setSplashProgress(45);
+
+        // Step 4 — Configure sidebar (45 → 57%)
+        await runStep('Configuring sidebar and watcher...', 500, async () => {
+          // Auto-install hook bridge if missing
+          const bridgeCount = await api.checkHookBridgeInstalled().catch(() => 0);
+          if (bridgeCount < 14) {
+            await api.installHookBridge().catch(() => {});
+          }
+        });
+        setSplashProgress(57);
+
+        // Step 5 — Load MCP servers (57 → 71%)
+        await runStep('Loading MCP servers...', 800, async () => {
+          const servers = await api.mcpList().catch(() => []);
+          startupCache.mcpServers = servers;
+        });
+        setSplashProgress(71);
+
+        // Step 6 — Load plugins (71 → 85%)
+        await runStep('Loading plugins...', 800, async () => {
+          const plugins = await api.listPlugins().catch(() => null);
+          if (plugins) startupCache.plugins = plugins as any;
+        });
+        setSplashProgress(85);
+
+        // Step 7 — Apply configuration (85 → 100%)
+        await runStep('Applying configuration...', 600, async () => {
+          const settings = await api.readCcodeSettings().catch(() => ({} as Record<string, string>));
+          if (settings.font_sans) document.documentElement.style.setProperty('--font-sans', settings.font_sans);
+          if (settings.font_mono) document.documentElement.style.setProperty('--font-mono', settings.font_mono);
+          if (settings.font_size) document.documentElement.style.setProperty('font-size', `${settings.font_size}px`);
+          if (settings.show_system_footer !== undefined) setShowSystemFooter(Boolean(settings.show_system_footer));
+          startupCache.lastUpdated = new Date();
+        });
+        setSplashProgress(100);
+
+        await sleep(200);
+        setSplashVisible(false);
+      } catch {
+        setSplashVisible(false);
+      }
+    })();
+  }, []);
+
+  // Listen for live preference changes emitted by Settings
+  useEffect(() => {
+    const handleFooterToggle = (e: Event) => {
+      setShowSystemFooter((e as CustomEvent<boolean>).detail);
+    };
+    window.addEventListener('ccode:show-system-footer', handleFooterToggle);
+    return () => window.removeEventListener('ccode:show-system-footer', handleFooterToggle);
   }, []);
 
   // Load projects on mount when in projects view
@@ -246,8 +351,7 @@ function AppContent() {
                 className="mb-12 text-center"
               >
                 <h1 className="text-4xl font-bold tracking-tight">
-                  <span className="rotating-symbol"></span>
-                  Welcome to opcode
+                  Welcome to C-Code
                 </h1>
               </motion.div>
 
@@ -338,9 +442,9 @@ function AppContent() {
       
       case "tabs":
         return (
-          <div className="h-full flex flex-col">
-            <TabManager className="flex-shrink-0" />
-            <div className="flex-1 overflow-hidden">
+          <div className="h-full flex flex-row overflow-hidden">
+            <Sidebar isOpen={sidebarOpen} onToggle={() => setSidebarOpen(v => !v)} />
+            <div className="flex-1 min-w-0 overflow-hidden">
               <TabContent />
             </div>
           </div>
@@ -378,14 +482,7 @@ function AppContent() {
   return (
     <div className="h-screen flex flex-col">
       {/* Custom Titlebar */}
-      <CustomTitlebar
-        onAgentsClick={() => createAgentsTab()}
-        onUsageClick={() => createUsageTab()}
-        onClaudeClick={() => createClaudeMdTab()}
-        onMCPClick={() => createMCPTab()}
-        onSettingsClick={() => createSettingsTab()}
-        onInfoClick={() => setShowNFO(true)}
-      />
+      <CustomTitlebar sidebarOpen={sidebarOpen} onToggleSidebar={() => setSidebarOpen(v => !v)} />
       
       {/* Topbar - Commented out since navigation moved to titlebar */}
       {/* <Topbar
@@ -403,21 +500,19 @@ function AppContent() {
       <div className="flex-1 overflow-hidden">
         {renderContent()}
       </div>
-      
-      {/* NFO Credits Modal */}
-      {showNFO && <NFOCredits onClose={() => setShowNFO(false)} />}
-      
-      
+
+      {showSystemFooter && <SystemFooter />}
+
       {/* Claude Binary Dialog */}
       <ClaudeBinaryDialog
         open={showClaudeBinaryDialog}
         onOpenChange={setShowClaudeBinaryDialog}
         onSuccess={() => {
-          setToast({ message: "Claude binary path saved successfully", type: "success" });
+          showSuccess("Claude binary path saved successfully");
           // Trigger a refresh of the Claude version check
           window.location.reload();
         }}
-        onError={(message) => setToast({ message, type: "error" })}
+        onError={(message) => showError(message)}
       />
 
       {/* File picker modal for selecting project directory */}
@@ -445,44 +540,12 @@ function AppContent() {
           </div>
         </div>
       )}
-      
-      {/* Toast Container */}
-      <ToastContainer>
-        {toast && (
-          <Toast
-            message={toast.message}
-            type={toast.type}
-            onDismiss={() => setToast(null)}
-          />
-        )}
-      </ToastContainer>
 
-      {/* File picker modal for selecting project directory */}
-      {showProjectPicker && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/80 backdrop-blur-sm">
-          <div className="w-full max-w-2xl h-[600px] bg-background border rounded-lg shadow-lg">
-            <FilePicker
-              basePath={homeDirectory}
-              onSelect={async (entry) => {
-                if (entry.is_directory) {
-                  // Create or open a project for this directory
-                  try {
-                    const project = await api.createProject(entry.path);
-                    setShowProjectPicker(false);
-                    await loadProjects();
-                    // Load sessions for the selected project
-                    await handleProjectClick(project);
-                  } catch (err) {
-                    console.error('Failed to create project:', err);
-                    setError('Failed to create project for the selected directory.');
-                  }
-                }
-              }}
-              onClose={() => setShowProjectPicker(false)}
-            />
-          </div>
-        </div>
-      )}
+      {/* Global Toast System */}
+      <Toaster />
+
+      {/* Startup Splash Screen */}
+      <StartupIntro visible={splashVisible} progress={splashProgress} stepLabel={splashStep} />
     </div>
   );
 }
@@ -491,49 +554,15 @@ function AppContent() {
  * Main App component - Wraps the app with providers
  */
 function App() {
-  const [showIntro, setShowIntro] = useState(() => {
-    // Read cached preference synchronously to avoid any initial flash
-    try {
-      const cached = typeof window !== 'undefined'
-        ? window.localStorage.getItem('app_setting:startup_intro_enabled')
-        : null;
-      if (cached === 'true') return true;
-      if (cached === 'false') return false;
-    } catch (_ignore) {}
-    return true; // default if no cache
-  });
-
-  useEffect(() => {
-    let timer: number | undefined;
-    (async () => {
-      try {
-        const pref = await api.getSetting('startup_intro_enabled');
-        const enabled = pref === null ? true : pref === 'true';
-        if (enabled) {
-          // keep intro visible and hide after duration
-          timer = window.setTimeout(() => setShowIntro(false), 2000);
-        } else {
-          // user disabled intro: hide immediately to avoid any overlay delay
-          setShowIntro(false);
-        }
-      } catch (err) {
-        // On failure, show intro once to keep UX consistent
-        timer = window.setTimeout(() => setShowIntro(false), 2000);
-      }
-    })();
-    return () => {
-      if (timer) window.clearTimeout(timer);
-    };
-  }, []);
-
   return (
     <ThemeProvider>
-      <OutputCacheProvider>
-        <TabProvider>
-          <AppContent />
-          <StartupIntro visible={showIntro} />
-        </TabProvider>
-      </OutputCacheProvider>
+      <TooltipProvider>
+        <OutputCacheProvider>
+          <TabProvider>
+            <AppContent />
+          </TabProvider>
+        </OutputCacheProvider>
+      </TooltipProvider>
     </ThemeProvider>
   );
 }

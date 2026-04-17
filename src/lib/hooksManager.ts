@@ -221,7 +221,8 @@ export class HooksManager {
     }
 
     // Check for unescaped variables that could lead to code injection
-    if (command.includes('$') && !command.includes('"$')) {
+    // Whitelist $HOME as it is universally safe in shell contexts
+    if (command.includes('$') && !command.includes('"$') && !command.includes('$HOME')) {
       warnings.push('Unquoted shell variable detected - potential code injection risk');
     }
 

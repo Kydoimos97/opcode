@@ -18,7 +18,29 @@ import {
 } from "lucide-react";
 import type { SlashCommand } from "@/lib/api";
 import { cn } from "@/lib/utils";
-import { useTrackEvent, useFeatureAdoptionTracking } from "@/hooks";
+
+// Built-in Claude Code native commands — always shown in the Default tab
+const NATIVE_COMMANDS: SlashCommand[] = [
+  { id: "native:clear", name: "clear", full_command: "/clear", scope: "default", file_path: "", content: "", description: "Clear conversation history", allowed_tools: [], has_bash_commands: false, has_file_references: false, accepts_arguments: false },
+  { id: "native:compact", name: "compact", full_command: "/compact", scope: "default", file_path: "", content: "", description: "Compact conversation to save context (optional: focus instructions)", allowed_tools: [], has_bash_commands: false, has_file_references: false, accepts_arguments: true },
+  { id: "native:config", name: "config", full_command: "/config", scope: "default", file_path: "", content: "", description: "Open Claude Code config panel", allowed_tools: [], has_bash_commands: false, has_file_references: false, accepts_arguments: false },
+  { id: "native:cost", name: "cost", full_command: "/cost", scope: "default", file_path: "", content: "", description: "Show token usage and cost for this session", allowed_tools: [], has_bash_commands: false, has_file_references: false, accepts_arguments: false },
+  { id: "native:doctor", name: "doctor", full_command: "/doctor", scope: "default", file_path: "", content: "", description: "Check Claude Code installation health", allowed_tools: [], has_bash_commands: false, has_file_references: false, accepts_arguments: false },
+  { id: "native:help", name: "help", full_command: "/help", scope: "default", file_path: "", content: "", description: "Get help or ask a question about Claude Code", allowed_tools: [], has_bash_commands: false, has_file_references: false, accepts_arguments: true },
+  { id: "native:init", name: "init", full_command: "/init", scope: "default", file_path: "", content: "", description: "Initialize CLAUDE.md for this project", allowed_tools: [], has_bash_commands: false, has_file_references: false, accepts_arguments: false },
+  { id: "native:login", name: "login", full_command: "/login", scope: "default", file_path: "", content: "", description: "Switch Anthropic accounts", allowed_tools: [], has_bash_commands: false, has_file_references: false, accepts_arguments: false },
+  { id: "native:logout", name: "logout", full_command: "/logout", scope: "default", file_path: "", content: "", description: "Sign out of Anthropic", allowed_tools: [], has_bash_commands: false, has_file_references: false, accepts_arguments: false },
+  { id: "native:memory", name: "memory", full_command: "/memory", scope: "default", file_path: "", content: "", description: "Edit CLAUDE.md memory files", allowed_tools: [], has_bash_commands: false, has_file_references: false, accepts_arguments: false },
+  { id: "native:model", name: "model", full_command: "/model", scope: "default", file_path: "", content: "", description: "Set the AI model (e.g. /model sonnet)", allowed_tools: [], has_bash_commands: false, has_file_references: false, accepts_arguments: true },
+  { id: "native:permissions", name: "permissions", full_command: "/permissions", scope: "default", file_path: "", content: "", description: "View or update tool permissions", allowed_tools: [], has_bash_commands: false, has_file_references: false, accepts_arguments: false },
+  { id: "native:pr_comments", name: "pr_comments", full_command: "/pr_comments", scope: "default", file_path: "", content: "", description: "Fetch and display pull request comments", allowed_tools: [], has_bash_commands: false, has_file_references: false, accepts_arguments: false },
+  { id: "native:release-notes", name: "release-notes", full_command: "/release-notes", scope: "default", file_path: "", content: "", description: "Show release notes for the current version", allowed_tools: [], has_bash_commands: false, has_file_references: false, accepts_arguments: false },
+  { id: "native:remote-control", name: "remote-control", full_command: "/remote-control", scope: "default", file_path: "", content: "", description: "Enable remote control mode — accept commands from external sources", allowed_tools: [], has_bash_commands: false, has_file_references: false, accepts_arguments: false },
+  { id: "native:review", name: "review", full_command: "/review", scope: "default", file_path: "", content: "", description: "Request a code review", allowed_tools: [], has_bash_commands: false, has_file_references: false, accepts_arguments: false },
+  { id: "native:status", name: "status", full_command: "/status", scope: "default", file_path: "", content: "", description: "Show account and billing status", allowed_tools: [], has_bash_commands: false, has_file_references: false, accepts_arguments: false },
+  { id: "native:terminal-setup", name: "terminal-setup", full_command: "/terminal-setup", scope: "default", file_path: "", content: "", description: "Install terminal integration (shell key bindings)", allowed_tools: [], has_bash_commands: false, has_file_references: false, accepts_arguments: false },
+  { id: "native:vim", name: "vim", full_command: "/vim", scope: "default", file_path: "", content: "", description: "Toggle vim mode in the terminal", allowed_tools: [], has_bash_commands: false, has_file_references: false, accepts_arguments: false },
+];
 
 interface SlashCommandPickerProps {
   /**
@@ -88,11 +110,7 @@ export const SlashCommandPicker: React.FC<SlashCommandPickerProps> = ({
   const [activeTab, setActiveTab] = useState<string>("custom");
   
   const commandListRef = useRef<HTMLDivElement>(null);
-  
-  // Analytics tracking
-  const trackEvent = useTrackEvent();
-  const slashCommandFeatureTracking = useFeatureAdoptionTracking('slash_commands');
-  
+
   // Load commands on mount or when project path changes
   useEffect(() => {
     loadCommands();
@@ -107,11 +125,13 @@ export const SlashCommandPicker: React.FC<SlashCommandPickerProps> = ({
     
     const query = searchQuery.toLowerCase();
     let filteredByTab: SlashCommand[];
-    
-    // Filter by active tab
+
     if (activeTab === "default") {
-      // Show default/built-in commands
-      filteredByTab = commands.filter(cmd => cmd.scope === "default");
+      // Merge hardcoded native commands with any "default"-scoped commands from the backend
+      const backendDefaults = commands.filter(cmd => cmd.scope === "default");
+      const backendDefaultIds = new Set(backendDefaults.map(c => c.id));
+      const merged = [...backendDefaults, ...NATIVE_COMMANDS.filter(c => !backendDefaultIds.has(c.id))];
+      filteredByTab = merged;
     } else {
       // Show all custom commands (both user and project)
       filteredByTab = commands.filter(cmd => cmd.scope !== "default");
@@ -173,16 +193,12 @@ export const SlashCommandPicker: React.FC<SlashCommandPickerProps> = ({
           break;
           
         case 'Enter':
-          e.preventDefault();
           if (filteredCommands.length > 0 && selectedIndex < filteredCommands.length) {
-            const command = filteredCommands[selectedIndex];
-            trackEvent.slashCommandSelected({
-              command_name: command.name,
-              selection_method: 'keyboard'
-            });
-            slashCommandFeatureTracking.trackUsage();
-            onSelect(command);
+            e.preventDefault();
+            onSelect(filteredCommands[selectedIndex]);
           }
+          // No matching commands — let Enter bubble up so the prompt sends as-is
+          // (native Claude commands like /model will be handled by Claude Code directly)
           break;
           
         case 'ArrowUp':
@@ -229,11 +245,6 @@ export const SlashCommandPicker: React.FC<SlashCommandPickerProps> = ({
   };
   
   const handleCommandClick = (command: SlashCommand) => {
-    trackEvent.slashCommandSelected({
-      command_name: command.name,
-      selection_method: 'click'
-    });
-    slashCommandFeatureTracking.trackUsage();
     onSelect(command);
   };
   
@@ -355,9 +366,9 @@ export const SlashCommandPicker: React.FC<SlashCommandPickerProps> = ({
                             onMouseEnter={() => setSelectedIndex(index)}
                             className={cn(
                               "w-full flex items-start gap-3 px-3 py-2 rounded-md",
-                              "hover:bg-accent transition-colors",
+                              "hover:bg-muted transition-colors",
                               "text-left",
-                              isSelected && "bg-accent"
+                              isSelected && "bg-muted"
                             )}
                           >
                             <Icon className="h-4 w-4 text-muted-foreground mt-1 flex-shrink-0" />
@@ -419,9 +430,9 @@ export const SlashCommandPicker: React.FC<SlashCommandPickerProps> = ({
                               onMouseEnter={() => setSelectedIndex(index)}
                               className={cn(
                                 "w-full flex items-start gap-3 px-3 py-2 rounded-md",
-                                "hover:bg-accent transition-colors",
+                                "hover:bg-muted transition-colors",
                                 "text-left",
-                                isSelected && "bg-accent"
+                                isSelected && "bg-muted"
                               )}
                             >
                               <Icon className="h-4 w-4 mt-0.5 flex-shrink-0 text-muted-foreground" />
@@ -493,9 +504,9 @@ export const SlashCommandPicker: React.FC<SlashCommandPickerProps> = ({
                                     onMouseEnter={() => setSelectedIndex(globalIndex)}
                                     className={cn(
                                       "w-full flex items-start gap-3 px-3 py-2 rounded-md",
-                                      "hover:bg-accent transition-colors",
+                                      "hover:bg-muted transition-colors",
                                       "text-left",
-                                      isSelected && "bg-accent"
+                                      isSelected && "bg-muted"
                                     )}
                                   >
                                     <Icon className="h-4 w-4 mt-0.5 flex-shrink-0 text-muted-foreground" />

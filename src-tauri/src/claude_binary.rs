@@ -6,7 +6,6 @@ use std::cmp::Ordering;
 /// Supports NVM installations, aliased paths, and version-based selection
 use std::path::PathBuf;
 use std::process::Command;
-use tauri::Manager;
 
 /// Type of Claude installation
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -31,40 +30,26 @@ pub struct ClaudeInstallation {
 }
 
 /// Main function to find the Claude binary
-/// Checks database first for stored path and preference, then prioritizes accordingly
-pub fn find_claude_binary(app_handle: &tauri::AppHandle) -> Result<String, String> {
+/// Checks ~/.ccode/settings.json first for stored path, then auto-discovers
+pub fn find_claude_binary(_app_handle: &tauri::AppHandle) -> Result<String, String> {
     info!("Searching for claude binary...");
 
-    // First check if we have a stored path and preference in the database
-    if let Ok(app_data_dir) = app_handle.path().app_data_dir() {
-        let db_path = app_data_dir.join("agents.db");
-        if db_path.exists() {
-            if let Ok(conn) = rusqlite::Connection::open(&db_path) {
-                // Check for stored path first
-                if let Ok(stored_path) = conn.query_row(
-                    "SELECT value FROM app_settings WHERE key = 'claude_binary_path'",
-                    [],
-                    |row| row.get::<_, String>(0),
-                ) {
-                    info!("Found stored claude path in database: {}", stored_path);
-
-                    // Check if the path still exists
-                    let path_buf = PathBuf::from(&stored_path);
-                    if path_buf.exists() && path_buf.is_file() {
-                        return Ok(stored_path);
-                    } else {
-                        warn!("Stored claude path no longer exists: {}", stored_path);
+    // Check ~/.ccode/settings.json for a stored binary path
+    if let Some(home) = dirs::home_dir() {
+        let settings_path = home.join(".ccode").join("settings.json");
+        if settings_path.exists() {
+            if let Ok(content) = std::fs::read_to_string(&settings_path) {
+                if let Ok(map) = serde_json::from_str::<serde_json::Map<String, serde_json::Value>>(&content) {
+                    if let Some(stored_path) = map.get("claude_binary_path").and_then(|v| v.as_str()) {
+                        info!("Found stored claude path in settings: {}", stored_path);
+                        let path_buf = PathBuf::from(stored_path);
+                        if path_buf.exists() && path_buf.is_file() {
+                            return Ok(stored_path.to_string());
+                        } else {
+                            warn!("Stored claude path no longer exists: {}", stored_path);
+                        }
                     }
                 }
-
-                // Check user preference
-                let preference = conn.query_row(
-                    "SELECT value FROM app_settings WHERE key = 'claude_installation_preference'",
-                    [],
-                    |row| row.get::<_, String>(0),
-                ).unwrap_or_else(|_| "system".to_string());
-
-                info!("User preference for Claude installation: {}", preference);
             }
         }
     }

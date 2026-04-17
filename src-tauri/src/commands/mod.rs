@@ -1,7 +1,12 @@
 pub mod agents;
 pub mod claude;
+pub mod fonts;
+pub mod hook_events;
 pub mod mcp;
 pub mod proxy;
+pub mod pty;
 pub mod slash_commands;
-pub mod storage;
+pub mod startup;
+pub mod system;
+pub mod terminal;
 pub mod usage;

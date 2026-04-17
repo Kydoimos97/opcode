@@ -1,6 +1,7 @@
 import React from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { StopCircle, Clock, Hash } from "lucide-react";
+import { BreathingDots } from "@/components/ui/spinner";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
@@ -56,10 +57,7 @@ export const ExecutionControlBar: React.FC<ExecutionControlBarProps> = ({
             className
           )}
         >
-          {/* Rotating symbol indicator */}
-          <div className="relative flex items-center justify-center">
-            <div className="rotating-symbol text-primary"></div>
-          </div>
+          <BreathingDots className="h-4 w-4 text-primary" />
 
           {/* Status text */}
           <span className="text-sm font-medium">Executing...</span>

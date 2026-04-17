@@ -1,10 +1,10 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { motion, AnimatePresence, Reorder } from 'framer-motion';
-import { X, Plus, MessageSquare, Bot, AlertCircle, Loader2, Folder, BarChart, Server, Settings, FileText } from 'lucide-react';
+import { X, Plus, MessageSquare, Bot, AlertCircle, Folder, BarChart, Server, Settings, FileText } from 'lucide-react';
+import { BreathingDots } from '@/components/ui/spinner';
 import { useTabState } from '@/hooks/useTabState';
 import { Tab, useTabContext } from '@/contexts/TabContext';
 import { cn } from '@/lib/utils';
-import { useTrackEvent } from '@/hooks';
 
 interface TabItemProps {
   tab: Tab;
@@ -48,7 +48,7 @@ const TabItem: React.FC<TabItemProps> = ({ tab, isActive, onClose, onClick, isDr
   const getStatusIcon = () => {
     switch (tab.status) {
       case 'running':
-        return <Loader2 className="w-3 h-3 animate-spin" />;
+        return <BreathingDots className="w-3 h-3" />;
       case 'error':
         return <AlertCircle className="w-3 h-3 text-red-500" />;
       default:
@@ -151,9 +151,6 @@ export const TabManager: React.FC<TabManagerProps> = ({ className }) => {
   const [showLeftScroll, setShowLeftScroll] = useState(false);
   const [showRightScroll, setShowRightScroll] = useState(false);
   const [draggedTabId, setDraggedTabId] = useState<string | null>(null);
-  
-  // Analytics tracking
-  const trackEvent = useTrackEvent();
 
   // Listen for tab switch events
   useEffect(() => {
@@ -172,15 +169,10 @@ export const TabManager: React.FC<TabManagerProps> = ({ className }) => {
   useEffect(() => {
     const handleCreateTab = () => {
       createProjectsTab();
-      trackEvent.tabCreated('projects');
     };
 
     const handleCloseTab = async () => {
       if (activeTabId) {
-        const tab = tabs.find(t => t.id === activeTabId);
-        if (tab) {
-          trackEvent.tabClosed(tab.type);
-        }
         await closeTab(activeTabId);
       }
     };
@@ -260,28 +252,17 @@ export const TabManager: React.FC<TabManagerProps> = ({ className }) => {
     const newIndex = newOrderIds.indexOf(movedTabId);
     
     if (oldIndex !== -1 && newIndex !== -1 && oldIndex !== newIndex) {
-      // Use the context's reorderTabs function
       reorderTabs(oldIndex, newIndex);
-      // Track the reorder event
-      trackEvent.featureUsed?.('tab_reorder', 'drag_drop', { 
-        from_index: oldIndex, 
-        to_index: newIndex 
-      });
     }
   };
 
   const handleCloseTab = async (id: string) => {
-    const tab = tabs.find(t => t.id === id);
-    if (tab) {
-      trackEvent.tabClosed(tab.type);
-    }
     await closeTab(id);
   };
 
   const handleNewTab = () => {
     if (canAddTab()) {
       createProjectsTab();
-      trackEvent.tabCreated('projects');
     }
   };
 

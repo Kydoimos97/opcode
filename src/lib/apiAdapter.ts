@@ -135,14 +135,9 @@ export async function apiCall<T>(command: string, params?: any): Promise<T> {
   const isWeb = !detectEnvironment();
   
   if (!isWeb) {
-    // Tauri environment - try invoke
+    // Tauri environment - invoke only, no REST fallback
     console.log(`[Tauri] Calling: ${command}`, params);
-    try {
-      return await invoke<T>(command, params);
-    } catch (error) {
-      console.warn(`[Tauri] invoke failed, falling back to web mode:`, error);
-      // Fall through to web mode
-    }
+    return await invoke<T>(command, params);
   }
   
   // Web environment - use REST API
@@ -170,6 +165,10 @@ function mapCommandToEndpoint(command: string, _params?: any): string {
     
     // Agent commands
     'list_agents': '/api/agents',
+    'list_native_agents': '/api/agents/native',
+    'read_native_agent': '/api/agents/native/{path}',
+    'write_native_agent': '/api/agents/native',
+    'delete_native_agent': '/api/agents/native/{path}',
     'fetch_github_agents': '/api/agents/github',
     'fetch_github_agent_content': '/api/agents/github/content',
     'import_agent_from_github': '/api/agents/import/github',
@@ -257,6 +256,14 @@ function mapCommandToEndpoint(command: string, _params?: any): string {
     'slash_command_get': '/api/slash-commands/{commandId}',
     'slash_command_save': '/api/slash-commands',
     'slash_command_delete': '/api/slash-commands/{commandId}',
+
+    // Global and skills commands
+    'list_skills': '/api/skills',
+    'get_global_settings': '/api/settings/global',
+    'read_commands_conf': '/api/commands/conf',
+    'write_and_verify_commands_conf': '/api/commands/conf',
+    'set_cguard_enabled': '/api/settings/cguard',
+    'run_cguard_cli': '/api/cguard/run',
   };
 
   const endpoint = commandToEndpoint[command];

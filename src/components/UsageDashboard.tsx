@@ -4,14 +4,15 @@ import { Card } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
 import { api, type UsageStats, type ProjectUsage } from "@/lib/api";
-import { 
-  Calendar, 
+import {
+  Calendar,
   Filter,
-  Loader2,
   Briefcase,
   ChevronLeft,
-  ChevronRight
+  ChevronRight,
+  RefreshCw
 } from "lucide-react";
+import { BreathingDots } from "@/components/ui/spinner";
 
 interface UsageDashboardProps {
   /**
@@ -20,12 +21,8 @@ interface UsageDashboardProps {
   onBack: () => void;
 }
 
-// Cache for storing fetched data
-const dataCache = new Map<string, { data: any; timestamp: number }>();
-const CACHE_DURATION = 10 * 60 * 1000; // 10 minutes cache - increased for better performance
-
 /**
- * Optimized UsageDashboard component with caching and progressive loading
+ * Optimized UsageDashboard component with persistent cache and refresh-on-demand
  */
 export const UsageDashboard: React.FC<UsageDashboardProps> = ({ }) => {
   const [loading, setLoading] = useState(true);
@@ -34,8 +31,9 @@ export const UsageDashboard: React.FC<UsageDashboardProps> = ({ }) => {
   const [sessionStats, setSessionStats] = useState<ProjectUsage[] | null>(null);
   const [selectedDateRange, setSelectedDateRange] = useState<"all" | "7d" | "30d">("7d");
   const [activeTab, setActiveTab] = useState("overview");
-  const [hasLoadedTabs, setHasLoadedTabs] = useState<Set<string>>(new Set(["overview"]));
-  
+  const [lastUpdated, setLastUpdated] = useState<number | null>(null);
+  const [refreshing, setRefreshing] = useState(false);
+
   // Pagination states
   const [projectsPage, setProjectsPage] = useState(1);
   const [sessionsPage, setSessionsPage] = useState(1);
@@ -74,131 +72,87 @@ export const UsageDashboard: React.FC<UsageDashboardProps> = ({ }) => {
     return modelMap[model] || model;
   }, []);
 
-  // Function to get cached data or null
-  const getCachedData = useCallback((key: string) => {
-    const cached = dataCache.get(key);
-    if (cached && Date.now() - cached.timestamp < CACHE_DURATION) {
-      return cached.data;
-    }
-    return null;
-  }, []);
+  const formatTimeAgo = (ts: number): string => {
+    const diff = Math.floor((Date.now() - ts) / 1000);
+    if (diff < 60) return 'just now';
+    if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
+    if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`;
+    return `${Math.floor(diff / 86400)}d ago`;
+  };
 
-  // Function to set cached data
-  const setCachedData = useCallback((key: string, data: any) => {
-    dataCache.set(key, { data, timestamp: Date.now() });
-  }, []);
-
-  const loadUsageStats = useCallback(async () => {
-    const cacheKey = `usage-${selectedDateRange}`;
-    
-    // Check cache first
-    const cachedStats = getCachedData(`${cacheKey}-stats`);
-    const cachedSessions = getCachedData(`${cacheKey}-sessions`);
-    
-    if (cachedStats && cachedSessions) {
-      setStats(cachedStats);
-      setSessionStats(cachedSessions);
-      setLoading(false);
-      return;
-    }
-
+  const fetchAndCache = useCallback(async () => {
+    setRefreshing(true);
+    setError(null);
     try {
-      // Don't show loading spinner if we have cached data for a different range
-      if (!stats && !sessionStats) {
-        setLoading(true);
-      }
-      setError(null);
-
       let statsData: UsageStats;
       let sessionData: ProjectUsage[] = [];
-      
+
       if (selectedDateRange === "all") {
-        // Fetch both in parallel for all time
-        const [statsResult, sessionResult] = await Promise.all([
-          api.getUsageStats(),
-          api.getSessionStats()
-        ]);
-        statsData = statsResult;
-        sessionData = sessionResult;
+        const [s, sess] = await Promise.all([api.getUsageStats(), api.getSessionStats()]);
+        statsData = s;
+        sessionData = sess;
       } else {
         const endDate = new Date();
         const startDate = new Date();
-        const days = selectedDateRange === "7d" ? 7 : 30;
-        startDate.setDate(startDate.getDate() - days);
-        
+        startDate.setDate(startDate.getDate() - (selectedDateRange === "7d" ? 7 : 30));
+        const fmt = (d: Date) => d.toISOString();
         const formatDateForApi = (date: Date) => {
           const year = date.getFullYear();
           const month = String(date.getMonth() + 1).padStart(2, '0');
           const day = String(date.getDate()).padStart(2, '0');
           return `${year}${month}${day}`;
         }
-
-        // Fetch both in parallel for better performance
-        const [statsResult, sessionResult] = await Promise.all([
-          api.getUsageByDateRange(
-            startDate.toISOString(),
-            endDate.toISOString()
-          ),
+        const [s, sess] = await Promise.all([
+          api.getUsageByDateRange(fmt(startDate), fmt(endDate)),
           api.getSessionStats(
             formatDateForApi(startDate),
-            formatDateForApi(endDate),
-            'desc'
+            formatDateForApi(endDate)
           )
         ]);
-        
-        statsData = statsResult;
-        sessionData = sessionResult;
+        statsData = s;
+        sessionData = sess;
       }
-      
-      // Update state
       setStats(statsData);
       setSessionStats(sessionData);
-      
-      // Cache the data
-      setCachedData(`${cacheKey}-stats`, statsData);
-      setCachedData(`${cacheKey}-sessions`, sessionData);
+      const now = Date.now();
+      setLastUpdated(now);
+      await api.saveUsageCache(statsData, sessionData);
     } catch (err: any) {
-      console.error("Failed to load usage stats:", err);
       setError("Failed to load usage statistics. Please try again.");
+      console.error(err);
     } finally {
-      setLoading(false);
+      setRefreshing(false);
     }
-  }, [selectedDateRange, getCachedData, setCachedData, stats, sessionStats]);
+  }, [selectedDateRange]);
 
-  // Load data on mount and when date range changes
+  // Load cache on mount
   useEffect(() => {
-    // Reset pagination when date range changes
+    (async () => {
+      setLoading(true);
+      try {
+        const cached = await api.loadUsageCache();
+        const MAX_AGE = 24 * 60 * 60 * 1000;
+        if (cached && cached.stats && cached.savedAt && (Date.now() - cached.savedAt) < MAX_AGE) {
+          setStats(cached.stats);
+          setSessionStats(cached.sessionStats ?? []);
+          setLastUpdated(cached.savedAt);
+        }
+      } catch {
+        // Ignore
+      } finally {
+        setLoading(false);
+      }
+    })();
+  }, []);
+
+  // Clear stats when date range changes
+  useEffect(() => {
+    setStats(null);
+    setSessionStats(null);
+    setLoading(false);
     setProjectsPage(1);
     setSessionsPage(1);
-    loadUsageStats();
-  }, [loadUsageStats])
-
-  // Preload adjacent tabs when idle
-  useEffect(() => {
-    if (!stats || loading) return;
-    
-    const tabOrder = ["overview", "models", "projects", "sessions", "timeline"];
-    const currentIndex = tabOrder.indexOf(activeTab);
-    
-    // Use requestIdleCallback if available, otherwise setTimeout
-    const schedulePreload = (callback: () => void) => {
-      if ('requestIdleCallback' in window) {
-        requestIdleCallback(callback, { timeout: 2000 });
-      } else {
-        setTimeout(callback, 100);
-      }
-    };
-    
-    // Preload adjacent tabs
-    schedulePreload(() => {
-      if (currentIndex > 0) {
-        setHasLoadedTabs(prev => new Set([...prev, tabOrder[currentIndex - 1]]));
-      }
-      if (currentIndex < tabOrder.length - 1) {
-        setHasLoadedTabs(prev => new Set([...prev, tabOrder[currentIndex + 1]]));
-      }
-    });
-  }, [activeTab, stats, loading])
+  }, [selectedDateRange]);
 
   // Memoize expensive computations
   const summaryCards = useMemo(() => {
@@ -313,7 +267,7 @@ export const UsageDashboard: React.FC<UsageDashboardProps> = ({ }) => {
 
   return (
     <div className="h-full overflow-y-auto">
-      <div className="max-w-6xl mx-auto flex flex-col h-full">
+      <div className="mx-auto flex flex-col h-full">
         {/* Header */}
         <div className="p-6">
           <div className="flex items-center justify-between">
@@ -322,38 +276,63 @@ export const UsageDashboard: React.FC<UsageDashboardProps> = ({ }) => {
               <p className="mt-1 text-body-small text-muted-foreground">
                 Track your Claude Code usage and costs
               </p>
+              {lastUpdated && (
+                <span className="text-xs text-muted-foreground mt-2 block">
+                  Updated {formatTimeAgo(lastUpdated)}
+                </span>
+              )}
             </div>
-            {/* Date Range Filter */}
-            <div className="flex items-center space-x-2">
-              <Filter className="h-4 w-4 text-muted-foreground" />
-              <div className="flex space-x-1">
-                {(["7d", "30d", "all"] as const).map((range) => (
-                  <Button
-                    key={range}
-                    variant={selectedDateRange === range ? "default" : "outline"}
-                    size="sm"
-                    onClick={() => setSelectedDateRange(range)}
-                    disabled={loading}
-                  >
-                    {range === "all" ? "All Time" : range === "7d" ? "Last 7 Days" : "Last 30 Days"}
-                  </Button>
-                ))}
+            {/* Date Range Filter and Refresh */}
+            <div className="flex items-center space-x-4">
+              <div className="flex items-center space-x-2">
+                <Filter className="h-4 w-4 text-muted-foreground" />
+                <div className="flex space-x-1">
+                  {(["7d", "30d", "all"] as const).map((range) => (
+                    <Button
+                      key={range}
+                      variant={selectedDateRange === range ? "default" : "outline"}
+                      size="sm"
+                      onClick={() => setSelectedDateRange(range)}
+                      disabled={loading || refreshing}
+                    >
+                      {range === "all" ? "All Time" : range === "7d" ? "Last 7 Days" : "Last 30 Days"}
+                    </Button>
+                  ))}
+                </div>
               </div>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={fetchAndCache}
+                disabled={refreshing}
+                className="h-8 text-xs"
+              >
+                {refreshing ? <BreathingDots className="h-3 w-3 mr-1" /> : <RefreshCw className="h-3 w-3 mr-1" />}
+                {refreshing ? "Loading..." : "Refresh"}
+              </Button>
             </div>
           </div>
         </div>
 
         {/* Content */}
         <div className="flex-1 overflow-y-auto p-6">
-          {loading ? (
+          {loading && !stats ? (
             <div className="flex items-center justify-center h-64">
-              <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+              <BreathingDots className="h-8 w-8 text-muted-foreground" />
             </div>
           ) : error ? (
             <div className="mb-4 p-3 rounded-lg bg-destructive/10 border border-destructive/50 text-body-small text-destructive">
               {error}
-              <Button onClick={() => loadUsageStats()} size="sm" className="ml-4">
+              <Button onClick={fetchAndCache} size="sm" className="ml-4">
                 Try Again
+              </Button>
+            </div>
+          ) : !stats ? (
+            <div className="flex flex-col items-center justify-center h-64 text-muted-foreground gap-4">
+              <p className="text-sm">No usage data loaded.</p>
+              <Button onClick={fetchAndCache} disabled={refreshing}>
+                <RefreshCw className="h-4 w-4 mr-2" />
+                Refresh Stats
               </Button>
             </div>
           ) : stats ? (
@@ -364,7 +343,6 @@ export const UsageDashboard: React.FC<UsageDashboardProps> = ({ }) => {
               {/* Tabs for different views */}
               <Tabs value={activeTab} onValueChange={(value) => {
                 setActiveTab(value);
-                setHasLoadedTabs(prev => new Set([...prev, value]));
               }} className="w-full">
                 <TabsList className="grid grid-cols-5 w-full mb-6 h-auto p-1">
                   <TabsTrigger value="overview" className="py-2.5 px-3">Overview</TabsTrigger>
@@ -416,10 +394,10 @@ export const UsageDashboard: React.FC<UsageDashboardProps> = ({ }) => {
                   </div>
                 </TabsContent>
 
-                {/* Models Tab - Lazy render and cache */}
+                {/* Models Tab */}
                 <TabsContent value="models" className="space-y-6 mt-6">
-                  {hasLoadedTabs.has("models") && stats && (
-                    <div style={{ display: activeTab === "models" ? "block" : "none" }}>
+                  {stats && (
+                    <div>
                       <Card className="p-6">
                         <h3 className="text-sm font-semibold mb-4">Usage by Model</h3>
                         <div className="space-y-4">
@@ -467,10 +445,10 @@ export const UsageDashboard: React.FC<UsageDashboardProps> = ({ }) => {
                   )}
                 </TabsContent>
 
-                {/* Projects Tab - Lazy render and cache */}
+                {/* Projects Tab */}
                 <TabsContent value="projects" className="space-y-6 mt-6">
-                  {hasLoadedTabs.has("projects") && stats && (
-                    <div style={{ display: activeTab === "projects" ? "block" : "none" }}>
+                  {stats && (
+                    <div>
                       <Card className="p-6">
                       <div className="flex items-center justify-between mb-4">
                         <h3 className="text-sm font-semibold">Usage by Project</h3>
@@ -549,10 +527,10 @@ export const UsageDashboard: React.FC<UsageDashboardProps> = ({ }) => {
                   )}
                 </TabsContent>
 
-                {/* Sessions Tab - Lazy render and cache */}
+                {/* Sessions Tab */}
                 <TabsContent value="sessions" className="space-y-6 mt-6">
-                  {hasLoadedTabs.has("sessions") && (
-                    <div style={{ display: activeTab === "sessions" ? "block" : "none" }}>
+                  {(
+                    <div>
                       <Card className="p-6">
                       <div className="flex items-center justify-between mb-4">
                         <h3 className="text-sm font-semibold">Usage by Session</h3>
@@ -635,10 +613,10 @@ export const UsageDashboard: React.FC<UsageDashboardProps> = ({ }) => {
                   )}
                 </TabsContent>
 
-                {/* Timeline Tab - Lazy render and cache */}
+                {/* Timeline Tab */}
                 <TabsContent value="timeline" className="space-y-6 mt-6">
-                  {hasLoadedTabs.has("timeline") && stats && (
-                    <div style={{ display: activeTab === "timeline" ? "block" : "none" }}>
+                  {stats && (
+                    <div>
                       <Card className="p-6">
                       <h3 className="text-sm font-semibold mb-6 flex items-center space-x-2">
                         <Calendar className="h-4 w-4" />

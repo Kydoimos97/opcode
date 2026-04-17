@@ -289,7 +289,7 @@ export const CCAgents: React.FC<CCAgentsProps> = ({ onBack, className }) => {
 
   return (
     <div className={cn("flex flex-col h-full bg-background", className)}>
-      <div className="w-full max-w-6xl mx-auto flex flex-col h-full p-6">
+      <div className="w-full mx-auto flex flex-col h-full p-6">
         {/* Header */}
         <motion.div
           initial={{ opacity: 0, y: -20 }}

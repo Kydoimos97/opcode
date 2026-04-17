@@ -36,6 +36,10 @@ pub struct Project {
     pub created_at: u64,
     /// Unix timestamp of the most recent session (if any)
     pub most_recent_session: Option<u64>,
+    /// Absolute path to the git repository root (None if not a git repo)
+    pub git_root: Option<String>,
+    /// Current git branch for this worktree (None if not a git repo)
+    pub git_branch: Option<String>,
 }
 
 /// Represents a session with its metadata
@@ -51,6 +55,8 @@ pub struct Session {
     pub todo_data: Option<serde_json::Value>,
     /// Unix timestamp when the session file was created
     pub created_at: u64,
+    /// Unix timestamp when the session file was last modified (reflects last activity)
+    pub modified_at: u64,
     /// First user message content (if available)
     pub first_message: Option<String>,
     /// Timestamp of the first user message (if available)
@@ -126,6 +132,26 @@ pub struct FileEntry {
     pub size: u64,
     /// File extension (if applicable)
     pub extension: Option<String>,
+}
+
+/// Represents an entry in the .claude directory
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ClaudeEntry {
+    pub name: String,
+    pub path: String,
+    pub is_dir: bool,
+    pub size: u64,
+    pub modified: String,
+}
+
+/// Represents a session log entry
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SessionLogEntry {
+    pub session_id: String,
+    pub project_path: String,
+    pub file_path: String,
+    pub modified: String,
+    pub size: u64,
 }
 
 /// Finds the full path to the claude binary
@@ -396,12 +422,33 @@ pub async fn list_projects() -> Result<Vec<Project>, String> {
                 }
             }
 
+            // Detect git root and branch for this project path
+            let git_root = std::process::Command::new("git")
+                .args(["-C", &project_path, "rev-parse", "--show-toplevel"])
+                .output()
+                .ok()
+                .and_then(|o| if o.status.success() {
+                    Some(String::from_utf8_lossy(&o.stdout).trim().to_string())
+                } else { None });
+
+            let git_branch = git_root.as_ref().and_then(|_| {
+                std::process::Command::new("git")
+                    .args(["-C", &project_path, "rev-parse", "--abbrev-ref", "HEAD"])
+                    .output()
+                    .ok()
+                    .and_then(|o| if o.status.success() {
+                        Some(String::from_utf8_lossy(&o.stdout).trim().to_string())
+                    } else { None })
+            });
+
             projects.push(Project {
                 id: dir_name.to_string(),
                 path: project_path,
                 sessions,
                 created_at,
                 most_recent_session,
+                git_root,
+                git_branch,
             });
         }
     }
@@ -458,6 +505,25 @@ pub async fn create_project(path: String) -> Result<Project, String> {
         .unwrap_or_default()
         .as_secs();
 
+    // Detect git info for the new project
+    let git_root = std::process::Command::new("git")
+        .args(["-C", &path, "rev-parse", "--show-toplevel"])
+        .output()
+        .ok()
+        .and_then(|o| if o.status.success() {
+            Some(String::from_utf8_lossy(&o.stdout).trim().to_string())
+        } else { None });
+
+    let git_branch = git_root.as_ref().and_then(|_| {
+        std::process::Command::new("git")
+            .args(["-C", &path, "rev-parse", "--abbrev-ref", "HEAD"])
+            .output()
+            .ok()
+            .and_then(|o| if o.status.success() {
+                Some(String::from_utf8_lossy(&o.stdout).trim().to_string())
+            } else { None })
+    });
+
     // Return the created project
     Ok(Project {
         id: project_id,
@@ -465,6 +531,8 @@ pub async fn create_project(path: String) -> Result<Project, String> {
         sessions: Vec::new(),
         created_at,
         most_recent_session: None,
+        git_root,
+        git_branch,
     })
 }
 
@@ -518,6 +586,13 @@ pub async fn get_project_sessions(project_id: String) -> Result<Vec<Session>, St
                     .unwrap_or_default()
                     .as_secs();
 
+                let modified_at = metadata
+                    .modified()
+                    .unwrap_or(SystemTime::UNIX_EPOCH)
+                    .duration_since(SystemTime::UNIX_EPOCH)
+                    .unwrap_or_default()
+                    .as_secs();
+
                 // Extract first user message and timestamp
                 let (first_message, message_timestamp) = extract_first_user_message(&path);
 
@@ -537,6 +612,7 @@ pub async fn get_project_sessions(project_id: String) -> Result<Vec<Session>, St
                     project_path: project_path.clone(),
                     todo_data,
                     created_at,
+                    modified_at,
                     first_message,
                     message_timestamp,
                 });
@@ -544,8 +620,8 @@ pub async fn get_project_sessions(project_id: String) -> Result<Vec<Session>, St
         }
     }
 
-    // Sort sessions by creation time (newest first)
-    sessions.sort_by(|a, b| b.created_at.cmp(&a.created_at));
+    // Sort sessions by last modification time (most recently active first)
+    sessions.sort_by(|a, b| b.modified_at.cmp(&a.modified_at));
 
     log::info!(
         "Found {} sessions for project {}",
@@ -727,6 +803,209 @@ pub async fn check_claude_version(app: AppHandle) -> Result<ClaudeVersionStatus,
             }
         }
     }
+}
+
+/// Represents Claude authentication status
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AuthStatus {
+    pub logged_in: bool,
+    pub email: Option<String>,
+    pub org_name: Option<String>,
+    pub subscription_type: Option<String>,
+    pub auth_method: Option<String>,
+}
+
+/// Gets the current Claude authentication status
+#[tauri::command]
+pub async fn get_auth_status(app: AppHandle) -> Result<AuthStatus, String> {
+    log::info!("Getting Claude auth status");
+
+    let claude_path = match find_claude_binary(&app) {
+        Ok(p) => p,
+        Err(_) => {
+            return Ok(AuthStatus {
+                logged_in: false,
+                email: None,
+                org_name: None,
+                subscription_type: None,
+                auth_method: None,
+            });
+        }
+    };
+
+    let mut cmd = create_command_with_env(&claude_path);
+    cmd.args(&["auth", "status", "--json"]);
+
+    let output = match cmd.output().await {
+        Ok(output) => output,
+        Err(e) => {
+            log::error!("Failed to run claude auth status: {}", e);
+            return Ok(AuthStatus {
+                logged_in: false,
+                email: None,
+                org_name: None,
+                subscription_type: None,
+                auth_method: None,
+            });
+        }
+    };
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+
+    let json: serde_json::Value = match serde_json::from_str(stdout.trim()) {
+        Ok(val) => val,
+        Err(e) => {
+            log::error!("Failed to parse auth status JSON: {}", e);
+            serde_json::Value::Null
+        }
+    };
+
+    Ok(AuthStatus {
+        logged_in: json
+            .get("loggedIn")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false),
+        email: json
+            .get("email")
+            .and_then(|v| v.as_str())
+            .map(String::from),
+        org_name: json
+            .get("orgName")
+            .and_then(|v| v.as_str())
+            .map(String::from),
+        subscription_type: json
+            .get("subscriptionType")
+            .and_then(|v| v.as_str())
+            .map(String::from),
+        auth_method: json
+            .get("authMethod")
+            .and_then(|v| v.as_str())
+            .map(String::from),
+    })
+}
+
+#[derive(serde::Serialize, serde::Deserialize, Clone, Debug)]
+pub struct InstalledPlugin {
+    pub id: String,
+    pub version: Option<String>,
+    pub scope: Option<String>,
+    pub enabled: bool,
+    pub installed_at: Option<String>,
+    pub last_updated: Option<String>,
+}
+
+#[derive(serde::Serialize, serde::Deserialize, Clone, Debug)]
+pub struct AvailablePlugin {
+    pub plugin_id: String,
+    pub name: String,
+    pub description: Option<String>,
+    pub marketplace_name: Option<String>,
+    pub install_count: Option<u64>,
+}
+
+#[derive(serde::Serialize, serde::Deserialize, Clone, Debug)]
+pub struct PluginList {
+    pub installed: Vec<InstalledPlugin>,
+    pub available: Vec<AvailablePlugin>,
+}
+
+fn run_plugin_command(app: &AppHandle, args: &[&str]) -> Result<String, String> {
+    let claude_path = find_claude_binary(app).map_err(|e| e.to_string())?;
+    let mut cmd = create_command_with_env(&claude_path);
+    cmd.arg("plugin");
+    for arg in args {
+        cmd.arg(arg);
+    }
+    let out = std::process::Command::new(&claude_path)
+        .args(["plugin"])
+        .args(args)
+        .output()
+        .map_err(|e| e.to_string())?;
+    if out.status.success() {
+        Ok(String::from_utf8_lossy(&out.stdout).to_string())
+    } else {
+        Err(String::from_utf8_lossy(&out.stderr).to_string())
+    }
+}
+
+fn parse_installed_plugin(v: &serde_json::Value) -> Option<InstalledPlugin> {
+    Some(InstalledPlugin {
+        id: v.get("id")?.as_str()?.to_string(),
+        version: v.get("version").and_then(|x| x.as_str()).map(String::from),
+        scope: v.get("scope").and_then(|x| x.as_str()).map(String::from),
+        enabled: v.get("enabled").and_then(|x| x.as_bool()).unwrap_or(true),
+        installed_at: v.get("installedAt").and_then(|x| x.as_str()).map(String::from),
+        last_updated: v.get("lastUpdated").and_then(|x| x.as_str()).map(String::from),
+    })
+}
+
+fn parse_available_plugin(v: &serde_json::Value) -> Option<AvailablePlugin> {
+    Some(AvailablePlugin {
+        plugin_id: v.get("pluginId")?.as_str()?.to_string(),
+        name: v.get("name")?.as_str()?.to_string(),
+        description: v.get("description").and_then(|x| x.as_str()).map(String::from),
+        marketplace_name: v.get("marketplaceName").and_then(|x| x.as_str()).map(String::from),
+        install_count: v.get("installCount").and_then(|x| x.as_u64()),
+    })
+}
+
+#[tauri::command]
+pub async fn list_plugins(app: AppHandle) -> Result<PluginList, String> {
+    let output = run_plugin_command(&app, &["list", "--json", "--available"])
+        .unwrap_or_else(|_| {
+            run_plugin_command(&app, &["list", "--json"]).unwrap_or_default()
+        });
+
+    let trimmed = output.trim();
+    if trimmed.is_empty() {
+        return Ok(PluginList { installed: vec![], available: vec![] });
+    }
+
+    let json: serde_json::Value = serde_json::from_str(trimmed)
+        .unwrap_or(serde_json::Value::Null);
+
+    if let Some(obj) = json.as_object() {
+        let installed = obj.get("installed")
+            .and_then(|v| v.as_array())
+            .map(|arr| arr.iter().filter_map(parse_installed_plugin).collect())
+            .unwrap_or_default();
+        let available = obj.get("available")
+            .and_then(|v| v.as_array())
+            .map(|arr| arr.iter().filter_map(parse_available_plugin).collect())
+            .unwrap_or_default();
+        return Ok(PluginList { installed, available });
+    }
+
+    if let Some(arr) = json.as_array() {
+        let installed = arr.iter().filter_map(parse_installed_plugin).collect();
+        return Ok(PluginList { installed, available: vec![] });
+    }
+
+    Ok(PluginList { installed: vec![], available: vec![] })
+}
+
+#[tauri::command]
+pub async fn install_plugin(app: AppHandle, plugin_id: String, scope: String) -> Result<(), String> {
+    run_plugin_command(&app, &["install", &plugin_id, "--scope", &scope])
+        .map(|_| ())
+}
+
+#[tauri::command]
+pub async fn uninstall_plugin(app: AppHandle, plugin_id: String) -> Result<(), String> {
+    run_plugin_command(&app, &["uninstall", &plugin_id])
+        .map(|_| ())
+}
+
+#[tauri::command]
+pub async fn enable_plugin(app: AppHandle, plugin_id: String) -> Result<(), String> {
+    run_plugin_command(&app, &["enable", &plugin_id])
+        .map(|_| ())
+}
+
+#[tauri::command]
+pub async fn disable_plugin(app: AppHandle, plugin_id: String) -> Result<(), String> {
+    run_plugin_command(&app, &["disable", &plugin_id])
+        .map(|_| ())
 }
 
 /// Saves the CLAUDE.md system prompt file
@@ -916,6 +1195,275 @@ pub async fn load_session_history(
     Ok(messages)
 }
 
+/// Status of a JSONL session file for sidebar polling
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SessionFileStatus {
+    /// The type string of the last meaningful entry
+    pub last_type: Option<String>,
+    /// Whether the last result entry has is_error = true
+    pub is_error: bool,
+    /// Total lines currently in the file
+    pub lines_total: u64,
+    /// Seconds since the file was last modified
+    pub modified_secs_ago: u64,
+    /// Whether a PermissionRequest/approval prompt is pending
+    pub awaiting_approval: bool,
+    /// The text of the last user message, truncated to 120 chars
+    pub last_user_message: Option<String>,
+}
+
+/// Reads new lines from a JSONL session file starting at `from_line`.
+/// Returns the parsed JSON objects for all new lines.
+#[tauri::command]
+pub async fn poll_session_file(
+    session_id: String,
+    project_id: String,
+    from_line: u64,
+) -> Result<Vec<serde_json::Value>, String> {
+    let claude_dir = get_claude_dir().map_err(|e| e.to_string())?;
+    let session_path = claude_dir
+        .join("projects")
+        .join(&project_id)
+        .join(format!("{}.jsonl", session_id));
+
+    if !session_path.exists() {
+        return Err(format!("Session file not found: {}", session_id));
+    }
+
+    let file = fs::File::open(&session_path)
+        .map_err(|e| format!("Failed to open session file: {}", e))?;
+    let reader = BufReader::new(file);
+    let mut messages = Vec::new();
+
+    for (idx, line) in reader.lines().enumerate() {
+        if (idx as u64) < from_line {
+            continue;
+        }
+        if let Ok(line) = line {
+            if let Ok(json) = serde_json::from_str::<serde_json::Value>(&line) {
+                messages.push(json);
+            }
+        }
+    }
+
+    Ok(messages)
+}
+
+/// Result of reading new lines from a session tail.
+#[derive(serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SessionTailResult {
+    /// Raw JSONL line strings
+    pub lines: Vec<String>,
+    /// New byte offset after reading (file size)
+    pub new_offset: u64,
+}
+
+/// Reads new lines from a session JSONL file starting at `byte_offset`.
+/// Returns raw JSONL line strings and the new byte offset after reading.
+/// If `new_offset < byte_offset` (file truncated/rotated), returns empty lines
+/// with `new_offset = 0` so the caller can fall back to a full reload.
+/// Opens with FILE_SHARE_READ | FILE_SHARE_WRITE on Windows to allow concurrent writes.
+#[tauri::command]
+pub async fn read_session_tail(
+    session_id: String,
+    project_id: String,
+    byte_offset: u64,
+) -> Result<SessionTailResult, String> {
+    let claude_dir = get_claude_dir().map_err(|e| e.to_string())?;
+    let session_path = claude_dir
+        .join("projects")
+        .join(&project_id)
+        .join(format!("{}.jsonl", session_id));
+
+    if !session_path.exists() {
+        return Ok(SessionTailResult { lines: vec![], new_offset: byte_offset });
+    }
+
+    // Open with file sharing on Windows so Claude can write concurrently
+    #[cfg(target_os = "windows")]
+    let file = {
+        use std::os::windows::fs::OpenOptionsExt;
+        std::fs::OpenOptions::new()
+            .read(true)
+            .share_mode(0x00000001 | 0x00000002) // FILE_SHARE_READ | FILE_SHARE_WRITE
+            .open(&session_path)
+            .map_err(|e| format!("Failed to open session file: {}", e))?
+    };
+    #[cfg(not(target_os = "windows"))]
+    let file = std::fs::File::open(&session_path)
+        .map_err(|e| format!("Failed to open session file: {}", e))?;
+
+    // Get current file size
+    let file_size = file.metadata()
+        .map(|m| m.len())
+        .unwrap_or(0);
+
+    // File was truncated — signal caller to do a full reload
+    if file_size < byte_offset {
+        return Ok(SessionTailResult { lines: vec![], new_offset: 0 });
+    }
+
+    // Nothing new
+    if file_size == byte_offset {
+        return Ok(SessionTailResult { lines: vec![], new_offset: byte_offset });
+    }
+
+    // Seek to byte_offset and read new content
+    use std::io::{Read, Seek, SeekFrom};
+    let mut file = file;
+    file.seek(SeekFrom::Start(byte_offset))
+        .map_err(|e| format!("Failed to seek: {}", e))?;
+
+    let mut buf = String::new();
+    file.read_to_string(&mut buf)
+        .map_err(|e| format!("Failed to read: {}", e))?;
+
+    let lines: Vec<String> = buf
+        .lines()
+        .filter(|l| !l.trim().is_empty())
+        .map(|l| l.to_string())
+        .collect();
+
+    // New offset = file_size (we've read everything up to now)
+    Ok(SessionTailResult { lines, new_offset: file_size })
+}
+
+/// Returns the absolute path of a session JSONL file.
+#[tauri::command]
+pub async fn get_session_file_path(session_id: String, project_id: String) -> Result<String, String> {
+    let claude_dir = get_claude_dir().map_err(|e| e.to_string())?;
+    let path = claude_dir
+        .join("projects")
+        .join(&project_id)
+        .join(format!("{}.jsonl", session_id));
+    path.to_str()
+        .ok_or_else(|| "Path contains invalid UTF-8".to_string())
+        .map(|s| s.to_string())
+}
+
+/// Returns lightweight status info about a session JSONL file for sidebar status dots.
+#[tauri::command]
+pub async fn get_session_file_status(
+    session_id: String,
+    project_id: String,
+) -> Result<SessionFileStatus, String> {
+    let claude_dir = get_claude_dir().map_err(|e| e.to_string())?;
+    let session_path = claude_dir
+        .join("projects")
+        .join(&project_id)
+        .join(format!("{}.jsonl", session_id));
+
+    if !session_path.exists() {
+        return Ok(SessionFileStatus {
+            last_type: None,
+            is_error: false,
+            lines_total: 0,
+            modified_secs_ago: u64::MAX,
+            awaiting_approval: false,
+            last_user_message: None,
+        });
+    }
+
+    let metadata = fs::metadata(&session_path)
+        .map_err(|e| format!("Failed to read metadata: {}", e))?;
+
+    let modified_secs_ago = metadata
+        .modified()
+        .ok()
+        .and_then(|t| SystemTime::now().duration_since(t).ok())
+        .map(|d| d.as_secs())
+        .unwrap_or(u64::MAX);
+
+    let file = fs::File::open(&session_path)
+        .map_err(|e| format!("Failed to open session file: {}", e))?;
+    let reader = BufReader::new(file);
+
+    let mut lines_total: u64 = 0;
+    let mut last_type: Option<String> = None;
+    let mut is_error = false;
+    let mut awaiting_approval = false;
+    let mut last_user_message: Option<String> = None;
+
+    for line in reader.lines() {
+        if let Ok(line) = line {
+            lines_total += 1;
+            if let Ok(json) = serde_json::from_str::<serde_json::Value>(&line) {
+                if let Some(t) = json.get("type").and_then(|v| v.as_str()) {
+                    last_type = Some(t.to_string());
+                    if t == "result" {
+                        is_error = json
+                            .get("is_error")
+                            .and_then(|v| v.as_bool())
+                            .unwrap_or(false);
+                        awaiting_approval = false;
+                    } else if t == "system" {
+                        if let Some(subtype) = json.get("subtype").and_then(|v| v.as_str()) {
+                            if subtype == "permission_request" || subtype == "approval" {
+                                awaiting_approval = true;
+                            }
+                        }
+                    } else if t == "user" {
+                        // Extract text from the last user message for sidebar subtitle
+                        let text = json
+                            .get("message")
+                            .and_then(|m| m.get("content"))
+                            .and_then(|c| {
+                                if let Some(s) = c.as_str() {
+                                    return Some(s.to_string());
+                                }
+                                if let Some(arr) = c.as_array() {
+                                    return arr.iter()
+                                        .filter_map(|item| {
+                                            if item.get("type").and_then(|v| v.as_str()) == Some("text") {
+                                                item.get("text").and_then(|v| v.as_str()).map(|s| s.to_string())
+                                            } else {
+                                                None
+                                            }
+                                        })
+                                        .next();
+                                }
+                                None
+                            });
+                        if let Some(mut text) = text {
+                            // Strip leading context-compaction prefix if present
+                            if let Some(pos) = text.find('\n') {
+                                if text.starts_with('<') {
+                                    text = text[pos + 1..].to_string();
+                                }
+                            }
+                            let trimmed = text.trim().to_string();
+                            if !trimmed.is_empty() {
+                                last_user_message = Some(if trimmed.len() > 120 {
+                                    let truncated: String = trimmed.chars().take(120).collect();
+                                    format!("{}…", truncated)
+                                } else {
+                                    trimmed
+                                });
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    Ok(SessionFileStatus {
+        last_type,
+        is_error,
+        lines_total,
+        modified_secs_ago,
+        awaiting_approval,
+        last_user_message,
+    })
+}
+
+/// Map a permission mode string to the --permission-mode CLI flag.
+/// Claude Code owns the full semantics of each mode including hooks.
+fn permission_args(mode: &str) -> Vec<String> {
+    vec!["--permission-mode".to_string(), mode.to_string()]
+}
+
 /// Execute a new interactive Claude Code session with streaming output
 #[tauri::command]
 pub async fn execute_claude_code(
@@ -923,16 +1471,19 @@ pub async fn execute_claude_code(
     project_path: String,
     prompt: String,
     model: String,
+    permission_mode: Option<String>,
 ) -> Result<(), String> {
+    let mode = permission_mode.as_deref().unwrap_or("bypassPermissions");
     log::info!(
-        "Starting new Claude Code session in: {} with model: {}",
+        "Starting new Claude Code session in: {} with model: {} permission_mode: {}",
         project_path,
-        model
+        model,
+        mode
     );
 
     let claude_path = find_claude_binary(&app)?;
 
-    let args = vec![
+    let mut args = vec![
         "-p".to_string(),
         prompt.clone(),
         "--model".to_string(),
@@ -940,8 +1491,8 @@ pub async fn execute_claude_code(
         "--output-format".to_string(),
         "stream-json".to_string(),
         "--verbose".to_string(),
-        "--dangerously-skip-permissions".to_string(),
     ];
+    args.extend(permission_args(mode));
 
     let cmd = create_system_command(&claude_path, args, &project_path);
     spawn_claude_process(app, cmd, prompt, model, project_path).await
@@ -954,17 +1505,20 @@ pub async fn continue_claude_code(
     project_path: String,
     prompt: String,
     model: String,
+    permission_mode: Option<String>,
 ) -> Result<(), String> {
+    let mode = permission_mode.as_deref().unwrap_or("bypassPermissions");
     log::info!(
-        "Continuing Claude Code conversation in: {} with model: {}",
+        "Continuing Claude Code conversation in: {} with model: {} permission_mode: {}",
         project_path,
-        model
+        model,
+        mode
     );
 
     let claude_path = find_claude_binary(&app)?;
 
-    let args = vec![
-        "-c".to_string(), // Continue flag
+    let mut args = vec![
+        "-c".to_string(),
         "-p".to_string(),
         prompt.clone(),
         "--model".to_string(),
@@ -972,8 +1526,8 @@ pub async fn continue_claude_code(
         "--output-format".to_string(),
         "stream-json".to_string(),
         "--verbose".to_string(),
-        "--dangerously-skip-permissions".to_string(),
     ];
+    args.extend(permission_args(mode));
 
     let cmd = create_system_command(&claude_path, args, &project_path);
     spawn_claude_process(app, cmd, prompt, model, project_path).await
@@ -987,17 +1541,20 @@ pub async fn resume_claude_code(
     session_id: String,
     prompt: String,
     model: String,
+    permission_mode: Option<String>,
 ) -> Result<(), String> {
+    let mode = permission_mode.as_deref().unwrap_or("bypassPermissions");
     log::info!(
-        "Resuming Claude Code session: {} in: {} with model: {}",
+        "Resuming Claude Code session: {} in: {} with model: {} permission_mode: {}",
         session_id,
         project_path,
-        model
+        model,
+        mode
     );
 
     let claude_path = find_claude_binary(&app)?;
 
-    let args = vec![
+    let mut args = vec![
         "--resume".to_string(),
         session_id.clone(),
         "-p".to_string(),
@@ -1007,8 +1564,8 @@ pub async fn resume_claude_code(
         "--output-format".to_string(),
         "stream-json".to_string(),
         "--verbose".to_string(),
-        "--dangerously-skip-permissions".to_string(),
     ];
+    args.extend(permission_args(mode));
 
     let cmd = create_system_command(&claude_path, args, &project_path);
     spawn_claude_process(app, cmd, prompt, model, project_path).await
@@ -2188,6 +2745,686 @@ pub async fn validate_hook_command(command: String) -> Result<serde_json::Value,
     }
 }
 
+#[derive(Debug, Serialize, Deserialize)]
+pub struct GitInfo {
+    pub repo_name: String,
+    pub branch: String,
+    pub is_git_repo: bool,
+    pub remote_url: Option<String>,
+}
+
+#[tauri::command]
+pub fn get_git_info(path: String) -> Result<GitInfo, String> {
+    use std::process::Command;
+
+    let output = Command::new("git")
+        .args(&["-C", &path, "rev-parse", "--show-toplevel"])
+        .output();
+
+    match output {
+        Ok(result) => {
+            if !result.status.success() {
+                let folder_name = std::path::Path::new(&path)
+                    .file_name()
+                    .and_then(|n| n.to_str())
+                    .unwrap_or("unknown")
+                    .to_string();
+                return Ok(GitInfo {
+                    repo_name: folder_name,
+                    branch: String::new(),
+                    is_git_repo: false,
+                    remote_url: None,
+                });
+            }
+
+            let repo_root = String::from_utf8_lossy(&result.stdout).trim().to_string();
+            let repo_name = std::path::Path::new(&repo_root)
+                .file_name()
+                .and_then(|n| n.to_str())
+                .unwrap_or("unknown")
+                .to_string();
+
+            let branch_output = Command::new("git")
+                .args(&["-C", &path, "rev-parse", "--abbrev-ref", "HEAD"])
+                .output();
+
+            let branch = match branch_output {
+                Ok(branch_result) if branch_result.status.success() => {
+                    String::from_utf8_lossy(&branch_result.stdout)
+                        .trim()
+                        .to_string()
+                }
+                _ => String::new(),
+            };
+
+            let remote_url = Command::new("git")
+                .args(&["-C", &path, "remote", "get-url", "origin"])
+                .output()
+                .ok()
+                .and_then(|o| if o.status.success() {
+                    Some(String::from_utf8_lossy(&o.stdout).trim().to_string())
+                } else { None });
+
+            Ok(GitInfo {
+                repo_name,
+                branch,
+                is_git_repo: true,
+                remote_url,
+            })
+        }
+        Err(_) => {
+            let folder_name = std::path::Path::new(&path)
+                .file_name()
+                .and_then(|n| n.to_str())
+                .unwrap_or("unknown")
+                .to_string();
+            Ok(GitInfo {
+                repo_name: folder_name,
+                branch: String::new(),
+                is_git_repo: false,
+                remote_url: None,
+            })
+        }
+    }
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct GitDiffStat {
+    pub additions: i32,
+    pub deletions: i32,
+}
+
+#[tauri::command]
+pub fn get_git_diff_stat(path: String) -> Result<GitDiffStat, String> {
+    use std::process::Command;
+
+    let output = Command::new("git")
+        .args(&["-C", &path, "diff", "--numstat"])
+        .output();
+
+    match output {
+        Ok(result) => {
+            if !result.status.success() {
+                return Ok(GitDiffStat {
+                    additions: 0,
+                    deletions: 0,
+                });
+            }
+
+            let stdout = String::from_utf8_lossy(&result.stdout);
+            let mut total_additions = 0i32;
+            let mut total_deletions = 0i32;
+
+            for line in stdout.lines() {
+                let parts: Vec<&str> = line.split_whitespace().collect();
+                if parts.len() >= 3 {
+                    let additions_str = parts[0];
+                    let deletions_str = parts[1];
+
+                    if additions_str != "-" {
+                        if let Ok(add) = additions_str.parse::<i32>() {
+                            total_additions += add;
+                        }
+                    }
+
+                    if deletions_str != "-" {
+                        if let Ok(del) = deletions_str.parse::<i32>() {
+                            total_deletions += del;
+                        }
+                    }
+                }
+            }
+
+            Ok(GitDiffStat {
+                additions: total_additions,
+                deletions: total_deletions,
+            })
+        }
+        Err(_) => Ok(GitDiffStat {
+            additions: 0,
+            deletions: 0,
+        }),
+    }
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct WorktreeInfo {
+    pub path: String,
+    pub branch: String,
+    pub is_main: bool,
+}
+
+#[tauri::command]
+pub fn get_worktrees(path: String) -> Result<Vec<WorktreeInfo>, String> {
+    use std::process::Command;
+
+    let output = Command::new("git")
+        .args(&["-C", &path, "worktree", "list", "--porcelain"])
+        .output();
+
+    match output {
+        Ok(result) => {
+            if !result.status.success() {
+                return Ok(Vec::new());
+            }
+
+            let stdout = String::from_utf8_lossy(&result.stdout);
+            let mut worktrees = Vec::new();
+            let mut is_main = true;
+            let mut current_worktree: Option<(String, String)> = None;
+
+            for line in stdout.lines() {
+                if line.starts_with("worktree ") {
+                    if let Some((wt_path, branch)) = current_worktree.take() {
+                        worktrees.push(WorktreeInfo {
+                            path: wt_path,
+                            branch,
+                            is_main,
+                        });
+                        is_main = false;
+                    }
+
+                    let wt_path = line.strip_prefix("worktree ").unwrap_or("").to_string();
+                    current_worktree = Some((wt_path, String::new()));
+                } else if line.starts_with("branch ") {
+                    if let Some((_, ref mut branch_ref)) = current_worktree.as_mut() {
+                        let full_ref = line.strip_prefix("branch ").unwrap_or("");
+                        *branch_ref = full_ref
+                            .strip_prefix("refs/heads/")
+                            .unwrap_or(full_ref)
+                            .to_string();
+                    }
+                } else if line.starts_with("detached") {
+                    if let Some((_, ref mut branch_ref)) = current_worktree.as_mut() {
+                        *branch_ref = "(detached)".to_string();
+                    }
+                }
+            }
+
+            if let Some((wt_path, branch)) = current_worktree {
+                worktrees.push(WorktreeInfo {
+                    path: wt_path,
+                    branch,
+                    is_main,
+                });
+            }
+
+            Ok(worktrees)
+        }
+        Err(_) => Ok(Vec::new()),
+    }
+}
+
+/// Represents a native agent from ~/.claude/agents/
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct NativeAgent {
+    pub name: String,
+    pub path: String,
+    pub description: String,
+    pub model: Option<String>,
+    pub raw_content: String,
+}
+
+/// Represents a skill from ~/.claude/skills/
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SkillInfo {
+    pub name: String,
+    pub display_name: String,
+    pub path: String,
+    pub description: String,
+    pub usage_count: u32,
+}
+
+/// Lists all native agents from ~/.claude/agents/
+#[tauri::command]
+pub async fn list_native_agents() -> Result<Vec<NativeAgent>, String> {
+    let home = dirs::home_dir()
+        .ok_or_else(|| "Could not find home directory".to_string())?;
+    let agents_dir = home.join(".claude").join("agents");
+
+    if !agents_dir.exists() {
+        return Ok(Vec::new());
+    }
+
+    let mut agents = Vec::new();
+
+    match fs::read_dir(&agents_dir) {
+        Ok(entries) => {
+            for entry in entries.flatten() {
+                let path = entry.path();
+                if path.is_file() && path.extension().and_then(|s| s.to_str()) == Some("md") {
+                    if let Some(name) = path.file_stem().and_then(|s| s.to_str()) {
+                        match read_native_agent(path.to_string_lossy().to_string()).await {
+                            Ok(agent) => agents.push(agent),
+                            Err(e) => {
+                                log::warn!("Failed to read agent {}: {}", name, e);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        Err(e) => {
+            log::warn!("Failed to read agents directory: {}", e);
+        }
+    }
+
+    Ok(agents)
+}
+
+/// Reads a single native agent from the given path
+#[tauri::command]
+pub async fn read_native_agent(path: String) -> Result<NativeAgent, String> {
+    let file_path = std::path::PathBuf::from(&path);
+    let raw_content = fs::read_to_string(&file_path)
+        .map_err(|e| format!("Failed to read agent file: {}", e))?;
+
+    let name = file_path
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .unwrap_or("unknown")
+        .to_string();
+
+    let model = extract_frontmatter_model(&raw_content);
+    let description = extract_description(&raw_content);
+
+    Ok(NativeAgent {
+        name,
+        path,
+        description,
+        model,
+        raw_content,
+    })
+}
+
+/// Extracts the model field from YAML frontmatter
+fn extract_frontmatter_model(content: &str) -> Option<String> {
+    let lines: Vec<&str> = content.lines().collect();
+    if lines.is_empty() || !lines[0].starts_with("---") {
+        return None;
+    }
+
+    for i in 1..lines.len() {
+        if lines[i].starts_with("---") {
+            break;
+        }
+        if lines[i].starts_with("model:") {
+            let model_line = lines[i].trim_start_matches("model:").trim();
+            if !model_line.is_empty() {
+                return Some(model_line.to_string());
+            }
+        }
+    }
+
+    None
+}
+
+/// Extracts the first non-empty, non-frontmatter paragraph as description (up to 200 chars)
+fn extract_description(content: &str) -> String {
+    let lines: Vec<&str> = content.lines().collect();
+    let mut in_frontmatter = false;
+    let mut description = String::new();
+
+    for line in lines {
+        if line.starts_with("---") {
+            in_frontmatter = !in_frontmatter;
+            continue;
+        }
+
+        if in_frontmatter {
+            continue;
+        }
+
+        let trimmed = line.trim();
+        if !trimmed.is_empty() {
+            description = trimmed.to_string();
+            break;
+        }
+    }
+
+    if description.len() > 200 {
+        description.truncate(200);
+        description.push_str("...");
+    }
+
+    description
+}
+
+/// Writes a native agent to ~/.claude/agents/{name}.md
+#[tauri::command]
+pub async fn write_native_agent(name: String, content: String) -> Result<String, String> {
+    let home = dirs::home_dir()
+        .ok_or_else(|| "Could not find home directory".to_string())?;
+    let agents_dir = home.join(".claude").join("agents");
+
+    fs::create_dir_all(&agents_dir)
+        .map_err(|e| format!("Failed to create agents directory: {}", e))?;
+
+    let file_path = agents_dir.join(format!("{}.md", name));
+    fs::write(&file_path, content)
+        .map_err(|e| format!("Failed to write agent file: {}", e))?;
+
+    file_path
+        .to_str()
+        .map(|s| s.to_string())
+        .ok_or_else(|| "Failed to convert path to string".to_string())
+}
+
+/// Deletes a native agent file
+#[tauri::command]
+pub async fn delete_native_agent(path: String) -> Result<(), String> {
+    let file_path = std::path::PathBuf::from(&path);
+    if !file_path.exists() {
+        return Err("Agent file does not exist".to_string());
+    }
+
+    fs::remove_file(&file_path)
+        .map_err(|e| format!("Failed to delete agent file: {}", e))
+}
+
+/// Lists all skills from ~/.claude/skills/
+#[tauri::command]
+pub async fn list_skills() -> Result<Vec<SkillInfo>, String> {
+    let home = dirs::home_dir()
+        .ok_or_else(|| "Could not find home directory".to_string())?;
+    let skills_dir = home.join(".claude").join("skills");
+
+    if !skills_dir.exists() {
+        return Ok(Vec::new());
+    }
+
+    let skill_usage: std::collections::HashMap<String, u32> = {
+        let claude_json_path = home.join(".claude.json");
+        if claude_json_path.exists() {
+            if let Ok(content) = fs::read_to_string(&claude_json_path) {
+                if let Ok(json) = serde_json::from_str::<serde_json::Value>(&content) {
+                    if let Some(usage_map) = json.get("skillUsage").and_then(|v| v.as_object()) {
+                        usage_map.iter()
+                            .filter_map(|(k, v)| v.as_u64().map(|n| (k.clone(), n as u32)))
+                            .collect()
+                    } else { std::collections::HashMap::new() }
+                } else { std::collections::HashMap::new() }
+            } else { std::collections::HashMap::new() }
+        } else { std::collections::HashMap::new() }
+    };
+
+    let mut skills = Vec::new();
+
+    match fs::read_dir(&skills_dir) {
+        Ok(entries) => {
+            for entry in entries.flatten() {
+                let path = entry.path();
+                if path.is_dir() {
+                    let skill_md = path.join("SKILL.md");
+                    if skill_md.exists() {
+                        if let Some(name) = path.file_name().and_then(|s| s.to_str()) {
+                            if let Ok(content) = fs::read_to_string(&skill_md) {
+                                let display_name = content
+                                    .lines()
+                                    .find(|line| line.starts_with("# "))
+                                    .map(|line| line.trim_start_matches("# ").trim().to_string())
+                                    .unwrap_or_else(|| name.to_string());
+                                let usage_count = skill_usage.get(name).copied().unwrap_or(0);
+                                let description = content
+                                    .lines()
+                                    .find(|line| !line.trim().is_empty() && !line.starts_with("#"))
+                                    .unwrap_or("")
+                                    .trim()
+                                    .to_string();
+                                let desc = if description.len() > 200 {
+                                    format!("{}...", &description[..200])
+                                } else {
+                                    description
+                                };
+
+                                skills.push(SkillInfo {
+                                    name: name.to_string(),
+                                    display_name,
+                                    path: skill_md.to_string_lossy().to_string(),
+                                    description: desc,
+                                    usage_count,
+                                });
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        Err(e) => {
+            log::warn!("Failed to read skills directory: {}", e);
+        }
+    }
+
+    Ok(skills)
+}
+
+/// Gets global settings from ~/.claude/settings.json
+#[tauri::command]
+pub async fn get_global_settings() -> Result<serde_json::Value, String> {
+    let home = dirs::home_dir()
+        .ok_or_else(|| "Could not find home directory".to_string())?;
+    let settings_path = home.join(".claude").join("settings.json");
+
+    if !settings_path.exists() {
+        return Ok(serde_json::json!({}));
+    }
+
+    let content = fs::read_to_string(&settings_path)
+        .map_err(|e| format!("Failed to read settings file: {}", e))?;
+
+    serde_json::from_str(&content)
+        .map_err(|e| format!("Failed to parse settings JSON: {}", e))
+}
+
+/// Reads ~/.ccode/hooks/c-guard/commands.conf
+#[tauri::command]
+pub async fn read_commands_conf() -> Result<serde_json::Value, String> {
+    let home = dirs::home_dir()
+        .ok_or_else(|| "Could not find home directory".to_string())?;
+    let conf_path = home.join(".ccode").join("hooks").join("c-guard").join("commands.conf");
+
+    if !conf_path.exists() {
+        return Ok(serde_json::json!({ "content": "", "exists": false }));
+    }
+
+    let content = fs::read_to_string(&conf_path)
+        .map_err(|e| format!("Failed to read commands.conf: {}", e))?;
+    Ok(serde_json::json!({ "content": content, "exists": true }))
+}
+
+/// Writes to ~/.ccode/hooks/c-guard/commands.conf and verifies with c-guard.py
+#[tauri::command]
+pub async fn write_and_verify_commands_conf(content: String) -> Result<String, String> {
+    let home = dirs::home_dir()
+        .ok_or_else(|| "Could not find home directory".to_string())?;
+    let conf_path = home.join(".ccode").join("hooks").join("c-guard").join("commands.conf");
+
+    fs::create_dir_all(conf_path.parent().ok_or_else(|| "Invalid path".to_string())?)
+        .map_err(|e| format!("Failed to create directory: {}", e))?;
+
+    fs::write(&conf_path, content)
+        .map_err(|e| format!("Failed to write commands.conf: {}", e))?;
+
+    let guard_script = home.join(".ccode").join("hooks").join("c-guard").join("c-guard.py");
+    if !guard_script.exists() {
+        return Ok("Verification skipped: c-guard.py not found".to_string());
+    }
+
+    let output = std::process::Command::new("python")
+        .arg(guard_script.to_string_lossy().to_string())
+        .arg("--verify")
+        .output()
+        .or_else(|_| {
+            std::process::Command::new("python3")
+                .arg(home.join(".ccode").join("hooks").join("c-guard").join("c-guard.py").to_string_lossy().to_string())
+                .arg("--verify")
+                .output()
+        });
+
+    match output {
+        Ok(output) => {
+            let stdout = String::from_utf8_lossy(&output.stdout);
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            Ok(format!("{}{}", stdout, stderr))
+        }
+        Err(_) => Ok("Verification skipped: c-guard.py not found".to_string()),
+    }
+}
+
+/// Checks if c-guard is installed and wired into PreToolUse hooks
+#[tauri::command]
+pub async fn check_cguard_installed() -> Result<serde_json::Value, String> {
+    let home = dirs::home_dir()
+        .ok_or_else(|| "Could not find home directory".to_string())?;
+
+    let script_path = home.join(".ccode").join("hooks").join("c-guard").join("c-guard.py");
+    let script_exists = script_path.exists();
+
+    let settings_path = home.join(".claude").join("settings.json");
+    let hook_wired = if settings_path.exists() {
+        let content = fs::read_to_string(&settings_path).unwrap_or_default();
+        let settings: serde_json::Value = serde_json::from_str(&content).unwrap_or_default();
+
+        settings["hooks"]["PreToolUse"]
+            .as_array()
+            .map(|arr| {
+                arr.iter().any(|entry| {
+                    entry
+                        .get("hooks")
+                        .and_then(|h| h.as_array())
+                        .map(|h| {
+                            h.iter().any(|hook| {
+                                hook.get("command")
+                                    .and_then(|c| c.as_str())
+                                    .map(|s| s.contains("c-guard.sh") || s.contains("c-guard.py"))
+                                    .unwrap_or(false)
+                            })
+                        })
+                        .unwrap_or(false)
+                })
+            })
+            .unwrap_or(false)
+    } else {
+        false
+    };
+
+    Ok(serde_json::json!({
+        "script_exists": script_exists,
+        "hook_wired": hook_wired,
+        "installed": script_exists && hook_wired,
+    }))
+}
+
+/// Enables or disables c-guard by modifying ~/.claude/settings.json
+#[tauri::command]
+pub async fn set_cguard_enabled(enabled: bool) -> Result<(), String> {
+    let home = dirs::home_dir()
+        .ok_or_else(|| "Could not find home directory".to_string())?;
+    let settings_path = home.join(".claude").join("settings.json");
+
+    let mut settings: serde_json::Value = if settings_path.exists() {
+        let content = fs::read_to_string(&settings_path)
+            .map_err(|e| format!("Failed to read settings: {}", e))?;
+        serde_json::from_str(&content).unwrap_or_else(|_| serde_json::json!({}))
+    } else {
+        serde_json::json!({})
+    };
+
+    let cguard_hook_command = format!(
+        "bash C:/Users/{username}/.ccode/hooks/c-guard/c-guard.sh",
+        username = std::env::var("USERNAME").unwrap_or_else(|_| "User".to_string())
+    );
+
+    if enabled {
+        if !settings["hooks"].is_object() {
+            settings["hooks"] = serde_json::json!({});
+        }
+
+        if !settings["hooks"]["PreToolUse"].is_array() {
+            settings["hooks"]["PreToolUse"] = serde_json::json!([]);
+        }
+
+        if let Some(array) = settings["hooks"]["PreToolUse"].as_array_mut() {
+            let has_cguard = array.iter().any(|entry| {
+                entry
+                    .get("hooks")
+                    .and_then(|h| h.as_array())
+                    .map(|h| {
+                        h.iter().any(|hook| {
+                            hook.get("command")
+                                .and_then(|c| c.as_str())
+                                .map(|s| s.contains("c-guard.sh") || s.contains("c-guard.py"))
+                                .unwrap_or(false)
+                        })
+                    })
+                    .unwrap_or(false)
+            });
+
+            if !has_cguard {
+                array.push(serde_json::json!({
+                    "hooks": [{
+                        "type": "command",
+                        "command": cguard_hook_command
+                    }]
+                }));
+            }
+        }
+    } else {
+        if let Some(hooks) = settings.get_mut("hooks") {
+            if let Some(pre_tool_use) = hooks.get_mut("PreToolUse") {
+                if let Some(array) = pre_tool_use.as_array_mut() {
+                    array.retain(|entry| {
+                        if let Some(hooks_arr) = entry.get("hooks").and_then(|h| h.as_array()) {
+                            !hooks_arr.iter().any(|hook| {
+                                hook.get("command")
+                                    .and_then(|c| c.as_str())
+                                    .map(|s| s.contains("c-guard.sh") || s.contains("c-guard.py"))
+                                    .unwrap_or(false)
+                            })
+                        } else {
+                            true
+                        }
+                    });
+                }
+            }
+        }
+    }
+
+    let settings_str = serde_json::to_string_pretty(&settings)
+        .map_err(|e| format!("Failed to serialize settings: {}", e))?;
+
+    fs::write(&settings_path, settings_str)
+        .map_err(|e| format!("Failed to write settings: {}", e))
+}
+
+/// Runs the c-guard.py script with the given arguments
+#[tauri::command]
+pub async fn run_cguard_cli(args: Vec<String>) -> Result<String, String> {
+    let home = dirs::home_dir()
+        .ok_or_else(|| "Could not find home directory".to_string())?;
+    let guard_script = home.join(".ccode").join("hooks").join("c-guard").join("c-guard.py");
+
+    let output = std::process::Command::new("python")
+        .arg(guard_script.to_string_lossy().to_string())
+        .args(&args)
+        .output()
+        .or_else(|_| {
+            std::process::Command::new("python3")
+                .arg(home.join(".ccode").join("hooks").join("c-guard").join("c-guard.py").to_string_lossy().to_string())
+                .args(&args)
+                .output()
+        });
+
+    match output {
+        Ok(output) => {
+            let stdout = String::from_utf8_lossy(&output.stdout);
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            Ok(format!("{}{}", stdout, stderr))
+        }
+        Err(_) => Err("Python not found".to_string()),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -2339,4 +3576,395 @@ mod tests {
         let path = result.unwrap();
         assert!(path == "/path1" || path == "/path2");
     }
+}
+
+#[tauri::command]
+pub async fn list_claude_directory(subpath: String) -> Result<Vec<ClaudeEntry>, String> {
+    tokio::task::spawn_blocking(move || {
+        let home = dirs::home_dir().ok_or("Could not find home directory")?;
+        let mut claude_path = home.join(".claude");
+
+        if !subpath.is_empty() {
+            claude_path = claude_path.join(&subpath);
+        }
+
+        if !claude_path.exists() {
+            return Err(format!("Directory does not exist: {}", subpath));
+        }
+
+        let entries = fs::read_dir(&claude_path)
+            .map_err(|e| format!("Failed to read directory: {}", e))?;
+
+        let mut dirs = Vec::new();
+        let mut files = Vec::new();
+
+        for entry in entries {
+            let entry = entry.map_err(|e| format!("Failed to read entry: {}", e))?;
+            let path = entry.path();
+            let metadata = entry.metadata()
+                .map_err(|e| format!("Failed to get metadata: {}", e))?;
+
+            let name = entry.file_name().into_string()
+                .unwrap_or_default();
+
+            let entry_path = if subpath.is_empty() {
+                name.clone()
+            } else {
+                format!("{}/{}", subpath, name)
+            };
+
+            let modified = metadata.modified()
+                .ok()
+                .and_then(|time| time.duration_since(UNIX_EPOCH).ok())
+                .map(|d| {
+                    let datetime = std::time::UNIX_EPOCH + d;
+                    let datetime: chrono::DateTime<chrono::Utc> = datetime.into();
+                    datetime.to_rfc3339()
+                })
+                .unwrap_or_default();
+
+            let claude_entry = ClaudeEntry {
+                name,
+                path: entry_path,
+                is_dir: path.is_dir(),
+                size: if path.is_dir() { 0 } else { metadata.len() },
+                modified,
+            };
+
+            if path.is_dir() {
+                dirs.push(claude_entry);
+            } else {
+                files.push(claude_entry);
+            }
+        }
+
+        dirs.sort_by(|a, b| a.name.cmp(&b.name));
+        files.sort_by(|a, b| a.name.cmp(&b.name));
+
+        dirs.extend(files);
+        Ok(dirs)
+    })
+    .await
+    .map_err(|e| format!("Task failed: {}", e))?
+}
+
+#[tauri::command]
+pub async fn read_claude_file(subpath: String) -> Result<String, String> {
+    tokio::task::spawn_blocking(move || {
+        let home = dirs::home_dir().ok_or("Could not find home directory")?;
+        let file_path = home.join(".claude").join(&subpath);
+
+        let metadata = fs::metadata(&file_path)
+            .map_err(|e| format!("Failed to get file metadata: {}", e))?;
+
+        if metadata.len() > 1_000_000 {
+            return Err("File is too large (max 1MB)".to_string());
+        }
+
+        fs::read_to_string(&file_path)
+            .map_err(|e| format!("Failed to read file: {}", e))
+    })
+    .await
+    .map_err(|e| format!("Task failed: {}", e))?
+}
+
+#[tauri::command]
+pub async fn list_session_logs() -> Result<Vec<SessionLogEntry>, String> {
+    tokio::task::spawn_blocking(|| {
+        let home = dirs::home_dir().ok_or("Could not find home directory")?;
+        let projects_dir = home.join(".claude").join("projects");
+
+        if !projects_dir.exists() {
+            return Ok(Vec::new());
+        }
+
+        let mut entries = Vec::new();
+
+        let projects = fs::read_dir(&projects_dir)
+            .map_err(|e| format!("Failed to read projects directory: {}", e))?;
+
+        for project_entry in projects {
+            let project_entry = project_entry.map_err(|e| format!("Failed to read entry: {}", e))?;
+            let project_path = project_entry.path();
+
+            if !project_path.is_dir() {
+                continue;
+            }
+
+            let encoded_name = project_entry.file_name().into_string()
+                .unwrap_or_default();
+            let decoded_path = encoded_name.replace("-", "/");
+
+            let session_files = match fs::read_dir(&project_path) {
+                Ok(files) => files,
+                Err(_) => continue,
+            };
+
+            for session_entry in session_files {
+                if let Ok(session_entry) = session_entry {
+                    let session_path = session_entry.path();
+
+                    if !session_path.is_file() {
+                        continue;
+                    }
+
+                    if let Some(Some("jsonl")) = session_path.extension().and_then(|e| e.to_str()).map(|s| Some(s)) {
+                        let session_id = session_path.file_stem()
+                            .and_then(|s| s.to_str())
+                            .unwrap_or("")
+                            .to_string();
+
+                        if let Ok(metadata) = session_path.metadata() {
+                            let modified = metadata.modified()
+                                .ok()
+                                .and_then(|time| time.duration_since(UNIX_EPOCH).ok())
+                                .map(|d| {
+                                    let datetime = std::time::UNIX_EPOCH + d;
+                                    let datetime: chrono::DateTime<chrono::Utc> = datetime.into();
+                                    datetime.to_rfc3339()
+                                })
+                                .unwrap_or_default();
+
+                            let file_path = format!("projects/{}/{}.jsonl", encoded_name, session_id);
+
+                            entries.push(SessionLogEntry {
+                                session_id,
+                                project_path: decoded_path.clone(),
+                                file_path,
+                                modified,
+                                size: metadata.len(),
+                            });
+                        }
+                    }
+                }
+            }
+        }
+
+        entries.sort_by(|a, b| b.modified.cmp(&a.modified));
+        entries.truncate(200);
+
+        Ok(entries)
+    })
+    .await
+    .map_err(|e| format!("Task failed: {}", e))?
+}
+
+fn ccode_settings_path() -> Result<PathBuf, String> {
+    let home = dirs::home_dir().ok_or_else(|| "Cannot find home directory".to_string())?;
+    let dir = home.join(".ccode");
+    if !dir.exists() {
+        fs::create_dir_all(&dir).map_err(|e| format!("Failed to create ~/.ccode: {}", e))?;
+    }
+    Ok(dir.join("settings.json"))
+}
+
+#[tauri::command]
+pub fn read_session_status(session_id: String) -> Result<serde_json::Value, String> {
+    let home = dirs::home_dir().ok_or_else(|| "Cannot find home directory".to_string())?;
+    let path = home
+        .join(".ccode")
+        .join("states")
+        .join("sessions")
+        .join(format!("{}.jsonl", session_id));
+    if !path.exists() {
+        return Ok(serde_json::Value::Null);
+    }
+    let content = fs::read_to_string(&path)
+        .map_err(|e| format!("Failed to read session status: {}", e))?;
+    match content.lines().filter(|l| !l.trim().is_empty()).last() {
+        Some(line) => serde_json::from_str(line)
+            .map_err(|e| format!("Failed to parse session status: {}", e)),
+        None => Ok(serde_json::Value::Null),
+    }
+}
+
+#[tauri::command]
+pub fn read_process_state() -> Result<serde_json::Value, String> {
+    let home = dirs::home_dir().ok_or_else(|| "Cannot find home directory".to_string())?;
+    let path = home.join(".ccode").join("states").join("process_state.json");
+    if !path.exists() {
+        return Ok(serde_json::Value::Object(serde_json::Map::new()));
+    }
+    let content = fs::read_to_string(&path)
+        .map_err(|e| format!("Failed to read process state: {}", e))?;
+    serde_json::from_str(&content)
+        .map_err(|e| format!("Failed to parse process state: {}", e))
+}
+
+#[tauri::command]
+pub fn read_tabs_cache() -> Result<String, String> {
+    let home = dirs::home_dir().ok_or_else(|| "Cannot find home directory".to_string())?;
+    let path = home.join(".ccode").join("states").join("cache").join("tabs.json");
+    if !path.exists() {
+        return Ok(String::new());
+    }
+    fs::read_to_string(&path).map_err(|e| format!("Failed to read tabs cache: {}", e))
+}
+
+#[tauri::command]
+pub fn write_tabs_cache(data: String) -> Result<(), String> {
+    let home = dirs::home_dir().ok_or_else(|| "Cannot find home directory".to_string())?;
+    let dir = home.join(".ccode").join("states").join("cache");
+    if !dir.exists() {
+        fs::create_dir_all(&dir).map_err(|e| format!("Failed to create cache dir: {}", e))?;
+    }
+    let path = dir.join("tabs.json");
+    let tmp = path.with_extension("json.tmp");
+    fs::write(&tmp, &data).map_err(|e| format!("Failed to write tabs cache tmp: {}", e))?;
+    fs::rename(&tmp, &path).map_err(|e| format!("Failed to rename tabs cache: {}", e))
+}
+
+#[tauri::command]
+pub fn read_ccode_settings() -> Result<serde_json::Value, String> {
+    let path = ccode_settings_path()?;
+    if !path.exists() {
+        return Ok(serde_json::json!({}));
+    }
+    let contents = fs::read_to_string(&path)
+        .map_err(|e| format!("Failed to read ~/.ccode/settings.json: {}", e))?;
+    serde_json::from_str(&contents)
+        .map_err(|e| format!("Failed to parse ~/.ccode/settings.json: {}", e))
+}
+
+#[tauri::command]
+pub fn write_ccode_settings(settings: serde_json::Value) -> Result<(), String> {
+    let path = ccode_settings_path()?;
+    let tmp = path.with_extension("json.tmp");
+    let contents = serde_json::to_string_pretty(&settings)
+        .map_err(|e| format!("Failed to serialize settings: {}", e))?;
+    fs::write(&tmp, &contents)
+        .map_err(|e| format!("Failed to write temp settings file: {}", e))?;
+    fs::rename(&tmp, &path)
+        .map_err(|e| format!("Failed to rename settings file: {}", e))?;
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn open_path(path: String) -> Result<(), String> {
+    #[cfg(target_os = "windows")]
+    {
+        std::process::Command::new("explorer")
+            .arg(&path)
+            .spawn()
+            .map_err(|e| format!("Failed to open path: {}", e))?;
+    }
+    #[cfg(target_os = "macos")]
+    {
+        std::process::Command::new("open")
+            .arg(&path)
+            .spawn()
+            .map_err(|e| format!("Failed to open path: {}", e))?;
+    }
+    #[cfg(target_os = "linux")]
+    {
+        std::process::Command::new("xdg-open")
+            .arg(&path)
+            .spawn()
+            .map_err(|e| format!("Failed to open path: {}", e))?;
+    }
+    Ok(())
+}
+
+#[derive(serde::Serialize)]
+pub struct PlanFile {
+    pub path: String,
+    pub name: String,
+    pub modified_ms: u64,
+}
+
+#[tauri::command]
+pub fn list_plan_files() -> Result<Vec<PlanFile>, String> {
+    let home = dirs::home_dir().ok_or_else(|| "Cannot find home directory".to_string())?;
+    let plans_dir = home.join(".claude").join("plans");
+    if !plans_dir.exists() {
+        return Ok(vec![]);
+    }
+    let mut plans: Vec<PlanFile> = std::fs::read_dir(&plans_dir)
+        .map_err(|e| format!("Failed to read plans directory: {}", e))?
+        .filter_map(|entry| {
+            let entry = entry.ok()?;
+            let path = entry.path();
+            if path.extension()?.to_str()? != "md" {
+                return None;
+            }
+            let metadata = path.metadata().ok()?;
+            let modified_ms = metadata
+                .modified()
+                .ok()?
+                .duration_since(std::time::UNIX_EPOCH)
+                .ok()?
+                .as_millis() as u64;
+            let name = path.file_stem()?.to_str()?.to_string();
+            Some(PlanFile {
+                path: path.to_string_lossy().to_string(),
+                name,
+                modified_ms,
+            })
+        })
+        .collect();
+    plans.sort_by(|a, b| b.modified_ms.cmp(&a.modified_ms));
+    Ok(plans)
+}
+
+#[tauri::command]
+pub fn read_plan_file(path: String) -> Result<String, String> {
+    std::fs::read_to_string(&path)
+        .map_err(|e| format!("Failed to read plan file: {}", e))
+}
+
+#[tauri::command]
+pub async fn get_auto_mode_config(app: AppHandle) -> Result<serde_json::Value, String> {
+    let claude_path = find_claude_binary(&app)
+        .unwrap_or_else(|_| "claude".to_string());
+    let output = std::process::Command::new(&claude_path)
+        .args(["auto-mode", "config"])
+        .output()
+        .map_err(|e| format!("Failed to run claude auto-mode config: {}", e))?;
+    let stdout = String::from_utf8_lossy(&output.stdout).to_string();
+    serde_json::from_str(&stdout)
+        .or_else(|_| Ok(serde_json::Value::String(stdout)))
+}
+
+#[tauri::command]
+pub async fn run_doctor(app: AppHandle) -> Result<String, String> {
+    let claude_path = find_claude_binary(&app)
+        .unwrap_or_else(|_| "claude".to_string());
+    let output = std::process::Command::new(&claude_path)
+        .arg("doctor")
+        .output()
+        .map_err(|e| format!("Failed to run claude doctor: {}", e))?;
+    let stdout = String::from_utf8_lossy(&output.stdout).to_string();
+    let stderr = String::from_utf8_lossy(&output.stderr).to_string();
+    if stdout.is_empty() && !stderr.is_empty() {
+        Ok(stderr)
+    } else {
+        Ok(stdout)
+    }
+}
+
+/// Saves the sidebar session state to ~/.ccode/states/sidebar_state.json
+#[tauri::command]
+pub async fn save_sidebar_state(json: String) -> Result<(), String> {
+    let ccode_dir = dirs::home_dir()
+        .ok_or_else(|| "Cannot find home directory".to_string())?
+        .join(".ccode")
+        .join("states");
+    std::fs::create_dir_all(&ccode_dir).map_err(|e| e.to_string())?;
+    let path = ccode_dir.join("sidebar_state.json");
+    std::fs::write(&path, json).map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+/// Loads the sidebar session state from ~/.ccode/states/sidebar_state.json
+/// Returns "{}" if the file does not exist.
+#[tauri::command]
+pub async fn load_sidebar_state() -> Result<String, String> {
+    let path = match dirs::home_dir() {
+        Some(h) => h.join(".ccode").join("states").join("sidebar_state.json"),
+        None => return Ok("{}".to_string()),
+    };
+    if !path.exists() {
+        return Ok("{}".to_string());
+    }
+    std::fs::read_to_string(&path).map_err(|e| e.to_string())
 }

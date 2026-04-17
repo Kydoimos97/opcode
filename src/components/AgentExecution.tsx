@@ -1,18 +1,18 @@
 import React, { useState, useEffect, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { 
-  ArrowLeft, 
-  Play, 
-  StopCircle, 
+import {
+  ArrowLeft,
+  Play,
+  StopCircle,
   Terminal,
   AlertCircle,
-  Loader2,
   Copy,
   ChevronDown,
   Maximize2,
   X,
   Settings2
 } from "lucide-react";
+import { BreathingDots } from "@/components/ui/spinner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -32,7 +32,6 @@ import { ExecutionControlBar } from "./ExecutionControlBar";
 import { ErrorBoundary } from "./ErrorBoundary";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { HooksEditor } from "./HooksEditor";
-import { useTrackEvent, useComponentMetrics, useFeatureAdoptionTracking } from "@/hooks";
 import { useTabState } from "@/hooks/useTabState";
 
 interface AgentExecutionProps {
@@ -63,6 +62,7 @@ export interface ClaudeStreamMessage {
   subtype?: string;
   message?: {
     content?: any[];
+    stop_reason?: string;
     usage?: {
       input_tokens: number;
       output_tokens: number;
@@ -99,12 +99,7 @@ export const AgentExecution: React.FC<AgentExecutionProps> = ({
   const [rawJsonlOutput, setRawJsonlOutput] = useState<string[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [copyPopoverOpen, setCopyPopoverOpen] = useState(false);
-  
-  // Analytics tracking
-  const trackEvent = useTrackEvent();
-  useComponentMetrics('AgentExecution');
-  const agentFeatureTracking = useFeatureAdoptionTracking(`agent_${agent.name || 'custom'}`);
-  
+
   // Hooks configuration state
   const [isHooksDialogOpen, setIsHooksDialogOpen] = useState(false);
 
@@ -308,16 +303,6 @@ export const AgentExecution: React.FC<AgentExecutionProps> = ({
       console.log("Agent execution started with run ID:", executionRunId);
       setRunId(executionRunId);
       
-      // Track agent execution start
-      trackEvent.agentStarted({
-        agent_type: agent.name || 'custom',
-        agent_name: agent.name,
-        has_custom_prompt: task !== agent.default_task
-      });
-      
-      // Track feature adoption
-      agentFeatureTracking.trackUsage();
-      
       // Set up event listeners with run ID isolation
       const outputUnlisten = await listen<string>(`agent-output:${executionRunId}`, (event) => {
         try {
@@ -335,40 +320,20 @@ export const AgentExecution: React.FC<AgentExecutionProps> = ({
       const errorUnlisten = await listen<string>(`agent-error:${executionRunId}`, (event) => {
         console.error("Agent error:", event.payload);
         setError(event.payload);
-        
-        // Track agent error
-        trackEvent.agentError({
-          error_type: 'runtime_error',
-          error_stage: 'execution',
-          retry_count: 0,
-          agent_type: agent.name || 'custom'
-        });
       });
 
       const completeUnlisten = await listen<boolean>(`agent-complete:${executionRunId}`, (event) => {
         setIsRunning(false);
-        const duration = executionStartTime ? Date.now() - executionStartTime : undefined;
         setExecutionStartTime(null);
         if (!event.payload) {
           setError("Agent execution failed");
-          // Update tab status to error
           if (tabId) {
             updateTabStatus(tabId, 'error');
           }
-          // Track both the old event for compatibility and the new error event
-          trackEvent.agentExecuted(agent.name || 'custom', false, agent.name, duration);
-          trackEvent.agentError({
-            error_type: 'execution_failed',
-            error_stage: 'completion',
-            retry_count: 0,
-            agent_type: agent.name || 'custom'
-          });
         } else {
-          // Update tab status to complete on success
           if (tabId) {
             updateTabStatus(tabId, 'complete');
           }
-          trackEvent.agentExecuted(agent.name || 'custom', true, agent.name, duration);
         }
       });
 
@@ -755,7 +720,7 @@ export const AgentExecution: React.FC<AgentExecutionProps> = ({
               {isRunning && messages.length === 0 && (
                 <div className="flex items-center justify-center h-full">
                   <div className="flex items-center gap-3">
-                    <Loader2 className="h-6 w-6 animate-spin" />
+                    <BreathingDots className="h-6 w-6" />
                     <span className="text-sm text-muted-foreground">Initializing agent...</span>
                   </div>
                 </div>
@@ -896,7 +861,7 @@ export const AgentExecution: React.FC<AgentExecutionProps> = ({
               {isRunning && messages.length === 0 && (
                 <div className="flex items-center justify-center h-full">
                   <div className="flex items-center gap-3">
-                    <Loader2 className="h-6 w-6 animate-spin" />
+                    <BreathingDots className="h-6 w-6" />
                     <span className="text-sm text-muted-foreground">Initializing agent...</span>
                   </div>
                 </div>

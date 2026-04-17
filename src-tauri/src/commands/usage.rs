@@ -228,26 +228,6 @@ fn parse_jsonl_file(
     entries
 }
 
-fn get_earliest_timestamp(path: &PathBuf) -> Option<String> {
-    if let Ok(content) = fs::read_to_string(path) {
-        let mut earliest_timestamp: Option<String> = None;
-        for line in content.lines() {
-            if let Ok(json_value) = serde_json::from_str::<serde_json::Value>(line) {
-                if let Some(timestamp_str) = json_value.get("timestamp").and_then(|v| v.as_str()) {
-                    if let Some(current_earliest) = &earliest_timestamp {
-                        if timestamp_str < current_earliest.as_str() {
-                            earliest_timestamp = Some(timestamp_str.to_string());
-                        }
-                    } else {
-                        earliest_timestamp = Some(timestamp_str.to_string());
-                    }
-                }
-            }
-        }
-        return earliest_timestamp;
-    }
-    None
-}
 
 fn get_all_usage_entries(claude_path: &PathBuf) -> Vec<UsageEntry> {
     let mut all_entries = Vec::new();
@@ -273,10 +253,6 @@ fn get_all_usage_entries(claude_path: &PathBuf) -> Vec<UsageEntry> {
         }
     }
 
-    // Sort files by their earliest timestamp to ensure chronological processing
-    // and deterministic deduplication.
-    files_to_process.sort_by_cached_key(|(path, _)| get_earliest_timestamp(path));
-
     for (path, project_name) in files_to_process {
         let entries = parse_jsonl_file(&path, &project_name, &mut processed_hashes);
         all_entries.extend(entries);
@@ -289,12 +265,13 @@ fn get_all_usage_entries(claude_path: &PathBuf) -> Vec<UsageEntry> {
 }
 
 #[command]
-pub fn get_usage_stats(days: Option<u32>) -> Result<UsageStats, String> {
-    let claude_path = dirs::home_dir()
-        .ok_or("Failed to get home directory")?
-        .join(".claude");
+pub async fn get_usage_stats(days: Option<u32>) -> Result<UsageStats, String> {
+    tokio::task::spawn_blocking(move || {
+        let claude_path = dirs::home_dir()
+            .ok_or("Failed to get home directory")?
+            .join(".claude");
 
-    let all_entries = get_all_usage_entries(&claude_path);
+        let all_entries = get_all_usage_entries(&claude_path);
 
     if all_entries.is_empty() {
         return Ok(UsageStats {
@@ -426,13 +403,13 @@ pub fn get_usage_stats(days: Option<u32>) -> Result<UsageStats, String> {
 
     // Convert hashmaps to sorted vectors
     let mut by_model: Vec<ModelUsage> = model_stats.into_values().collect();
-    by_model.sort_by(|a, b| b.total_cost.partial_cmp(&a.total_cost).unwrap());
+    by_model.sort_by(|a, b| b.total_cost.partial_cmp(&a.total_cost).unwrap_or(std::cmp::Ordering::Equal));
 
     let mut by_date: Vec<DailyUsage> = daily_stats.into_values().collect();
     by_date.sort_by(|a, b| b.date.cmp(&a.date));
 
     let mut by_project: Vec<ProjectUsage> = project_stats.into_values().collect();
-    by_project.sort_by(|a, b| b.total_cost.partial_cmp(&a.total_cost).unwrap());
+    by_project.sort_by(|a, b| b.total_cost.partial_cmp(&a.total_cost).unwrap_or(std::cmp::Ordering::Equal));
 
     Ok(UsageStats {
         total_cost,
@@ -446,15 +423,19 @@ pub fn get_usage_stats(days: Option<u32>) -> Result<UsageStats, String> {
         by_date,
         by_project,
     })
+    })
+    .await
+    .map_err(|e| format!("Task failed: {}", e))?
 }
 
 #[command]
-pub fn get_usage_by_date_range(start_date: String, end_date: String) -> Result<UsageStats, String> {
-    let claude_path = dirs::home_dir()
-        .ok_or("Failed to get home directory")?
-        .join(".claude");
+pub async fn get_usage_by_date_range(start_date: String, end_date: String) -> Result<UsageStats, String> {
+    tokio::task::spawn_blocking(move || {
+        let claude_path = dirs::home_dir()
+            .ok_or("Failed to get home directory")?
+            .join(".claude");
 
-    let all_entries = get_all_usage_entries(&claude_path);
+        let all_entries = get_all_usage_entries(&claude_path);
 
     // Parse dates
     let start = NaiveDate::parse_from_str(&start_date, "%Y-%m-%d").or_else(|_| {
@@ -596,13 +577,13 @@ pub fn get_usage_by_date_range(start_date: String, end_date: String) -> Result<U
 
     // Convert hashmaps to sorted vectors
     let mut by_model: Vec<ModelUsage> = model_stats.into_values().collect();
-    by_model.sort_by(|a, b| b.total_cost.partial_cmp(&a.total_cost).unwrap());
+    by_model.sort_by(|a, b| b.total_cost.partial_cmp(&a.total_cost).unwrap_or(std::cmp::Ordering::Equal));
 
     let mut by_date: Vec<DailyUsage> = daily_stats.into_values().collect();
     by_date.sort_by(|a, b| b.date.cmp(&a.date));
 
     let mut by_project: Vec<ProjectUsage> = project_stats.into_values().collect();
-    by_project.sort_by(|a, b| b.total_cost.partial_cmp(&a.total_cost).unwrap());
+    by_project.sort_by(|a, b| b.total_cost.partial_cmp(&a.total_cost).unwrap_or(std::cmp::Ordering::Equal));
 
     Ok(UsageStats {
         total_cost,
@@ -616,18 +597,22 @@ pub fn get_usage_by_date_range(start_date: String, end_date: String) -> Result<U
         by_date,
         by_project,
     })
+    })
+    .await
+    .map_err(|e| format!("Task failed: {}", e))?
 }
 
 #[command]
-pub fn get_usage_details(
+pub async fn get_usage_details(
     project_path: Option<String>,
     date: Option<String>,
 ) -> Result<Vec<UsageEntry>, String> {
-    let claude_path = dirs::home_dir()
-        .ok_or("Failed to get home directory")?
-        .join(".claude");
+    tokio::task::spawn_blocking(move || {
+        let claude_path = dirs::home_dir()
+            .ok_or("Failed to get home directory")?
+            .join(".claude");
 
-    let mut all_entries = get_all_usage_entries(&claude_path);
+        let mut all_entries = get_all_usage_entries(&claude_path);
 
     // Filter by project if specified
     if let Some(project) = project_path {
@@ -640,19 +625,23 @@ pub fn get_usage_details(
     }
 
     Ok(all_entries)
+    })
+    .await
+    .map_err(|e| format!("Task failed: {}", e))?
 }
 
 #[command]
-pub fn get_session_stats(
+pub async fn get_session_stats(
     since: Option<String>,
     until: Option<String>,
     order: Option<String>,
 ) -> Result<Vec<ProjectUsage>, String> {
-    let claude_path = dirs::home_dir()
-        .ok_or("Failed to get home directory")?
-        .join(".claude");
+    tokio::task::spawn_blocking(move || {
+        let claude_path = dirs::home_dir()
+            .ok_or("Failed to get home directory")?
+            .join(".claude");
 
-    let all_entries = get_all_usage_entries(&claude_path);
+        let all_entries = get_all_usage_entries(&claude_path);
 
     let since_date = since.and_then(|s| NaiveDate::parse_from_str(&s, "%Y%m%d").ok());
     let until_date = until.and_then(|s| NaiveDate::parse_from_str(&s, "%Y%m%d").ok());
@@ -711,4 +700,41 @@ pub fn get_session_stats(
     }
 
     Ok(by_session)
+    })
+    .await
+    .map_err(|e| format!("Task failed: {}", e))?
+}
+
+fn usage_cache_path() -> Result<PathBuf, String> {
+    let home = dirs::home_dir().ok_or_else(|| "Cannot find home directory".to_string())?;
+    let dir = home.join(".ccode").join("states").join("cache");
+    if !dir.exists() {
+        fs::create_dir_all(&dir).map_err(|e| format!("Failed to create ~/.ccode/states/cache: {}", e))?;
+    }
+    Ok(dir.join("usage.json"))
+}
+
+#[command]
+pub fn read_usage_cache() -> Result<serde_json::Value, String> {
+    let path = usage_cache_path()?;
+    if !path.exists() {
+        return Ok(serde_json::json!(null));
+    }
+    let contents = fs::read_to_string(&path)
+        .map_err(|e| format!("Failed to read usage cache: {}", e))?;
+    serde_json::from_str(&contents)
+        .map_err(|e| format!("Failed to parse usage cache: {}", e))
+}
+
+#[command]
+pub fn write_usage_cache(data: serde_json::Value) -> Result<(), String> {
+    let path = usage_cache_path()?;
+    let tmp = path.with_extension("json.tmp");
+    let contents = serde_json::to_string_pretty(&data)
+        .map_err(|e| format!("Failed to serialize usage cache: {}", e))?;
+    fs::write(&tmp, &contents)
+        .map_err(|e| format!("Failed to write usage cache tmp: {}", e))?;
+    fs::rename(&tmp, &path)
+        .map_err(|e| format!("Failed to rename usage cache: {}", e))?;
+    Ok(())
 }
