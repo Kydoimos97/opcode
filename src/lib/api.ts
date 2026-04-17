@@ -2251,6 +2251,22 @@ export const api = {
     }
   },
 
+  async readTabsCache(): Promise<string> {
+    try {
+      return await apiCall<string>('read_tabs_cache');
+    } catch {
+      return '';
+    }
+  },
+
+  async writeTabsCache(data: string): Promise<void> {
+    try {
+      await apiCall<void>('write_tabs_cache', { data });
+    } catch (err) {
+      console.error('Failed to write tabs cache:', err);
+    }
+  },
+
   async openPath(path: string): Promise<void> {
     await apiCall<void>("open_path", { path });
   },

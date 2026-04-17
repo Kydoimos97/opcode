@@ -56,11 +56,8 @@ export const TabProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     if (isInitialized.current) return;
     isInitialized.current = true;
 
-    // Migrate from old format if needed
-    TabPersistenceService.migrateFromOldFormat();
-
     // Try to load saved tabs
-    const { tabs: savedTabs, activeTabId: savedActiveTabId } = TabPersistenceService.loadTabs();
+    const { tabs: savedTabs, activeTabId: savedActiveTabId } = await TabPersistenceService.loadTabs();
     
     if (savedTabs.length > 0) {
       // For chat tabs, restore session data

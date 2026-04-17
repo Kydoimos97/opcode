@@ -707,11 +707,11 @@ pub async fn get_session_stats(
 
 fn usage_cache_path() -> Result<PathBuf, String> {
     let home = dirs::home_dir().ok_or_else(|| "Cannot find home directory".to_string())?;
-    let dir = home.join(".ccode");
+    let dir = home.join(".ccode").join("states").join("cache");
     if !dir.exists() {
-        fs::create_dir_all(&dir).map_err(|e| format!("Failed to create ~/.ccode: {}", e))?;
+        fs::create_dir_all(&dir).map_err(|e| format!("Failed to create ~/.ccode/states/cache: {}", e))?;
     }
-    Ok(dir.join("usage_cache.json"))
+    Ok(dir.join("usage.json"))
 }
 
 #[command]

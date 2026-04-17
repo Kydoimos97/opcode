@@ -38,7 +38,7 @@ use commands::claude::{
     read_ccode_settings, write_ccode_settings, read_session_status, read_process_state, open_path,
     list_plugins, install_plugin, uninstall_plugin, enable_plugin, disable_plugin,
     list_plan_files, read_plan_file, get_auto_mode_config, run_doctor,
-    save_sidebar_state, load_sidebar_state,
+    save_sidebar_state, load_sidebar_state, read_tabs_cache, write_tabs_cache,
 };
 use commands::fonts::list_system_fonts;
 use commands::system::get_system_resources;
@@ -324,6 +324,8 @@ fn main() {
             write_ccode_settings,
             read_session_status,
             read_process_state,
+            read_tabs_cache,
+            write_tabs_cache,
             open_path,
             list_plan_files,
             read_plan_file,

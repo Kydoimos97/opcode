@@ -3792,6 +3792,29 @@ pub fn read_process_state() -> Result<serde_json::Value, String> {
 }
 
 #[tauri::command]
+pub fn read_tabs_cache() -> Result<String, String> {
+    let home = dirs::home_dir().ok_or_else(|| "Cannot find home directory".to_string())?;
+    let path = home.join(".ccode").join("states").join("cache").join("tabs.json");
+    if !path.exists() {
+        return Ok(String::new());
+    }
+    fs::read_to_string(&path).map_err(|e| format!("Failed to read tabs cache: {}", e))
+}
+
+#[tauri::command]
+pub fn write_tabs_cache(data: String) -> Result<(), String> {
+    let home = dirs::home_dir().ok_or_else(|| "Cannot find home directory".to_string())?;
+    let dir = home.join(".ccode").join("states").join("cache");
+    if !dir.exists() {
+        fs::create_dir_all(&dir).map_err(|e| format!("Failed to create cache dir: {}", e))?;
+    }
+    let path = dir.join("tabs.json");
+    let tmp = path.with_extension("json.tmp");
+    fs::write(&tmp, &data).map_err(|e| format!("Failed to write tabs cache tmp: {}", e))?;
+    fs::rename(&tmp, &path).map_err(|e| format!("Failed to rename tabs cache: {}", e))
+}
+
+#[tauri::command]
 pub fn read_ccode_settings() -> Result<serde_json::Value, String> {
     let path = ccode_settings_path()?;
     if !path.exists() {
