@@ -22,9 +22,9 @@ pub fn get_hook_events(session_id: String) -> Result<Vec<String>, String> {
     Ok(content.lines().filter(|l| !l.trim().is_empty()).map(String::from).collect())
 }
 
-/// Returns the number of hook types that have the bridge command wired in
-/// ~/.claude/settings.json. Returns 0 if the bridge script is not installed
-/// or if settings cannot be read. Returns up to 14 (current full set).
+/// Returns 1 if the c-bridge script exists at ~/.ccode/hooks/c-bridge/c-bridge.sh
+/// and the c-bridge command is referenced anywhere in ~/.claude/settings.json hooks.
+/// Returns 0 otherwise.
 #[tauri::command]
 pub fn check_hook_bridge_installed() -> u8 {
     let home = match dirs::home_dir() {
@@ -32,94 +32,30 @@ pub fn check_hook_bridge_installed() -> u8 {
         None => return 0,
     };
 
-    // If the script file doesn't exist, not installed at all
     if !home.join(".ccode").join("hooks").join("c-bridge").join("c-bridge.sh").exists() {
         return 0;
     }
 
-    // Count how many hook types have the bridge command wired
     let settings_path = home.join(".claude").join("settings.json");
     let content = match std::fs::read_to_string(&settings_path) {
         Ok(c) => c,
-        Err(_) => return 1, // script exists but can't count — report 1 (outdated)
-    };
-    let settings: serde_json::Value = match serde_json::from_str(&content) {
-        Ok(v) => v,
-        Err(_) => return 1,
+        Err(_) => return 0,
     };
 
-    let bridge_command = "bash $HOME/.ccode/hooks/c-bridge/c-bridge.sh";
-    let hook_types = [
-        "UserPromptSubmit", "PreToolUse", "PostToolUse", "PostToolUseFailure",
-        "Stop", "Notification", "SubagentStart", "SubagentStop",
-        "SessionStart", "SessionEnd", "PreCompact", "PostCompact",
-        "InstructionsLoaded", "PermissionRequest",
-    ];
-
-    let hooks_obj = match settings.get("hooks").and_then(|h| h.as_object()) {
-        Some(o) => o,
-        None => return 0,
-    };
-
-    let mut count: u8 = 0;
-    for hook_type in &hook_types {
-        if let Some(arr) = hooks_obj.get(*hook_type).and_then(|v| v.as_array()) {
-            let present = arr.iter().any(|item| {
-                item.get("hooks")
-                    .and_then(|h| h.as_array())
-                    .map(|h| h.iter().any(|cmd| {
-                        cmd.get("command").and_then(|c| c.as_str()) == Some(bridge_command)
-                    }))
-                    .unwrap_or(false)
-            });
-            if present {
-                count += 1;
-            }
-        }
-    }
-    count
+    if content.contains("c-bridge/c-bridge.sh") { 1 } else { 0 }
 }
 
-/// Installs the hook event bridge:
-/// 1. Creates ~/.ccode/states/hooks/ directory
-/// 2. Writes c-bridge.py to ~/.ccode/hooks/c-bridge/
-/// 3. Writes c-bridge.sh to ~/.ccode/hooks/c-bridge/
-/// 4. Adds bridge hook entries to ~/.claude/settings.json for the listed hook types
+/// Wires the c-bridge hook into ~/.claude/settings.json for all known hook types.
+/// Does NOT write any script files — the user manages those in ~/.ccode/hooks/c-bridge/.
+/// Only creates the ~/.ccode/states/hooks/ output directory if missing.
 #[tauri::command]
 pub fn install_hook_bridge() -> Result<(), String> {
     let home = dirs::home_dir().ok_or("Could not find home directory")?;
 
-    // Create ~/.ccode/states/hooks/
+    // Ensure output directory exists
     let events_dir = home.join(".ccode").join("states").join("hooks");
     std::fs::create_dir_all(&events_dir)
         .map_err(|e| format!("Failed to create hook-events dir: {}", e))?;
-
-    let hooks_dir = home.join(".ccode").join("hooks").join("c-bridge");
-    std::fs::create_dir_all(&hooks_dir)
-        .map_err(|e| format!("Failed to ensure hooks dir: {}", e))?;
-
-    // Write Python bridge script
-    std::fs::write(
-        hooks_dir.join("c-bridge.py"),
-        BRIDGE_PY_CONTENT,
-    ).map_err(|e| format!("Failed to write bridge py: {}", e))?;
-
-    // Write shell wrapper
-    std::fs::write(
-        hooks_dir.join("c-bridge.sh"),
-        BRIDGE_SH_CONTENT,
-    ).map_err(|e| format!("Failed to write bridge sh: {}", e))?;
-
-    // Make sh executable on Unix
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        let mut perms = std::fs::metadata(hooks_dir.join("c-bridge.sh"))
-            .map_err(|e| e.to_string())?.permissions();
-        perms.set_mode(0o755);
-        std::fs::set_permissions(hooks_dir.join("c-bridge.sh"), perms)
-            .map_err(|e| e.to_string())?;
-    }
 
     // Wire into ~/.claude/settings.json
     let settings_path = home.join(".claude").join("settings.json");
@@ -148,6 +84,7 @@ pub fn install_hook_bridge() -> Result<(), String> {
         "PostToolUse",
         "PostToolUseFailure",
         "Stop",
+        "StopFailure",
         "Notification",
         "SubagentStart",
         "SubagentStop",
@@ -157,6 +94,17 @@ pub fn install_hook_bridge() -> Result<(), String> {
         "PostCompact",
         "InstructionsLoaded",
         "PermissionRequest",
+        "PermissionDenied",
+        "Elicitation",
+        "ElicitationResult",
+        "ConfigChange",
+        "CwdChanged",
+        "FileChanged",
+        "TaskCreated",
+        "TaskCompleted",
+        "TeammateIdle",
+        "WorktreeCreate",
+        "WorktreeRemove",
     ];
 
     for hook_type in &hook_types {
@@ -230,88 +178,9 @@ pub fn remove_hook_bridge() -> Result<(), String> {
             .map_err(|e| format!("Failed to write settings: {}", e))?;
     }
 
-    // Remove script files
-    let hooks_dir = home.join(".ccode").join("hooks").join("c-bridge");
-    let _ = std::fs::remove_file(hooks_dir.join("c-bridge.py"));
-    let _ = std::fs::remove_file(hooks_dir.join("c-bridge.sh"));
-
     Ok(())
 }
 
-const BRIDGE_SH_CONTENT: &str = r#"#!/bin/bash
-# c-bridge.sh — C-Code hook event bridge.
-# Writes hook events to ~/.ccode/states/hooks/<session_id>.jsonl for real-time UI enrichment.
-# Never blocks; always exits 0.
-
-HOOKS_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-
-PYTHON=""
-if command -v python3 &> /dev/null; then
-  PYTHON="python3"
-elif command -v python &> /dev/null; then
-  PYTHON="python"
-fi
-
-if [ -z "$PYTHON" ]; then
-  exit 0
-fi
-
-"$PYTHON" "$HOOKS_DIR/c-bridge.py"
-exit 0
-"#;
-
-const BRIDGE_PY_CONTENT: &str = r#"#!/usr/bin/env python3
-"""c-bridge.py — C-Code hook event bridge.
-
-Reads the hook payload from stdin and appends it to
-~/.ccode/states/hooks/<session_id>.jsonl so the C-Code app can
-provide real-time enrichment (live tool indicators, auto-title, etc).
-
-Always exits 0 and never blocks Claude Code.
-"""
-
-import json
-import sys
-from datetime import datetime, timezone
-from pathlib import Path
-
-
-def main() -> None:
-    raw = sys.stdin.buffer.read()
-    if not raw:
-        return
-
-    try:
-        payload = json.loads(raw.decode("utf-8", errors="replace"))
-    except (json.JSONDecodeError, ValueError):
-        return
-
-    session_id = payload.get("session_id")
-    if not session_id:
-        return
-
-    hook_type = payload.get("hook_event_name", "unknown")
-
-    out_dir = Path.home() / ".ccode" / "states" / "hooks"
-    out_dir.mkdir(parents=True, exist_ok=True)
-
-    entry = {
-        "ts": datetime.now(tz=timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
-        "hook_type": hook_type,
-        "payload": payload,
-    }
-
-    out_path = out_dir / f"{session_id}.jsonl"
-    try:
-        with out_path.open("a", encoding="utf-8") as fh:
-            fh.write(json.dumps(entry) + "\n")
-    except OSError:
-        pass
-
-
-if __name__ == "__main__":
-    main()
-"#;
 
 #[cfg(test)]
 mod tests {
